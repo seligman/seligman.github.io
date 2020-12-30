@@ -1,0 +1,1 @@
+Some simple webpages for different projects I'm playing with.
