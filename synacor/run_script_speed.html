@@ -8,8 +8,8 @@
 <script>
 
 var rmode = /^~m(.*?)~/;
-var rreg = /^~r(.)(.*?)~/;
-var rmem = /^~v(....)(.*?)~/;
+var rreg = /^~r(.*?)~/;
+var rmem = /^~v(.*?)~/;
 var speed = 0;
 var bail = 0;
 var running = false;
@@ -51,8 +51,11 @@ function tick() {
                 if (m) {
                     used = true;
                     script = script.slice(m[0].length);
-                    var reg = document.getElementById("reg_" + m[1]);
-                    reg.innerHTML = m[2];
+                    var temp = m[1].split(',');
+                    for (var i = 0; i < temp.length; i++) {
+                        var reg = document.getElementById("reg_" + temp[i].slice(0, 1));
+                        reg.innerHTML = temp[i].slice(1);
+                    }
                 }
             }
             if (!used) {
@@ -60,31 +63,33 @@ function tick() {
                 if (m) {
                     used = true;
                     script = script.slice(m[0].length);
-                    if (m[1] == "2732") {
-                        document.getElementById("room").innerHTML = m[2];
-                    } else {
-                        var x = m[1];
-                        var y = '';
-                        if (x == "2674") {
-                            y = "lantern";
-                        } else if (x == "2678") {
-                            x = "2674";
-                            y = "lantern (oil)";
-                        } else if (x == "2682") {
-                            x = "2674";
-                            y = "lantern (lit)";
-                        }
-                        if (m[2] == "0") {
-                            document.getElementById("item_" + x).className = "item";
-                            if (y.length > 0) {
-                                document.getElementById("item_" + x).innerHTML = y;
-                            }
+                    var temp = m[1].split(',');
+                    for (var i = 0; i < temp.length; i++) {
+                        var m = ['', temp[i].slice(0, 4), temp[i].slice(4)];
+                        if (m[1] == "2732") {
+                            document.getElementById("room").innerHTML = m[2];
                         } else {
-                            document.getElementById("item_" + x).className = "item_not";
+                            var x = m[1];
+                            var y = '';
+                            if (x == "2674") {
+                                y = "lantern";
+                            } else if (x == "2678") {
+                                x = "2674";
+                                y = "lantern (oil)";
+                            } else if (x == "2682") {
+                                x = "2674";
+                                y = "lantern (lit)";
+                            }
+                            if (m[2] == "0") {
+                                document.getElementById("item_" + x).className = "item";
+                                if (y.length > 0) {
+                                    document.getElementById("item_" + x).innerHTML = y;
+                                }
+                            } else {
+                                document.getElementById("item_" + x).className = "item_not";
+                            }
                         }
                     }
-                    var reg = document.getElementById("reg_" + m[1]);
-                    reg.innerHTML = m[2];
                 }
             }
             if (!used) {
