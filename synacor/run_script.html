@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+<meta charset="utf-8"/>
+<title>Synacor Challenge</title>
+<link href='//fonts.googleapis.com/css?family=Source+Code+Pro:300&subset=latin,latin-ext' rel='stylesheet' type='text/css'/>
+<script src="script.js"></script>
+<script>
+
+var rmode = /^~m(.*?)~/;
+var rreg = /^~r(.)(.*?)~/;
+var rmem = /^~v(....)(.*?)~/;
+var speed = 0;
+var bail = 0;
+var running = false;
+
+function toggle() {
+    running = !running;
+    var play = document.getElementById("play");
+    play.innerHTML = running ? "Pause" : "Play";
+}
+function tick() {
+    if (running && script.length > 0) {
+        var ticker = document.getElementById('ticker');
+        var ticker_at = document.getElementById('ticker_at');
+        var scroll = document.getElementById("console_scroll");
+        for (;;) {
+            if (bail > 0) {
+                bail--;
+                break;
+            }
+            var used = false;
+            if (!used) {
+                var m = rmode.exec(script);
+                if (m) {
+                    used = true;
+                    script = script.slice(m[0].length);
+                    ticker_at.id = "";
+                    ticker.innerHTML += '<span class="' + m[1] + '" id="ticker_at">';
+                    ticker_at = document.getElementById('ticker_at');
+                    if (m[1] == "input") {
+                        speed = 1;
+                        bail = 50;
+                    } else {
+                        speed = 0;
+                    }
+                }
+            }
+            if (!used) {
+                var m = rreg.exec(script);
+                if (m) {
+                    used = true;
+                    script = script.slice(m[0].length);
+                    var reg = document.getElementById("reg_" + m[1]);
+                    reg.innerHTML = m[2];
+                }
+            }
+            if (!used) {
+                var m = rmem.exec(script);
+                if (m) {
+                    used = true;
+                    script = script.slice(m[0].length);
+                    if (m[1] == "2732") {
+                        document.getElementById("room").innerHTML = m[2];
+                    } else {
+                        var x = m[1];
+                        var y = '';
+                        if (x == "2674") {
+                            y = "lantern";
+                        } else if (x == "2678") {
+                            x = "2674";
+                            y = "lantern (oil)";
+                        } else if (x == "2682") {
+                            x = "2674";
+                            y = "lantern (lit)";
+                        }
+                        if (m[2] == "0") {
+                            document.getElementById("item_" + x).className = "item";
+                            if (y.length > 0) {
+                                document.getElementById("item_" + x).innerHTML = y;
+                            }
+                        } else {
+                            document.getElementById("item_" + x).className = "item_not";
+                        }
+                    }
+                    var reg = document.getElementById("reg_" + m[1]);
+                    reg.innerHTML = m[2];
+                }
+            }
+            if (!used) {
+                var x = script.slice(0, 1);
+                script = script.slice(1);
+                ticker_at.innerHTML += x;
+                bail = speed;
+                break;
+            }
+        }
+        scroll.scrollTop = scroll.scrollHeight;
+    }
+};
+window.onload = function() {
+    window.setInterval(tick, 25);
+};
+</script>
+<style>
+a {
+    color: #a8a8f2;
+    text-decoration: none;
+}
+a:hover {
+    color: #a8a8f2;
+    text-decoration: underline;
+}
+body {
+    background: #0f0f23;
+    color: #cccccc;
+    font-family: "Source Code Pro", monospace;
+    font-size: 14pt;
+    min-width: 60em;
+}
+.console {
+    width: 50em; 
+    height: 30em;
+    position: relative;
+    padding: 1em;
+    background-color:#000010;
+}
+.console div {
+    max-height:100%;overflow:auto;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.console div::-webkit-scrollbar { 
+    display: none;
+}
+.console div div {
+    overflow: hidden;
+}
+pre {
+    white-space: pre-wrap;
+    white-space: -moz-pre-wrap;
+    white-space: -pre-wrap;
+    white-space: -o-pre-wrap;
+    word-wrap: break-word;
+}
+.item {
+    color: #8080ff;
+    width: 10em;
+}
+.item_not {
+    color: #404040;
+    width: 10em;
+}
+.reg {
+    width: 10em;
+}
+.comment {
+    color:red;
+}
+.input {
+    color:#20f0f0;
+}
+.output {
+    color:#20f020;
+}
+.code {
+    color:#ffffff;
+    text-shadow: 1px 0px 20px #ffffff;
+    font-weight: bold;
+}
+.cursor {
+    background-color: white;
+}
+.value {
+    color: #8080ff;
+}
+</style>
+</head>
+<body>
+<table>
+<tbody>
+<tr>
+<td rowspan="17" valign="top">
+<div class="console"><div id="console_scroll"><div>
+<pre><span id='ticker'><span id="ticker_at" class="output"></span></span><span class="cursor">&nbsp;</span></pre>
+</div></div></div>
+</td>
+<td colspan="2">Room ID: <span class="value" id="room">----</span></td>
+</tr>
+<tr><td>Items:</td><td>Registers:</td></tr>
+<tr><td><div id="item_2670" class="item_not">tablet</div></td><td><div class="reg">1: <span class="value" id="reg_0">0</span></div></td></tr>
+<tr><td><div id="item_2674" class="item_not">lantern</div></td><td><div class="reg">2: <span class="value" id="reg_1">0</span></div></td></tr>
+<tr><td><div id="item_2686" class="item_not">can</div></td><td><div class="reg">3: <span class="value" id="reg_2">0</span></div></td></tr>
+<tr><td><div id="item_2690" class="item_not">red coin</div></td><td><div class="reg">4: <span class="value" id="reg_3">0</span></div></td></tr>
+<tr><td><div id="item_2694" class="item_not">corroded coin</div></td><td><div class="reg">5: <span class="value" id="reg_4">0</span></div></td></tr>
+<tr><td><div id="item_2698" class="item_not">shiny coin</div></td><td><div class="reg">6: <span class="value" id="reg_5">0</span></div></td></tr>
+<tr><td><div id="item_2702" class="item_not">concave coin</div></td><td><div class="reg">7: <span class="value" id="reg_6">0</span></div></td></tr>
+<tr><td><div id="item_2706" class="item_not">blue coin</div></td><td><div class="reg">8: <span class="value" id="reg_7">0</span></div></td></tr>
+<tr><td><div id="item_2710" class="item_not">teleporter</div></td></tr>
+<tr><td><div id="item_2714" class="item_not">business card</div></td></tr>
+<tr><td><div id="item_2718" class="item_not">orb</div></td></tr>
+<tr><td><div id="item_2722" class="item_not">mirror</div></td></tr>
+<tr><td><div id="item_2726" class="item_not">strange book</div></td></tr>
+<tr><td><div id="item_2730" class="item_not">journal</div></td></tr>
+<tr><td style="height:100%" valign="bottom"><a href="#" onclick="toggle();" id="play">Play</a></td><td></td></tr>
+</table>
+</body>
+</html>
