@@ -1,10 +1,27 @@
-// Built using webpack --mode=production
+/* 
+    Built using:
+    npm install
+    mkdir src
+    python3 -c "import shutil;shutil.copy('helper.js','src/index.js')"
+    npx webpack --mode=production
+    # Creates dist/main.js
+*/
+
+var Address4 = require('ip-address').Address4;
+var Address6 = require('ip-address').Address6;
+
+crackCidr = function(cidr) {
+    if (cidr.includes(":")) {
+        temp = new Address6(cidr);
+    } else {
+        temp = new Address4(cidr);
+    }
+    return [temp.startAddress().bigInteger(), temp.endAddress().bigInteger(), cidr];
+}
 
 checkCidr = function(ip, callback, callbackIn) {
-    var Address4 = require('ip-address').Address4;
-    var Address6 = require('ip-address').Address6;
     try {
-        var cidrStart, cidrEnd, v6;
+        var v6;
         if (ip.includes(":")) {
             ip = new Address6(ip).bigInteger();
             v6 = true;
@@ -17,15 +34,7 @@ checkCidr = function(ip, callback, callbackIn) {
             if (cidr === null) {
                 break;
             }
-            var temp;
-            if (v6) {
-                temp = new Address6(cidr);
-            } else {
-                temp = new Address4(cidr);
-            }
-            cidrStart = temp.startAddress().bigInteger();
-            cidrEnd = temp.endAddress().bigInteger();
-            if (ip.compareTo(cidrStart) >= 0 && ip.compareTo(cidrEnd) <= 0) {
+            if (ip.compareTo(cidr[0]) >= 0 && ip.compareTo(cidr[1]) <= 0) {
                 callbackIn(i, v6);
             }
         }
@@ -34,13 +43,3 @@ checkCidr = function(ip, callback, callbackIn) {
         return false;
     }
 }
-
-// checkCidr('10.20.23.84', function(i, v6) {
-//     if (i == 0) {
-//         return "10.0.0.0/8";
-//     } else {
-//         return null;
-//     }
-// }, function(i, v6) {
-//     console.log("match", i);
-// })
