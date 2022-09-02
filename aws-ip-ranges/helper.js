@@ -1,10 +1,10 @@
 /* 
-    Built using:
+    # Built using:
     npm install
     mkdir src
     python3 -c "import shutil;shutil.copy('helper.js','src/index.js')"
     npx webpack --mode=production
-    # Creates dist/main.js
+    python3 -c "import shutil;shutil.copy('dist/main.js','cidr_helper.min.js')"
 */
 
 var Address4 = require('ip-address').Address4;
