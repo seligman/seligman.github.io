@@ -61,8 +61,14 @@ input[type="text"],input[type="number"],textarea:focus {
 <script src="regions.js"></script>
 <script src="private_ips.js"></script>
 <script>
-function crack_all(value, regions) {
+function crack_all(value, regions, source=null, region=null) {
     value.forEach(x => {
+        if (source !== null) {
+            x["source"] = source;
+        }
+        if (region !== null) {
+            x["region"] = region;
+        }
         if ("ip_prefix" in x) {
             x["ip_prefix"] = crackCidr(x["ip_prefix"]);
         } else {
@@ -73,8 +79,8 @@ function crack_all(value, regions) {
         }
     });
 }
-crack_all(private_ips, {});
-crack_all(private_ips6, {});
+crack_all(private_ips, {}, source="Private IP", region="");
+crack_all(private_ips6, {}, source="Private IP", region="");
 var ipRanges = null;
 var left_to_load = 4;
 
@@ -89,18 +95,41 @@ function done_loading() {
     }
 }
 
+function fetch_error(response) {
+    if (!response.ok) {
+        throw Error(response.status + " (" + response.statusText + ")");
+    }
+    return response;
+}
+
+function show_error(source, error) {
+    document.getElementById("errors").innerHTML += "ERROR: Unable to load " + source + " IP ranges: " + error.message + "<br>"
+    done_loading();
+}
+
+var aws_ips = null;
+var aws_ips6 = null;
 fetch("https://raw.githubusercontent.com/seligman/aws-ip-ranges/master/ip-ranges.json")
+    .then(fetch_error)
     .then(response => response.json())
     .then(json => {
         ipRanges = json;
-        crack_all(ipRanges["prefixes"], aws_regions);
-        crack_all(ipRanges["ipv6_prefixes"], aws_regions);
+        crack_all(ipRanges["prefixes"], aws_regions, source="AWS");
+        crack_all(ipRanges["ipv6_prefixes"], aws_regions, source="AWS");
+        aws_ips = ipRanges["prefixes"];
+        aws_ips6 = ipRanges["ipv6_prefixes"];
         done_loading();
+    })
+    .catch((error) => {
+        aws_ips = null;
+        aws_ips6 = null;
+        show_error("AWS", error)
     });
 
 var google_ips = null;
 var google_ips6 = null;
 fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/raw_google.json.gz")
+    .then(fetch_error)
     .then(response => response.arrayBuffer())
     .then(text => {
         text = window.pako.inflate(text);
@@ -114,25 +143,29 @@ fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/raw_go
                     "ip_prefix": x['ipv4Prefix'], 
                     "region": x['scope'], 
                     "service": x['service'], 
-                    "source": "Google",
                 })
             } else {
                 google_ips6.push({
                     "ipv6_prefix": x['ipv6Prefix'], 
                     "region": x['scope'], 
                     "service": x['service'], 
-                    "source": "Google",
                 })
             }
         });
-        crack_all(google_ips, google_regions);
-        crack_all(google_ips6, google_regions);
+        crack_all(google_ips, google_regions, source="Google");
+        crack_all(google_ips6, google_regions, source="Google");
         done_loading();
+    })
+    .catch((error) => {
+        aws_ips = null;
+        aws_ips6 = null;
+        show_error("AWS", error)
     });
 
 var azure_ips = null;
 var azure_ips6 = null;
 fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/raw_azure.json.gz")
+    .then(fetch_error)
     .then(response => response.arrayBuffer())
     .then(text => {
         text = window.pako.inflate(text);
@@ -147,21 +180,24 @@ fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/raw_az
                         "ipv6_prefix": y, 
                         "region": x['properties']['region'], 
                         "service": x['properties']['systemService'], 
-                        "source": "Azure",
                     })
                 } else {
                     azure_ips.push({
                         "ip_prefix": y, 
                         "region": x['properties']['region'], 
                         "service": x['properties']['systemService'], 
-                        "source": "Azure",
                     })
                 }
             });
         });
-        crack_all(azure_ips, azure_regions);
-        crack_all(azure_ips6, azure_regions);
+        crack_all(azure_ips, azure_regions, source="Azure");
+        crack_all(azure_ips6, azure_regions, source="Azure");
         done_loading();
+    })
+    .catch((error) => {
+        aws_ips = null;
+        aws_ips6 = null;
+        show_error("AWS", error)
     });
 
 function lookup(ip) {
@@ -173,16 +209,17 @@ function lookup(ip) {
     var todo = null;
     if (!checkCidr(ip, function(i, v6){
         if (todo === null) {
+            todo = []
             if (v6) {
-                todo = ipRanges["ipv6_prefixes"]
-                todo = todo.concat(google_ips6)
-                todo = todo.concat(azure_ips6)
-                todo = todo.concat(private_ips6);
+                if (aws_ips6 !== null) { todo = todo.concat(aws_ips6); }
+                if (google_ips6 !== null) { todo = todo.concat(google_ips6); }
+                if (azure_ips6 !== null) { todo = todo.concat(azure_ips6); }
+                if (private_ips6 !== null) { todo = todo.concat(private_ips6); }
             } else {
-                todo = ipRanges["prefixes"]
-                todo = todo.concat(google_ips);
-                todo = todo.concat(azure_ips);
-                todo = todo.concat(private_ips);
+                if (aws_ips !== null) { todo = todo.concat(aws_ips); }
+                if (google_ips !== null) { todo = todo.concat(google_ips); }
+                if (azure_ips !== null) { todo = todo.concat(azure_ips); }
+                if (private_ips !== null) { todo = todo.concat(private_ips); }
             }
         }
         if (i < todo.length) {
@@ -198,7 +235,7 @@ function lookup(ip) {
         if (todo[i]['service'].length > 0) {
             ret += "Service: " + todo[i]['service'] + "<br>";
         }
-        ret += "Source: " + (("source" in todo[i]) ? todo[i]["source"] : "AWS") + "<br>";
+        ret += "Source: " + todo[i]["source"] + "<br>";
         ret += "<br>"
     })) {
         ret = "(invalid IP)";
@@ -214,6 +251,7 @@ function lookup(ip) {
 <p>Enter an IP to lookup which service it comes from:</p>
 <input type="text" size="40" id="ip" autocomplete="off" autocorrect="off">
 <br><br>
-<div id="results">Loading...</div>
+<div id="results">Loading...</div><br>
+<div id="errors"></div>
 </body>
 </html>
