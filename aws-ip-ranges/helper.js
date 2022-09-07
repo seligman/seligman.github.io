@@ -1,10 +1,5 @@
 /* 
-    # Built using:
-    npm install
-    mkdir src
-    python3 -c "import shutil;shutil.copy('helper.js','src/index.js')"
-    npx webpack --mode=production
-    python3 -c "import shutil;shutil.copy('dist/main.js','cidr_helper.min.js')"
+    To build this, use ./build_helper.js
 */
 
 var Address4 = require('ip-address').Address4;
@@ -17,6 +12,16 @@ crackCidr = function(cidr) {
         temp = new Address4(cidr);
     }
     return [temp.startAddress().bigInteger(), temp.endAddress().bigInteger(), cidr];
+}
+
+ipToString = function(ip, v6) {
+    if (v6) {
+        ip = Address6.fromBigInteger(ip).address;
+        ip = ip.replace(/\b:?(?:0+:?){2,}/, '::');
+        return ip.split(':').map(x => x.replace(/^0+(.)$/, '$1')).join(':');
+    } else {
+        return Address4.fromBigInteger(ip).address;
+    }
 }
 
 checkCidr = function(ip, callback, callbackIn) {
