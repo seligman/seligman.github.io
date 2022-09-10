@@ -66,7 +66,18 @@ body {
                 msg += " to go till day " + next.getUTCDate();
             }
         } else {
-            msg = "Come back next year."
+            var temp = new Date(date.getTime());
+            while (!(temp.getUTCDate() == 1 && temp.getUTCMonth() == 11)) {
+                temp = new Date(temp.getTime() + 86400);
+            }
+            left = temp.getTime() - date.getTime();
+            left /= 86400000;
+            if (left >= 2) {
+                msg = pad(left, 1) + " days";
+            } else {
+                msg = "1 day";
+            }
+            msg += " till the next Advent of Code";
         }
         document.getElementById("ticker").innerHTML = msg;
     };
