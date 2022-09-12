@@ -61,7 +61,7 @@ input[type="text"],input[type="number"],textarea:focus {
 <script src="regions.js"></script>
 <script src="private_ips.js"></script>
 <script>
-function crack_all(value, regions, source=null, region=null) {
+function crack_all(value, regions=null, source=null, region=null) {
     value.forEach(x => {
         if (source !== null) {
             x["source"] = source;
@@ -74,8 +74,10 @@ function crack_all(value, regions, source=null, region=null) {
         } else {
             x["ipv6_prefix"] = crackCidr(x["ipv6_prefix"]);
         }
-        if (x["region"] in regions) {
-            x["region"] += ", " + regions[x["region"]];
+        if (regions !== null) {
+            if (x["region"] in regions) {
+                x["region"] += ", " + regions[x["region"]];
+            }
         }
     });
 }
@@ -83,10 +85,27 @@ crack_all(private_ips, {}, source="Private IP", region="");
 crack_all(private_ips6, {}, source="Private IP", region="");
 var ipRanges = null;
 var left_to_load = 4;
+const other_sources = [
+    ["cloudflare", "Cloudflare"],
+    ["digitalocean", "DigitalOcean"],
+    ["facebook", "Facebook"],
+    ["hetzner", "Hetzner"],
+    ["icloudprov", "iCloud"],
+    ["linode", "Linode"],
+    ["oracle", "Oracle"],
+    ["vultr", "Vultr"],
+];
+left_to_load += other_sources.length;
 
 function done_loading() {
     left_to_load--;
     if (left_to_load == 0) {
+        if (other_ips !== null) {
+            crack_all(other_ips);
+        }
+        if (other_ips6 !== null) {
+            crack_all(other_ips6);
+        }
         helper = function() {
             document.getElementById('results').innerHTML = lookup(document.getElementById('ip').value);
         };
@@ -200,6 +219,49 @@ fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/raw_az
         show_error("AWS", error)
     });
 
+var other_ips = null;
+var other_ips6 = null;
+other_sources.forEach(x => {
+    var temp_ips = [];
+    var temp_ips6 = [];
+    fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/data_" + x[0] + ".json.gz")
+        .then(fetch_error)
+        .then(response => response.arrayBuffer())
+        .then(text => {
+            text = window.pako.inflate(text);
+            text = new TextDecoder().decode(text);
+            var data = JSON.parse(text);
+            data['v4'].forEach(ip => {
+                temp_ips.push({
+                    "ip_prefix": ip, 
+                    "region": "",
+                    "service": "",
+                    "source": x[1], 
+                })
+            });
+            data['v6'].forEach(ip => {
+                temp_ips6.push({
+                    "ipv6_prefix": ip, 
+                    "region": "",
+                    "services": "",
+                    "source": x[1], 
+                })
+            });
+            if (other_ips === null) {
+                other_ips = [];
+            }
+            if (other_ips6 === null) {
+                other_ips6 = [];
+            }
+            other_ips = other_ips.concat(temp_ips);
+            other_ips6 = other_ips6.concat(temp_ips6);
+            done_loading();
+        })
+        .catch((error) => {
+            show_error(x[1], error);
+        });
+});
+
 function lookup(ip) {
     ip = ip.trim();
     if (ip.length == 0) {
@@ -214,11 +276,13 @@ function lookup(ip) {
                 if (aws_ips6 !== null) { todo = todo.concat(aws_ips6); }
                 if (google_ips6 !== null) { todo = todo.concat(google_ips6); }
                 if (azure_ips6 !== null) { todo = todo.concat(azure_ips6); }
+                if (other_ips6 !== null) { todo = todo.concat(other_ips6); }
                 if (private_ips6 !== null) { todo = todo.concat(private_ips6); }
             } else {
                 if (aws_ips !== null) { todo = todo.concat(aws_ips); }
                 if (google_ips !== null) { todo = todo.concat(google_ips); }
                 if (azure_ips !== null) { todo = todo.concat(azure_ips); }
+                if (other_ips !== null) { todo = todo.concat(other_ips); }
                 if (private_ips !== null) { todo = todo.concat(private_ips); }
             }
         }
