@@ -1,3 +1,4 @@
 src/*
 dist/*
 node_modules/*
+cache_*.json.gz
