@@ -80,6 +80,9 @@ function done_loading() {
             temp += String.fromCharCode(db[27+x]);
         }
         document.getElementById("last_updated").innerHTML = "Database last updated: " + temp;
+        if (location.hash.startsWith("#")) {
+            document.getElementById('ip').value = location.hash.substr(1);
+        }
         helper = function() {
             document.getElementById('results').innerHTML = lookup(document.getElementById('ip').value);
         };
@@ -115,6 +118,7 @@ fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_
 
 function lookup(ip) {
     ip = ip.trim();
+    var origIP = ip;
     if (ip.length == 0) {
         return "-";
     }
@@ -187,6 +191,7 @@ function lookup(ip) {
         ret += "Source: " + item[0] + "<br>";
         ret += "<br>";
     });
+    window.history.replaceState(null, null, "#" + origIP);
     return ret;
 }
 </script>
