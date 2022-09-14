@@ -34,6 +34,10 @@ a:hover{
     color:#a8a8f2;
     text-decoration:underline;
 }
+.note {
+    font-size: 80%;
+    color: #888;
+}
 input[type=button],input[type=submit],input[type=reset] {
     background-color: #444;
     border: none;
@@ -70,6 +74,12 @@ var left_to_load = 2;
 function done_loading() {
     left_to_load--;
     if (left_to_load == 0) {
+        var len = db[26];
+        var temp = "";
+        for (var x = 0; x < len; x++) {
+            temp += String.fromCharCode(db[27+x]);
+        }
+        document.getElementById("last_updated").innerHTML = "Database last updated: " + temp;
         helper = function() {
             document.getElementById('results').innerHTML = lookup(document.getElementById('ip').value);
         };
@@ -187,6 +197,7 @@ function lookup(ip) {
 <br><br>
 <div id="results">Loading...</div><br>
 <div id="errors"></div>
+<div id="last_updated" class="note"></div>
 <hr>
 Or, you can <a href="https://github.com/seligman/seligman.github.io/blob/master/cloud-ips/lookup_ip_address.py">download a Python version of this tool</a>.
 </body>
