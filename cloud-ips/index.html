@@ -108,18 +108,22 @@ function lookup(ip) {
     if (ip.length == 0) {
         return "-";
     }
+
     try {
         ip = ipToBits(ip);
     } catch(e) {
         return "(invalid IP)";
     }
+
     if (ip.length == 32) {
         ip = '0' + ip;
     } else {
         ip = '1' + ip;
     }
+
     var fieldSize = db[24];
-    var offset = 128*2;
+    var offset = 128 * 2;
+
     for (var i = 0; i < ip.length; i++) {
         if (ip[i] === "1") { offset += fieldSize * 2; }
         offset >>= 1;
@@ -132,14 +136,18 @@ function lookup(ip) {
             break;
         }
     }
+
     offset >>= 1;
     var val = (db[offset] << 8) | db[offset+1];
+
     if (val == 0) {
         return "(unknown IP)";
     }
+
     offset += 2;
     var item = [''];
     var items = [item];
+
     for (var x = 0; x < val; x++) {
         if (db[offset+x] == 1) {
             item = ['']
@@ -150,9 +158,16 @@ function lookup(ip) {
             item[item.length-1] += String.fromCharCode(db[offset+x]);
         }
     }
+
     var ret = '';
     items.forEach(item => {
-        ret += "Prefix: " + item[3] + "<br>";
+        var temp = cidrToIPs(item[3]);
+        ret += "Prefix: " + item[3];
+        if (temp[0] === temp[1]) {
+            ret += " <i>(" + temp[0] + ")</i><br>";
+        } else {
+            ret += " <i>(" + temp[0] + " -&gt; " + temp[1] + ")</i><br>";
+        }
         if (item[2].length > 0) {
             ret += "Region: " + item[2] + "<br>";
         }
