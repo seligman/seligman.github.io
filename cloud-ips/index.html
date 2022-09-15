@@ -74,12 +74,9 @@ var left_to_load = 2;
 function done_loading() {
     left_to_load--;
     if (left_to_load == 0) {
-        var len = db[26];
-        var temp = "";
-        for (var x = 0; x < len; x++) {
-            temp += String.fromCharCode(db[27+x]);
-        }
-        document.getElementById("last_updated").innerHTML = "Database last updated: " + temp;
+        var infoLoc = readInt(25, 8);
+        var info = decode(infoLoc)[0];
+        document.getElementById("last_updated").innerHTML = "Database last updated: " + info['built'];
         if (location.hash.startsWith("#")) {
             document.getElementById('ip').value = location.hash.substr(1);
         }
@@ -116,6 +113,52 @@ fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_
         show_error(error)
     });
 
+function decode(offset) {
+    if ((db[offset] & 3) == 1) {
+        var len = db[offset] >> 2;
+        offset++;
+        var ret = {};
+        for (var i = 0; i < len; i++) {
+            var k, v, x;
+            x = decode(offset); k = x[0]; offset = x[1];
+            x = decode(offset); v = x[0]; offset = x[1];
+            ret[k] = v;
+        }
+        return [ret, offset];
+    } else if ((db[offset] & 3) == 2) {
+        var len = db[offset] >> 2;
+        offset++;
+        var ret = [];
+        for (var i = 0; i < len; i++) {
+            var v, x;
+            x = decode(offset); v = x[0]; offset = x[1];
+            ret.push(v);
+        }
+        return [ret, offset];
+    } else {
+        var len = db[offset] >> 2;
+        offset++;
+        if (len == 63) {
+            len = readInt(offset, 2);
+            offset += 2;
+        }
+        var v = '';
+        for (x = 0; x < len; x += 1) {
+            v += String.fromCharCode(db[offset]);
+            offset++;
+        }
+        return [v, offset];
+    }
+}
+
+function readInt(offset, len) {
+    var ret = 0;
+    for (var x = 0; x < len; x++) {
+        ret = (ret << 8) | db[offset + x];
+    }
+    return ret;
+}
+
 function lookup(ip) {
     ip = ip.trim();
     var origIP = ip;
@@ -135,7 +178,8 @@ function lookup(ip) {
         ip = '1' + ip;
     }
 
-    var fieldSize = db[24];
+    var fieldSize = readInt(23, 2);
+    var infoLoc = readInt(25, 8);
     var offset = 128 * 2;
 
     for (var i = 0; i < ip.length; i++) {
@@ -152,26 +196,13 @@ function lookup(ip) {
     }
 
     offset >>= 1;
-    var val = (db[offset] << 8) | db[offset+1];
+    var items = decode(offset)[0];
 
-    if (val == 0) {
+    if (items.length == 0) {
         return "(unknown IP)";
     }
 
-    offset += 2;
-    var item = [''];
-    var items = [item];
-
-    for (var x = 0; x < val; x++) {
-        if (db[offset+x] == 1) {
-            item = ['']
-            items.push(item);
-        } else if (db[offset+x] == 0) {
-            item.push('');
-        } else {
-            item[item.length-1] += String.fromCharCode(db[offset+x]);
-        }
-    }
+    var info = decode(infoLoc)[0];
 
     var ret = '';
     items.forEach(item => {
@@ -188,7 +219,11 @@ function lookup(ip) {
         if (item[1].length > 0) {
             ret += "Service: " + item[1] + "<br>";
         }
-        ret += "Source: " + item[0] + "<br>";
+        var source = item[0];
+        if (source in info['sources']) {
+            source = info['sources'][source];
+        }
+        ret += "Source: " + source + "<br>";
         ret += "<br>";
     });
     window.history.replaceState(null, null, "#" + origIP);
