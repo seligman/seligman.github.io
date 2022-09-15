@@ -8,8 +8,9 @@ var Address6 = require('ip-address').Address6;
 ipToString = function(ip, v6) {
     if (v6) {
         ip = ip.address;
+        ip = ip.split(':').map(x => x.replace(/^0+(.+?)$/,'$1')).join(':');
         ip = ip.replace(/\b:?(?:0+:?){2,}/, '::');
-        return ip.split(':').map(x => x.replace(/^0+(.)$/, '$1')).join(':');
+        return ip;
     } else {
         return ip.address;
     }

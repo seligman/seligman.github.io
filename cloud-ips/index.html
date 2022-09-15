@@ -69,14 +69,14 @@ input[type="text"],input[type="number"],textarea:focus {
 <script src="cidr_helper.min.js"></script>
 <script>
 var db = null;
-var left_to_load = 2;
+var leftToLoad = 2;
 
-function done_loading() {
-    left_to_load--;
-    if (left_to_load == 0) {
+function doneLoading() {
+    leftToLoad--;
+    if (leftToLoad == 0) {
         var infoLoc = readInt(25, 8);
         var info = decode(infoLoc)[0];
-        document.getElementById("last_updated").innerHTML = "Database last updated: " + info['built'];
+        document.getElementById("lastUpdated").innerHTML = "Database last updated: " + info['built'];
         if (location.hash.startsWith("#")) {
             document.getElementById('ip').value = location.hash.substr(1);
         }
@@ -88,29 +88,27 @@ function done_loading() {
     }
 }
 
-function fetch_error(response) {
-    if (!response.ok) {
-        throw Error(response.status + " (" + response.statusText + ")");
-    }
+function fetchError(response) {
+    if (!response.ok) { throw Error(response.status + " (" + response.statusText + ")"); }
     return response;
 }
 
-function show_error(error) {
+function showError(error) {
     document.getElementById("errors").innerHTML += "ERROR: Unable to load database: " + error.message + "<br>"
-    done_loading();
+    doneLoading();
 }
 
 fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat")
-    .then(fetch_error)
+    .then(fetchError)
     .then(response => response.blob())
     .then(blob => blob.arrayBuffer())
     .then(buffer => {
         db = new Uint8Array(buffer);
-        done_loading();
+        doneLoading();
     })
     .catch((error) => {
         db = null;
-        show_error(error)
+        showError(error)
     });
 
 function decode(offset) {
@@ -172,11 +170,7 @@ function lookup(ip) {
         return "(invalid IP)";
     }
 
-    if (ip.length == 32) {
-        ip = '0' + ip;
-    } else {
-        ip = '1' + ip;
-    }
+    ip = (ip.length == 32 ? '0' : '1') + ip;
 
     var fieldSize = readInt(23, 2);
     var infoLoc = readInt(25, 8);
@@ -231,13 +225,13 @@ function lookup(ip) {
 }
 </script>
 </head>
-<body onload="done_loading()">
+<body onload="doneLoading()">
 <p>Enter an IP to lookup which service it comes from:</p>
 <input type="text" size="40" id="ip" autocomplete="off" autocorrect="off">
 <br><br>
 <div id="results">Loading...</div><br>
 <div id="errors"></div>
-<div id="last_updated" class="note"></div>
+<div id="lastUpdated" class="note"></div>
 <hr>
 Or, you can <a href="https://github.com/seligman/seligman.github.io/blob/master/cloud-ips/lookup_ip_address.py">download a Python version of this tool</a>.
 </body>
