@@ -8,28 +8,38 @@
 from urllib.request import urlopen
 import json
 import os
+import re
 import socket
 import struct
 import sys
+from datetime import datetime, timedelta
 
 # Helper to download a copy of the database and save a local cached copy
 def cache():
     url = "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat"
     fn = "lookup_ip_address.dat"
+
+    # If the local copy is older than two weeks, pull down a fresh copy
+    max_age = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
+
     if os.path.isfile(fn):
-        return open(fn, "rb")
-    else:
-        # Pull down the raw data
-        # Output a status message as a JSON object so consumers can easily ignore it
-        print(json.dumps({"info": f"Downloading cached cloud database from {url}"}))
-        with urlopen(url) as f_src:
-            with open(fn, "wb") as f_dest:
-                while True:
-                    data = f_src.read(1048576)
-                    if len(data) == 0:
-                        break
-                    f_dest.write(data)
-        return open(fn, "rb")
+        f = open(fn, "rb")
+        info = lookup_ip(f, "info")
+        if info['built'] >= max_age:
+            return f
+        f.close()
+
+    # Pull down the raw data
+    # Output a status message as a JSON object so consumers can easily ignore it
+    print(json.dumps({"info": f"Downloading cached cloud database from {url}"}))
+    with urlopen(url) as f_src:
+        with open(fn, "wb") as f_dest:
+            while True:
+                data = f_src.read(1048576)
+                if len(data) == 0:
+                    break
+                f_dest.write(data)
+    return open(fn, "rb")
 
 def lookup_ip(db_file, ip):
     # Lookup an IP
@@ -151,6 +161,9 @@ def main():
         print(json.dumps({"info": f"Database last built {info['built']}"}))
 
         for ip in sys.argv[1:]:
+            # If something doesn't look like an IP, treat it as a FQDN and lookup the IP
+            if not re.match("^([0-9.]+|[0-9a-f:]+)$", ip):
+                ip = socket.gethostbyname(ip)
             data = lookup_ip(f, ip)
             if len(data) == 0:
                 # Show that there's no IP, so we output something
