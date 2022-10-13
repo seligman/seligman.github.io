@@ -32,7 +32,7 @@ def read_cache_local():
 
     # Pull down the raw data
     # Output a status message as a JSON object so consumers can easily ignore it
-    print(json.dumps({"info": f"Downloading cached cloud database from {url}"}))
+    print(json.dumps({"info": f"Downloading cached cloud database from {CLOUD_URL}"}))
     with urlopen(CLOUD_URL) as f_src:
         with open(fn, "wb") as f_dest:
             while True:
