@@ -5,7 +5,7 @@
 # For a online version of this tool, please see
 #   https://seligman.github.io/cloud-ips/
 
-from urllib.request import urlopen
+from urllib.request import urlopen, Request
 import json
 import os
 import re
@@ -14,11 +14,12 @@ import struct
 import sys
 from datetime import datetime, timedelta
 
-# Helper to download a copy of the database and save a local cached copy
-def cache():
-    url = "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat"
-    fn = "lookup_ip_address.dat"
+# The URL of the data file
+CLOUD_URL = "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat"
 
+# Helper to download a copy of the database and save a local cached copy
+def read_cache_local():
+    fn = "lookup_ip_address.dat"
     # If the local copy is older than two weeks, pull down a fresh copy
     max_age = (datetime.utcnow() - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -32,7 +33,7 @@ def cache():
     # Pull down the raw data
     # Output a status message as a JSON object so consumers can easily ignore it
     print(json.dumps({"info": f"Downloading cached cloud database from {url}"}))
-    with urlopen(url) as f_src:
+    with urlopen(CLOUD_URL) as f_src:
         with open(fn, "wb") as f_dest:
             while True:
                 data = f_src.read(1048576)
@@ -40,6 +41,49 @@ def cache():
                     break
                 f_dest.write(data)
     return open(fn, "rb")
+
+# Helper to cache requests to a remote webserver
+class read_cache_remote:
+    def __init__(self):
+        # Keep track of the current position
+        self.offset = 0
+        # And read half a megabyte at a time
+        self.chunk_size = 524288
+        self.buffers = {}
+
+    def __enter__(self):
+        # Nothing to do
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        # Nothing to close when we're done
+        pass
+
+    def seek(self, offset):
+        # Move the offset location
+        self.offset = offset
+
+    def read(self, count):
+        # Pull out the requested bytes
+        offset = self.offset
+        self.offset += count
+
+        ret = b''
+        while len(ret) < count:
+            # Find the next chunk we need, read it if we haven't already, and get
+            # the bytes out of it
+            chunk = offset // self.chunk_size
+            if chunk not in self.buffers:
+                resp = urlopen(Request(CLOUD_URL, headers={
+                    "Range": f"bytes={self.chunk_size * chunk}-{self.chunk_size * (chunk + 1) - 1}"
+                }))
+                self.buffers[chunk] = resp.read()
+            temp = self.buffers[chunk][offset % self.chunk_size:offset % self.chunk_size+count]
+            count -= len(temp)
+            offset += len(temp)
+            ret += temp
+
+        return ret
 
 def lookup_ip(db_file, ip):
     # Lookup an IP
@@ -155,7 +199,7 @@ def main():
         print("Need to specify IP to lookup")
         exit(1)
     
-    with cache() as f:
+    with read_cache_remote() as f:
         # Show the build date of the database
         info = lookup_ip(f, "info")
         print(json.dumps({"info": f"Database last built {info['built']}"}))
