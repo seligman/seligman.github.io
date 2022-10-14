@@ -75,20 +75,43 @@ async function getInfo() {
     return "Database last updated: " + info['built'];
 }
 
+var isLoading = false;
+function loading(msg) {
+    if (isLoading) {
+        return false;
+    }
+    document.getElementById('results').innerHTML = msg;
+    isLoading = true;
+    return true;
+}
+
 document.addEventListener("DOMContentLoaded", function(event) {
     if (location.hash.startsWith("#")) {
         document.getElementById('ip').value = location.hash.substr(1);
     }
     document.getElementById('ip').oninput = function() {
-        document.getElementById('results').innerHTML = "Loading...";
-        lookup(document.getElementById('ip').value).then(result => {
-            document.getElementById('results').innerHTML = result;
-        })
+        if (loading("Loading...")) {
+            var val = document.getElementById('ip').value;
+            lookup(val).then(result => {
+                document.getElementById('results').innerHTML = result[0];
+                if (result[1]) {
+                    window.history.replaceState(null, null, "#" + val);
+                } else {
+                    window.history.replaceState(null, null, '#');
+                }
+                isLoading = false;
+                if (document.getElementById('ip').value != val) {
+                    document.getElementById('ip').oninput();
+                }
+            })
+        }
     };
-    document.getElementById('ip').oninput();
-
+    loading("Initializing...");
     getInfo().then(info => {
         document.getElementById("lastUpdated").innerHTML = info;
+        var val = document.getElementById('ip').value;
+        isLoading = false;
+        document.getElementById('ip').oninput();
     });
 });
 
@@ -169,15 +192,14 @@ async function readInt(offset, len) {
 
 async function lookup(ip) {
     ip = ip.trim();
-    var origIP = ip;
     if (ip.length == 0) {
-        return "-";
+        return ["-", false];
     }
 
     try {
         ip = ipToBits(ip);
     } catch(e) {
-        return "(invalid IP)";
+        return ["(invalid IP)", false];
     }
 
     ip = (ip.length == 32 ? '0' : '1') + ip;
@@ -203,7 +225,7 @@ async function lookup(ip) {
     var items = (await decode(offset))[0];
 
     if (items.length == 0) {
-        return "(unknown IP)";
+        return ["(unknown IP)", true];
     }
 
     var info = (await decode(infoLoc))[0];
@@ -230,8 +252,7 @@ async function lookup(ip) {
         ret += "Source: " + source + "<br>";
         ret += "<br>";
     });
-    window.history.replaceState(null, null, "#" + origIP);
-    return ret;
+    return [ret, true];
 }
 </script>
 </head>
