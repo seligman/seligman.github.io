@@ -68,96 +68,96 @@ input[type="text"],input[type="number"],textarea:focus {
 </style>
 <script src="cidr_helper.min.js"></script>
 <script>
-var db = null;
-var leftToLoad = 2;
 
-function doneLoading() {
-    leftToLoad--;
-    if (leftToLoad == 0) {
-        var infoLoc = readInt(25, 8);
-        var info = decode(infoLoc)[0];
-        document.getElementById("lastUpdated").innerHTML = "Database last updated: " + info['built'];
-        if (location.hash.startsWith("#")) {
-            document.getElementById('ip').value = location.hash.substr(1);
-        }
-        helper = function() {
-            document.getElementById('results').innerHTML = lookup(document.getElementById('ip').value);
-        };
-        document.getElementById('ip').oninput = helper;
-        helper();
+async function getInfo() {
+    var infoLoc = await readInt(25, 8);
+    var info = (await decode(infoLoc))[0];
+    return "Database last updated: " + info['built'];
+}
+
+document.addEventListener("DOMContentLoaded", function(event) {
+    if (location.hash.startsWith("#")) {
+        document.getElementById('ip').value = location.hash.substr(1);
     }
-}
+    document.getElementById('ip').oninput = function() {
+        lookup(document.getElementById('ip').value).then(result => {
+            document.getElementById('results').innerHTML = result;
+        })
+    };
+    document.getElementById('ip').oninput();
 
-function fetchError(response) {
-    if (!response.ok) { throw Error(response.status + " (" + response.statusText + ")"); }
-    return response;
-}
-
-function showError(error) {
-    document.getElementById("errors").innerHTML += "ERROR: Unable to load database: " + error.message + "<br>"
-    doneLoading();
-}
-
-fetch("https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat")
-    .then(fetchError)
-    .then(response => response.blob())
-    .then(blob => blob.arrayBuffer())
-    .then(buffer => {
-        db = new Uint8Array(buffer);
-        doneLoading();
-    })
-    .catch((error) => {
-        db = null;
-        showError(error)
+    getInfo().then(info => {
+        document.getElementById("lastUpdated").innerHTML = info;
     });
+});
 
-function decode(offset) {
-    if ((db[offset] & 3) == 1) {
-        var len = db[offset] >> 2;
+var chunks = [];
+async function read(offset) {
+    var chunkSize = 32768;
+    var chunk = Math.floor(offset / chunkSize);
+    if (chunks[chunk] === undefined) {
+        var resp = await fetch(
+            "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat",
+            {
+                headers: {
+                    'range': 'bytes=' + (chunk * chunkSize) + '-' + ((chunk + 1) * chunkSize - 1),
+                },
+            }
+        );
+        var blob = await resp.blob();
+        var buffer = await blob.arrayBuffer();
+        chunks[chunk] = new Uint8Array(buffer);
+    }
+    return chunks[chunk][offset % chunkSize];
+}
+
+async function decode(offset) {
+    if ((await read(offset) & 3) == 1) {
+        var len = await read(offset) >> 2;
         offset++;
         var ret = {};
         for (var i = 0; i < len; i++) {
             var k, v, x;
-            x = decode(offset); k = x[0]; offset = x[1];
-            x = decode(offset); v = x[0]; offset = x[1];
+            x = await decode(offset); k = x[0]; offset = x[1];
+            x = await decode(offset); v = x[0]; offset = x[1];
             ret[k] = v;
         }
         return [ret, offset];
-    } else if ((db[offset] & 3) == 2) {
-        var len = db[offset] >> 2;
+    } else if ((await read(offset) & 3) == 2) {
+        var len = await read(offset) >> 2;
         offset++;
         var ret = [];
         for (var i = 0; i < len; i++) {
             var v, x;
-            x = decode(offset); v = x[0]; offset = x[1];
+            x = await decode(offset); v = x[0]; offset = x[1];
             ret.push(v);
         }
         return [ret, offset];
     } else {
-        var len = db[offset] >> 2;
+        var len = await read(offset) >> 2;
         offset++;
         if (len == 63) {
-            len = readInt(offset, 2);
+            len = await readInt(offset, 2);
             offset += 2;
         }
         var v = '';
         for (x = 0; x < len; x += 1) {
-            v += String.fromCharCode(db[offset]);
+            v += String.fromCharCode(await read(offset));
             offset++;
         }
         return [v, offset];
     }
 }
 
-function readInt(offset, len) {
+async function readInt(offset, len) {
     var ret = 0;
     for (var x = 0; x < len; x++) {
-        ret = (ret << 8) | db[offset + x];
+        ret = (ret << 8) | await read(offset + x);
     }
     return ret;
 }
 
-function lookup(ip) {
+async function lookup(ip) {
     ip = ip.trim();
     var origIP = ip;
     if (ip.length == 0) {
@@ -172,8 +172,8 @@ function lookup(ip) {
 
     ip = (ip.length == 32 ? '0' : '1') + ip;
 
-    var fieldSize = readInt(23, 2);
-    var infoLoc = readInt(25, 8);
+    var fieldSize = await readInt(23, 2);
+    var infoLoc = await readInt(25, 8);
     var offset = 128 * 2;
 
     for (var i = 0; i < ip.length; i++) {
@@ -181,7 +181,7 @@ function lookup(ip) {
         offset >>= 1;
         var val = 0;
         for (var x = 0; x < fieldSize; x++) {
-            val = (val << 8) | db[offset+x];
+            val = (val << 8) | await read(offset+x);
         }
         offset = val;
         if ((offset % 2) == 1) {
@@ -190,13 +190,13 @@ function lookup(ip) {
     }
 
     offset >>= 1;
-    var items = decode(offset)[0];
+    var items = (await decode(offset))[0];
 
     if (items.length == 0) {
         return "(unknown IP)";
     }
 
-    var info = decode(infoLoc)[0];
+    var info = (await decode(infoLoc))[0];
 
     var ret = '';
     items.forEach(item => {
@@ -225,11 +225,11 @@ function lookup(ip) {
 }
 </script>
 </head>
-<body onload="doneLoading()">
+<body>
 <p>Enter an IP to lookup which service it comes from:</p>
 <input type="text" size="40" id="ip" autocomplete="off" autocorrect="off">
 <br><br>
-<div id="results">Loading...</div><br>
+<div id="results"></div><br>
 <div id="errors"></div>
 <div id="lastUpdated" class="note"></div>
 <hr>
