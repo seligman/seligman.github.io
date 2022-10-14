@@ -93,18 +93,27 @@ document.addEventListener("DOMContentLoaded", function(event) {
 });
 
 var chunks = [];
+var allData = null;
 async function read(offset) {
+    if (allData !== null) {
+        return allData[offset];
+    }
     var chunkSize = 32768;
     var chunk = Math.floor(offset / chunkSize);
     if (chunks[chunk] === undefined) {
-        var resp = await fetch(
-            "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat",
-            {
-                headers: {
-                    'range': 'bytes=' + (chunk * chunkSize) + '-' + ((chunk + 1) * chunkSize - 1),
-                },
-            }
-        );
+        var url = "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat";
+        try {
+            var resp = await fetch(
+                url,
+                {headers: {'Range': 'bytes=' + (chunk * chunkSize) + '-' + ((chunk + 1) * chunkSize - 1)}}
+            );
+        } catch (e) {
+            var resp = await fetch(url);
+            var blob = await resp.blob();
+            var buffer = await blob.arrayBuffer();
+            allData = new Uint8Array(buffer);
+            return allData[offset];
+        }
         var blob = await resp.blob();
         var buffer = await blob.arrayBuffer();
         chunks[chunk] = new Uint8Array(buffer);
