@@ -80,6 +80,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         document.getElementById('ip').value = location.hash.substr(1);
     }
     document.getElementById('ip').oninput = function() {
+        document.getElementById('results').innerHTML = "Loading...";
         lookup(document.getElementById('ip').value).then(result => {
             document.getElementById('results').innerHTML = result;
         })
