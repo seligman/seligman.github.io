@@ -124,11 +124,12 @@ async function read(offset) {
     var chunkSize = 32768;
     var chunk = Math.floor(offset / chunkSize);
     if (chunks[chunk] === undefined) {
-        var url = "https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat";
+        /* This is a local mirror of https://raw.githubusercontent.com/seligman/cloud_sizes/master/data/cloud_db.dat */
+        var url = "cloud_db.dat";
         try {
             var resp = await fetch(
                 url,
-                {headers: {'Range': 'bytes=' + (chunk * chunkSize) + '-' + ((chunk + 1) * chunkSize - 1)}}
+                {headers: {'range': 'bytes=' + (chunk * chunkSize) + '-' + ((chunk + 1) * chunkSize - 1)}}
             );
         } catch (e) {
             var resp = await fetch(url);
@@ -139,7 +140,12 @@ async function read(offset) {
         }
         var blob = await resp.blob();
         var buffer = await blob.arrayBuffer();
-        chunks[chunk] = new Uint8Array(buffer);
+        var temp = new Uint8Array(buffer);
+        if (temp.length > chunkSize) {
+            allData = temp;
+            return allData[offset]
+        }
+        chunks[chunk] = temp;
     }
     return chunks[chunk][offset % chunkSize];
 }
