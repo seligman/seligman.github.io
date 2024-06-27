@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+# This example shows how to pull down the data to search all transcripts
+# for this podcast.
+
+# Please see https://seligman.github.io/podcasts/sgu/sgu.html to search online.
+
 from urllib.request import Request, urlopen
 import gzip, json, os, sys, textwrap
 
