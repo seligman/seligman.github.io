@@ -8,12 +8,12 @@
 from urllib.request import Request, urlopen
 import gzip, json, os, sys, textwrap
 
-def download_data(num, start, len, is_gzip=True, get_size=False, decode_json=True):
+def download_data(num, start, len, is_gzip=True, get_size=False, decode_json=True, ignore_cache=False):
     # Helper to download data, will use cached version if possible
     url = f"https://seligman.github.io/podcasts/sgu/search_data_{num:02d}.dat"
     fn = f"search_data_{num:02d}.dat"
 
-    if os.path.isfile(fn):
+    if os.path.isfile(fn) and not ignore_cache:
         # Use the cached version
         if get_size:
             return os.path.getsize(fn)
@@ -52,15 +52,15 @@ def download_all():
     # Helper to download all data
 
     # Get the meta data
-    info = download_data(0, 0, 100, is_gzip=False)
-    batches = download_data(*info['data'])
+    info = download_data(0, 0, 100, is_gzip=False, ignore_cache=True)
+    batches = download_data(*info['data'], ignore_cache=True)
 
     # Run through and get the total size so the user has some idea how much work is ahead of us
     total_size = 0
     total_files = 0
     batches.insert(0, [0,0,0])
     for cur in batches:
-        total_size += download_data(*cur, get_size=True)
+        total_size += download_data(*cur, get_size=True, ignore_cache=True)
         total_files += 1
     
     # Ask the user if they're ok with downloading all the data
@@ -69,7 +69,7 @@ def download_all():
         for cur in batches:
             fn = f"search_data_{cur[0]:02d}.dat"
             print(f"Downloading {fn}...")
-            data = download_data(cur[0], None, None, is_gzip=False, decode_json=False)
+            data = download_data(cur[0], None, None, is_gzip=False, decode_json=False, ignore_cache=True)
             with open(fn, "wb") as f:
                 f.write(data)
         print("Done")
@@ -135,7 +135,7 @@ def create_helpers(cur):
     # And mark this item as fixed up:
     cur['fixed'] = True
 
-def show_transcript(cur, start_at, end_at):
+def show_transcript(cur, start_at, end_at, output=print):
     # Show a transcript, from one word to the end word
     phrase = None
     ended_sentence = False
@@ -169,8 +169,8 @@ def show_transcript(cur, start_at, end_at):
             if phrase is not None:
                 # Show the last phrase
                 for row in textwrap.wrap(phrase, subsequent_indent=" " * 10):
-                    print(row)
-                print("")
+                    output(row)
+                output("")
 
             # Store where this phrase starts
             phrase_at = cur['start'][word]
@@ -192,7 +192,7 @@ def show_transcript(cur, start_at, end_at):
     if phrase is not None:
         # Finally, show the final phrase
         for row in textwrap.wrap(phrase, subsequent_indent=" " * 10):
-            print(row)
+            output(row)
 
 def search_transcripts(*search):
     # Treat multiple words as one long string
@@ -239,6 +239,43 @@ def dump_episode(num):
             show_transcript(cur, 0, len(cur['start']))
             exit(0)
 
+def dump_all_episodes(dir_name):
+    # Just dump all the episodes
+    if not os.path.isdir(dir_name):
+        print(f"ERROR: {dir_name} does not exist")
+        exit(1)
+
+    for i, cur in enumerate(enumerate_items()):
+        # Normalize the data
+        create_helpers(cur)
+
+        print(f"Working on {i+1}:{cur['title']}...")
+
+        # Write out a text version of the transcript:
+        with open(os.path.join(dir_name, f"ep_{i + 1:04d}.txt"), "wt", newline="", encoding="utf-8") as f:
+            def write_line(val):
+                f.write(val + "\n")
+            write_line(f"Title: {cur['title']}")
+            write_line(f"Published: {cur['published']}")
+            write_line(f"Link: {cur['link']}")
+            write_line("")
+
+            show_transcript(cur, 0, len(cur['speaker']), write_line)
+
+        # Clean up the data to prepare it to be dumped:
+        del cur['index_to_word']
+        del cur['fixed']
+        del cur['offset']
+
+        cur['speaker'] = [(ord(x) - ord('A')) for x in cur['speaker']]
+        cur['words'] = cur['words'].split(' ')
+
+        with open(os.path.join(dir_name, f"ep_{i + 1:04d}.json"), "wt", newline="", encoding="utf-8") as f:
+            json.dump(cur, f, indent=4, sort_keys=True)
+            f.write("\n")
+
+    print("All done.")
+
 def main():
     # Dirt simple TUI
     cmds = [
@@ -246,6 +283,7 @@ def main():
         ("dl", download_all, " = Download all data to speed up searches."),
         ("dump", dump_episode, " <num> = Dump the complete transcript for an episode"),
         ("list", list_episodes, " = List all episodes"),
+        ("dump_all", dump_all_episodes, " <dir_name> = Dump all episodes to text and JSON files"),
     ]
 
     if len(sys.argv) >= 2:
