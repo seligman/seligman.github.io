@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+
+from urllib.request import Request, urlopen
+import gzip, json, os, sys, textwrap
+
+def download_data(num, start, len, is_gzip=True, get_size=False, decode_json=True):
+    # Helper to download data, will use cached version if possible
+    url = f"https://seligman.github.io/podcasts/sgu/search_data_{num:02d}.dat"
+    fn = f"search_data_{num:02d}.dat"
+
+    if os.path.isfile(fn):
+        # Use the cached version
+        if get_size:
+            return os.path.getsize(fn)
+        else:
+            with open(fn, "rb") as f:
+                if start is None:
+                    data = f.read()
+                else:
+                    f.seek(start, os.SEEK_SET)
+                    data = f.read(len)
+    else:
+        if get_size:
+            # Just a request to get the size, so go get the size
+            req = Request(url, method="HEAD")
+            resp = urlopen(req)
+            return int(resp.headers['Content-Length'])
+        else:
+            if start is None:
+                # Request for the full data
+                req = Request(url)
+            else:
+                # Partial request, use byte range request to get the partial data
+                req = Request(url, headers={"Range": f"bytes={start}-{start+len-1}"})
+            data = urlopen(req).read()
+
+    if is_gzip:
+        # Data is compressed, decompres it
+        data = gzip.decompress(data)
+    if decode_json:
+        # Data is JSON encoded, decode it
+        data = json.loads(data)
+
+    return data
+
+def download_all():
+    # Helper to download all data
+
+    # Get the meta data
+    info = download_data(0, 0, 100, is_gzip=False)
+    batches = download_data(*info['data'])
+
+    # Run through and get the total size so the user has some idea how much work is ahead of us
+    total_size = 0
+    total_files = 0
+    batches.insert(0, [0,0,0])
+    for cur in batches:
+        total_size += download_data(*cur, get_size=True)
+        total_files += 1
+    
+    # Ask the user if they're ok with downloading all the data
+    yn = input(f"This will download {total_files:,} files for about {total_size/1048576:.2f}mb, are you sure? [y/(n)] ")
+    if yn == "y":
+        for cur in batches:
+            fn = f"search_data_{cur[0]:02d}.dat"
+            print(f"Downloading {fn}...")
+            data = download_data(cur[0], None, None, is_gzip=False, decode_json=False)
+            with open(fn, "wb") as f:
+                f.write(data)
+        print("Done")
+
+def enumerate_items():
+    # Helper to download (or use cached data) all items and yield
+    # each one in turn
+    info = download_data(0, 0, 100, is_gzip=False)
+    batches = download_data(*info['data'])
+    for cur in batches:
+        info = download_data(*cur)
+        for item in info:
+            yield item
+
+def enumerate_hits(words, search_term):
+    # Helper to show each hit in a string.  This is just an example of how
+    # the search can work, more complex searches are possible
+    words = words.lower()
+    search_term = search_term.lower()
+    start_at = -1
+    while True:
+        try:
+            hit = words.index(search_term, start_at+1)
+        except ValueError:
+            break
+        yield hit
+        start_at = hit
+
+def create_helpers(cur):
+    # Some lookup tables are useful when displaying data, so
+    # create the lookup tables in each item based on existing
+    # data
+
+    if cur.get('fixed', False):
+        # They've already been created, nothing to do
+        return
+
+    # First, make 'start' start by time
+    temp = []
+    last = 0
+    for x in cur['start']:
+        last += x
+        temp.append(last)
+    cur['start'] = temp
+
+    # Make a lookup to map offset to word number
+    temp = []
+    word_num = 0
+    for x in cur['words']:
+        temp.append(word_num)
+        if x == ' ':
+            word_num += 1
+    cur['index_to_word'] = temp
+
+    # And an offset table
+    temp = []
+    offset = 0
+    for word in cur['words'].split(' '):
+        temp.append((offset, len(word)))
+        offset += len(word) + 1
+    cur['offset'] = temp
+
+    # And mark this item as fixed up:
+    cur['fixed'] = True
+
+def show_transcript(cur, start_at, end_at):
+    # Show a transcript, from one word to the end word
+    phrase = None
+    ended_sentence = False
+    last_speaker = ''
+    phrase_at = -1
+
+    for word in range(start_at, end_at):
+        offset, word_len = cur['offset'][word]
+        cur_speaker = cur['speaker'][word]
+
+        # Do we need to start a new phrase?        
+        new_phrase = False
+        if phrase is None:
+            # First time through, start a new phrase
+            new_phrase = True
+        if ended_sentence:
+            # Otherwise, only start one after a sentence ends
+            if last_speaker != cur_speaker:
+                # If the speaker changed
+                new_phrase = True
+            if (cur['start'][word] - phrase_at) >= 45:
+                # Or, it's been more than 45 seconds
+                new_phrase = True
+        else:
+            if cur['start'][word] - phrase_at >= 120:
+                # Or, after two minutes, just start a phrase even in the middle of
+                # a sentence
+                new_phrase = True
+        
+        if new_phrase:
+            if phrase is not None:
+                # Show the last phrase
+                for row in textwrap.wrap(phrase, subsequent_indent=" " * 10):
+                    print(row)
+                print("")
+
+            # Store where this phrase starts
+            phrase_at = cur['start'][word]
+            # Show the timestamp
+            phrase = f"{phrase_at//3600:2d}:{(phrase_at%3600)//60:02d}:{phrase_at%60:02d}:"
+
+            # The speaker changed, show that
+            if last_speaker != cur_speaker:
+                if cur_speaker != "@":
+                    phrase += f" {cur_speaker}:"
+                last_speaker = cur_speaker
+
+        # Add the word to this phrase        
+        phrase += " " + cur['words'][offset:offset+word_len]
+
+        # And note if this phrase now marks the end of a sentence
+        ended_sentence = phrase[-1] in ".?!"
+
+    if phrase is not None:
+        # Finally, show the final phrase
+        for row in textwrap.wrap(phrase, subsequent_indent=" " * 10):
+            print(row)
+
+def search_transcripts(*search):
+    # Treat multiple words as one long string
+    search = " ".join(search)
+
+    for cur in enumerate_items():
+        # This will return items like:
+        # {
+        #     'published': 'yyyy-mm-dd',    # The date this episode was published
+        #     'title': 'Episode Title',     # The episode title
+        #     'link': '<url>',              # The URL to the story
+        #     'words': "The raw text",      # The complete transcript, splitting this by a space yields the list of words
+        #     'start': [14, 1, 0, 0, 1, 0], # Where each word starts by time
+        #                                   # This is cumulative number of seconds
+        #     'speaker': 'AAABBBCCDDD@@@',  # One char per word for each speaker.
+        #                                   # "A" == Speaker 1, etc.  "@" == No known speaker
+        # }
+
+        for i, hit in enumerate(enumerate_hits(cur['words'], search)):
+            if i == 0:
+                # Ok, we have a match, make some helpers to speed lookups
+                create_helpers(cur)
+
+                # Show a header:
+                print("")
+                print("Title: " + cur['title'])
+
+            # Show each match
+            print("")
+            word_num = cur['index_to_word'][hit]
+            show_transcript(cur, max(0, word_num - 10), min(len(cur['offset']), word_num + 10))
+
+def list_episodes():
+    # Just dump out a list of all episodes
+    for i, cur in enumerate(enumerate_items()):
+        print(f"{i+1}: {cur['title']}")
+
+def dump_episode(num):
+    num = int(num) - 1
+    # Just enumerate through the episodes till we hit the target number
+    for i, cur in enumerate(enumerate_items()):
+        if i == num:
+            create_helpers(cur)
+            show_transcript(cur, 0, len(cur['start']))
+            exit(0)
+
+def main():
+    # Dirt simple TUI
+    cmds = [
+        ("search", search_transcripts, " <search> = Search all transcripts."),
+        ("dl", download_all, " = Download all data to speed up searches."),
+        ("dump", dump_episode, " <num> = Dump the complete transcript for an episode"),
+        ("list", list_episodes, " = List all episodes"),
+    ]
+
+    if len(sys.argv) >= 2:
+        for cmd, func, desc in cmds:
+            if cmd == sys.argv[1]:
+                func(*sys.argv[2:])
+                exit(0)
+
+    print("Usage:")
+    for cmd, func, desc in cmds:
+        print(f"  {cmd}{desc}")
+
+if __name__ == "__main__":
+    main()
+
