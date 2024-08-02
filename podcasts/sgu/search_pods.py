@@ -8,6 +8,16 @@
 from urllib.request import Request, urlopen
 import gzip, json, os, sys, textwrap
 
+# Simple wrapper for command line parsing
+_commands = []
+def cmd(cmd, args, desc):
+    def helper(func):
+        _commands.append({"cmd": cmd, "args": args, "desc": desc, "func": func})
+        def wrapper(*args2, **kwargs):
+            return func(*args2, **kwargs)
+        return wrapper
+    return helper
+
 def download_data(num, start, len, is_gzip=True, get_size=False, decode_json=True, ignore_cache=False):
     # Helper to download data, will use cached version if possible
     url = f"https://seligman.github.io/podcasts/sgu/search_data_{num:02d}.dat"
@@ -48,6 +58,7 @@ def download_data(num, start, len, is_gzip=True, get_size=False, decode_json=Tru
 
     return data
 
+@cmd("dl", 0, "= Download all data to speed up searches.")
 def download_all():
     # Helper to download all data
 
@@ -194,6 +205,7 @@ def show_transcript(cur, start_at, end_at, output=print):
         for row in textwrap.wrap(phrase, subsequent_indent=" " * 10):
             output(row)
 
+@cmd("search", 1, "<search> = Search all transcripts.")
 def search_transcripts(*search):
     # Treat multiple words as one long string
     search = " ".join(search)
@@ -225,11 +237,13 @@ def search_transcripts(*search):
             word_num = cur['index_to_word'][hit]
             show_transcript(cur, max(0, word_num - 10), min(len(cur['offset']), word_num + 10))
 
+@cmd("list", 0, "= List all episodes")
 def list_episodes():
     # Just dump out a list of all episodes
     for i, cur in enumerate(enumerate_items()):
         print(f"{i+1}: {cur['title']}")
 
+@cmd("dump", 1, "<num> = Dump the complete transcript for an episode")
 def dump_episode(num):
     num = int(num) - 1
     # Just enumerate through the episodes till we hit the target number
@@ -239,6 +253,7 @@ def dump_episode(num):
             show_transcript(cur, 0, len(cur['start']))
             exit(0)
 
+@cmd("dump_all", 1, "<dir_name> = Dump all episodes to text and JSON files")
 def dump_all_episodes(dir_name):
     # Just dump all the episodes
     if not os.path.isdir(dir_name):
@@ -278,24 +293,13 @@ def dump_all_episodes(dir_name):
 
 def main():
     # Dirt simple TUI
-    cmds = [
-        ("search", search_transcripts, " <search> = Search all transcripts."),
-        ("dl", download_all, " = Download all data to speed up searches."),
-        ("dump", dump_episode, " <num> = Dump the complete transcript for an episode"),
-        ("list", list_episodes, " = List all episodes"),
-        ("dump_all", dump_all_episodes, " <dir_name> = Dump all episodes to text and JSON files"),
-    ]
-
-    if len(sys.argv) >= 2:
-        for cmd, func, desc in cmds:
-            if cmd == sys.argv[1]:
-                func(*sys.argv[2:])
-                exit(0)
-
+    for cur in _commands:
+        if len(sys.argv) == cur['args'] + 2 and sys.argv[1] == cur['cmd']:
+            cur['func'](*sys.argv[2:])
+            exit(0)
     print("Usage:")
-    for cmd, func, desc in cmds:
-        print(f"  {cmd}{desc}")
+    for cur in sorted(_commands, key=lambda x: x['cmd']):
+        print(f"  {cur['cmd']} {cur['desc']}")
 
 if __name__ == "__main__":
     main()
-
