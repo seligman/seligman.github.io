@@ -20,10 +20,12 @@ Some simple webpages for different projects I'm playing with:
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-09-24 16:36:54 with 424 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-10-09 15:20:17 with 978 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2024-10-10 13:16:38 with 608 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-10-12 23:16:13 with 1,397 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-10-13 15:45:56 with 1,398 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-09-23 21:53:52 with 921 items
-* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-10-06 15:35:08 with 146 items
-<!-- Podcasts End -->Some Podcast to Text examples:
+* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-10-13 15:45:59 with 147 items
+<!-- Podcasts End -->
+
+Some Podcast to Text examples:
 * [AWS Transcribe](https://seligman.github.io/podcast_to_text/Example-Results-AWS-Transcribe.html)
 * [OpenAI](https://seligman.github.io/podcast_to_text/Example-Results-OpenAI.html)
 * [Whisper (Large Model)](https://seligman.github.io/podcast_to_text/Example-Results-Whisper-Large.html)
