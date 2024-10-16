@@ -15,7 +15,7 @@ Podcast Search Pages:
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-10-11 13:29:20 with 361 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-10-15 17:16:56 with 2,385 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2024-10-14 14:35:03 with 345 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-10-11 15:19:15 with 671 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-10-16 14:28:38 with 672 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-10-15 13:45:32 with 49 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2024-10-14 03:11:36 with 1,894 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
