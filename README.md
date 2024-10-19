@@ -10,7 +10,7 @@ Some simple webpages for different projects I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2024-10-13 01:11:28 with 302 items
+* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2024-10-19 16:37:49 with 303 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2024-09-17 14:28:28 with 159 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-10-18 13:43:17 with 362 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-10-17 17:09:14 with 2,387 items
@@ -21,7 +21,7 @@ Podcast Search Pages:
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-10-16 17:05:43 with 979 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2024-10-17 14:26:05 with 609 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-10-19 16:18:46 with 1,399 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-10-19 16:37:53 with 1,400 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-09-23 21:53:52 with 921 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-10-13 15:45:59 with 147 items
 <!-- Podcasts End -->
