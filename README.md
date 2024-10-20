@@ -15,7 +15,7 @@ Podcast Search Pages:
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-10-18 13:43:17 with 362 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-10-17 17:09:14 with 2,387 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2024-10-14 14:35:03 with 345 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-10-16 14:28:38 with 672 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-10-20 19:23:31 with 673 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-10-15 13:45:32 with 49 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2024-10-18 19:10:34 with 1,896 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
@@ -23,7 +23,7 @@ Podcast Search Pages:
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2024-10-17 14:26:05 with 609 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-10-19 16:37:53 with 1,400 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-09-23 21:53:52 with 921 items
-* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-10-13 15:45:59 with 147 items
+* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-10-20 19:23:35 with 148 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
