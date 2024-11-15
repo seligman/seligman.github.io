@@ -1,4 +1,4 @@
-Some simple webpages for different projects that I'm playing with:
+Webpages for different projects that I'm playing with:
 
 [A ticker for the next Advent of Code puzzle](https://seligman.github.io/aoc_ticker.html)
 
