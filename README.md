@@ -11,12 +11,12 @@ Webpages for different projects that I'm playing with:
 Podcast Search Pages:
 <!-- Podcasts Start -->
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2024-11-10 02:43:38 with 308 items
-* [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2024-10-28 19:44:14 with 160 items
+* [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2024-11-19 16:42:03 with 161 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-11-15 18:49:42 with 366 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-11-15 18:49:52 with 2,403 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2024-11-18 17:26:39 with 350 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-11-15 18:50:51 with 681 items
-* [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-11-13 01:48:11 with 53 items
+* [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-11-19 16:42:15 with 54 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2024-11-18 05:12:54 with 1,906 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-11-14 05:34:43 with 983 items
