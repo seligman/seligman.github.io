@@ -15,11 +15,11 @@ Podcast Search Pages:
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-11-15 18:49:42 with 366 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-11-15 18:49:52 with 2,403 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2024-11-18 17:26:39 with 350 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-11-15 18:50:51 with 681 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-11-20 16:44:08 with 682 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-11-19 16:42:15 with 54 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2024-11-18 05:12:54 with 1,906 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-11-14 05:34:43 with 983 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-11-20 16:43:04 with 984 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2024-11-14 17:00:46 with 613 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-11-16 17:54:41 with 1,408 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-11-15 20:23:23 with 926 items
