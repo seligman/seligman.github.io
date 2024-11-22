@@ -12,7 +12,7 @@ Podcast Search Pages:
 <!-- Podcasts Start -->
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2024-11-10 02:43:38 with 308 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2024-11-19 16:42:03 with 161 items
-* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-11-15 18:49:42 with 366 items
+* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2024-11-22 15:53:56 with 367 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-11-21 20:41:30 with 2,405 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2024-11-18 17:26:39 with 350 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-11-20 16:44:08 with 682 items
@@ -24,7 +24,7 @@ Podcast Search Pages:
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-11-21 15:42:45 with 1,409 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-11-21 18:02:44 with 927 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-11-18 05:13:03 with 152 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2024-11-18 16:11:03 with 36 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2024-11-22 15:55:07 with 37 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
