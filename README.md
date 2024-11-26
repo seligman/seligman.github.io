@@ -16,7 +16,7 @@ Podcast Search Pages:
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2024-11-22 18:07:53 with 2,406 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2024-11-25 16:57:17 with 351 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2024-11-23 01:37:49 with 683 items
-* [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-11-19 16:42:15 with 54 items
+* [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2024-11-26 14:17:55 with 55 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2024-11-25 05:00:48 with 1,908 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-11-20 16:43:04 with 984 items
