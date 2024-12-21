@@ -22,7 +22,7 @@ Podcast Search Pages:
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2024-12-18 20:41:30 with 988 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2024-12-19 16:10:15 with 618 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2024-12-21 00:15:35 with 1,419 items
-* [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-12-12 17:11:15 with 930 items
+* [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-12-21 04:35:13 with 931 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-12-15 17:31:59 with 156 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2024-12-20 16:07:04 with 43 items
 <!-- Podcasts End -->
