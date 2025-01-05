@@ -23,8 +23,8 @@ Podcast Search Pages:
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-01-02 12:15:23 with 620 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-01-04 18:00:28 with 1,422 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-12-21 04:35:13 with 931 items
-* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2024-12-23 17:15:25 with 157 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2024-12-22 16:52:10 with 45 items
+* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-01-05 18:37:26 with 158 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-01-05 18:37:29 with 46 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
