@@ -21,7 +21,7 @@ Podcast Search Pages:
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-01-22 14:57:27 with 993 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-01-23 14:59:31 with 623 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-01-22 19:25:50 with 1,429 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-01-25 04:45:04 with 1,430 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-12-21 04:35:13 with 931 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-01-20 04:22:44 with 160 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-01-23 22:50:13 with 48 items
