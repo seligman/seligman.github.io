@@ -14,7 +14,7 @@ Podcast Search Pages:
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-04-25 19:02:48 with 166 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-04-25 18:35:26 with 386 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-04-25 17:12:51 with 2,488 items
-* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-04-21 12:48:13 with 372 items
+* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-04-28 15:10:35 with 373 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-04-25 16:19:44 with 956 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-01-07 15:42:39 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-04-28 06:29:05 with 1,956 items
