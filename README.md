@@ -13,7 +13,7 @@ Podcast Search Pages:
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-05-11 01:56:47 with 329 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-04-25 19:02:48 with 166 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-05-09 15:58:12 with 388 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-05-13 21:12:18 with 2,497 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-05-14 17:24:30 with 2,498 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-05-12 14:07:07 with 375 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-05-09 15:58:54 with 958 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-01-07 15:42:39 with 57 items
