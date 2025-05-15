@@ -81,6 +81,10 @@ h1 {
     display: flex;
     gap: 0.5rem;
 }
+.search-style {
+    width: auto;
+    flex: 0 0 auto;
+}
 
 input[type="text"],
 select {
@@ -352,7 +356,7 @@ input[type="checkbox"]:checked::after {
     <div class="search-card">
         <form class="search-form">
             <div class="search-bar">
-                <select aria-label="Search style" id="search_type">
+                <select aria-label="Search style" id="search_type" class="search-style">
                     <option value="raw">Use this exact string:</option>
                     <option value="regex">Use regular expressions:</option>
                     <option value="logic">Use logic ops (AND, OR, NOT, NEAR, WHOLE):</option>
@@ -385,8 +389,8 @@ input[type="checkbox"]:checked::after {
             </div>
 
             <div class="quick-links">
-                <a href="#" class="quick-link">Show all episodes</a>
-                <a href="#" class="quick-link">Show latest episodes</a>
+                <a href="#" class="quick-link" id="show_all">Show all episodes</a>
+                <a href="#" class="quick-link" id="show_latest">Show latest episodes</a>
             </div>
         </form>
     </div>
@@ -551,6 +555,7 @@ function showHit(item, search, showAll, batch, itemID, paginator, countOnly) {
             link.target = "_blank";
             link.innerText = (item.published == '1970-01-01' ? '' : (item.published + ": ")) + item.title;
 
+            console.log(search.title);
             let info = document.createElement("p");
             info.className = "result-description";
             hit.appendChild(info);
@@ -751,7 +756,7 @@ function notify(desc) {
     document.getElementById("results").replaceChildren(searching);
 }
 
-async function searchFor(search, skip=0, countOnly=false) {
+async function searchFor(search, skip=0, countOnly=false, showLatest=false, showAll=false) {
     if (info === null) {
         info = await getData(0, 0, 100, "json");
         batches = await getData(...info.data);
@@ -798,7 +803,7 @@ async function searchFor(search, skip=0, countOnly=false) {
     }
 
     if (document.getElementById("reverse").checked) {
-            search.reverse = true;
+        search.reverse = true;
     }
 
     for (let word of searchTerms) {
@@ -811,20 +816,18 @@ async function searchFor(search, skip=0, countOnly=false) {
         search.terms.push(word);
     }
 
-    if (search.terms.join(' ') == 'list') {
+    if (showAll) {
         search.title = true;
         search.terms = [];
         paginator.bail = 100000;
-    }
-
-    if (search.terms.join(' ') == 'latest') {
+    } else if (showLatest) {
         search.title = true;
         search.terms = [];
         paginator.skip = Math.max(0, totalItems - 25);
         paginator.bail = 10000;
-    }
-
-    if (search.logic) {
+        search.after = null;
+        search.before = null;
+    } else if (search.logic) {
         let debugLogic = false;
         let nearAmount = 200;
         /* ########################################################################################################################################## */
@@ -1208,6 +1211,15 @@ document.addEventListener("DOMContentLoaded", function(event) {
             temp.src = temp.src.replace(".png", "-rid.png");
         }
     }
+
+    document.getElementById("show_all").addEventListener('click', e => {
+        e.preventDefault();
+        searchFor("", 0, false, false, true).then();
+    });
+    document.getElementById("show_latest").addEventListener('click', e => {
+        e.preventDefault();
+        searchFor("", 0, false, true, false).then();
+    });
 
     let info = window.location.hash.substring(1);
     info = info.split(",");
