@@ -21,7 +21,8 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: "Roboto", sans-serif;
+    font-size: 12pt;
 }
 
 body {
@@ -36,7 +37,6 @@ body {
 
 .container {
     width: 100%;
-    max-width: 900px;
 }
 
 header {
@@ -325,6 +325,13 @@ input[type="checkbox"]:checked::after {
         width: 100%;
     }
 }
+
+.hit {
+    margin-bottom: 0.5em;
+    line-height: 125%;
+    text-indent: -2em;
+    margin-left: 2em;
+}
 </style>
 </head>
 <body>
@@ -334,7 +341,7 @@ input[type="checkbox"]:checked::after {
             <div class="search-bar">
                 <select aria-label="Search style" id="search_type">
                     <option value="raw">Use this exact string:</option>
-                    <option value="regex">Use regular expressions"</option>
+                    <option value="regex">Use regular expressions:</option>
                     <option value="logic">Use logic ops (AND, OR, NOT, NEAR, WHOLE):</option>
                     <option value="title">Use titles only:</option>
                 </select>
@@ -346,11 +353,11 @@ input[type="checkbox"]:checked::after {
                 <div class="option-group">
                     <label class="option-label">Time Range</label>
                     <div class="time-inputs">
-                        <div id="start" class="time-input">
-                            <input type="text" placeholder="Start date" aria-label="Start date">
+                        <div class="time-input">
+                            <input id="start" type="text" placeholder="Start date" aria-label="Start date">
                         </div>
-                        <div id="end" class="time-input">
-                            <input type="text" placeholder="End date" aria-label="End date">
+                        <div class="time-input">
+                            <input id="end" type="text" placeholder="End date" aria-label="End date">
                         </div>
                     </div>
                 </div>
@@ -376,38 +383,7 @@ input[type="checkbox"]:checked::after {
             <div class="result-stats" id="totalsCount">...</div>
         </div>
         
-        <div class="results-list" id="results">
-            <!-- <div class="result-item">
-                <h3 class="result-title"><a href="#">Advanced Search Techniques in Dark Mode UI</a></h3>
-                <p class="result-description">
-                    Comprehensive guide to implementing advanced search functionality with regex and logical operators in a dark mode interface. Learn how to create intuitive search systems...
-                </p>
-            </div>
-            
-            <div class="result-item">
-                <h3 class="result-title"><a href="#">Dark Mode Search Interfaces: Best Practices</a></h3>
-                <div class="result-url">https://example.com/dark-mode-interfaces</div>
-                <p class="result-description">
-                    Explore modern approaches to designing dark mode search interfaces that prioritize readability and user experience. This guide covers accessible color palettes...
-                </p>
-                <div class="result-meta">
-                    <span>May 1, 2025</span>
-                    <span>6 min read</span>
-                </div>
-            </div>
-            
-            <div class="result-item">
-                <h3 class="result-title"><a href="#">Time-Based Filtering in Search Systems</a></h3>
-                <div class="result-url">https://example.com/time-based-filtering</div>
-                <p class="result-description">
-                    Implementing effective time-range filters in search interfaces. This tutorial demonstrates how to build intuitive time selectors that enhance user experience...
-                </p>
-                <div class="result-meta">
-                    <span>April 28, 2025</span>
-                    <span>3.5 min read</span>
-                </div>
-            </div> -->
-        </div>
+        <div class="results-list" id="results"></div>
         
         <div class="created" id="footer"><hr> Created: <span id="created">(loading)</span></div>
     </div>
@@ -792,46 +768,34 @@ async function searchFor(search, skip=0, countOnly=false) {
         orig: search,
     };
 
+    if (document.getElementById("start").value.length > 0) {
+        search.after = document.getElementById("start").value;
+    }
+
+    if (document.getElementById("end").value.length > 0) {
+        search.before = document.getElementById("end").value;
+    }
+
+    if (document.getElementById("search_type").value == "regex") {
+        search.regex = true;
+    } else if (document.getElementById("search_type").value == "logic") {
+        search.logic = true;
+    } else if (document.getElementById("search_type").value == "title") {
+        search.title = true;
+    }
+
+    if (document.getElementById("reverse").checked) {
+            search.reverse = true;
+    }
+
     for (let word of searchTerms) {
         let m = word.match(/^group:([^ ]+)( |$)/i);
         if (m != null) {
             search.groups.push(m[1]);
             continue;
         }
-        m = word.match(/^after:([^ ]+)( |$)/i);
-        if (m != null) {
-            search.after = m[1];
-            continue;
-        }
-        m = word.match(/^before:([^ ]+)( |$)/i);
-        if (m != null) {
-            search.before = m[1];
-            continue;
-        }
-        m = word.match(/^(?:regex|re):([^ ]+)( |$)/i);
-        if (m != null) {
-            search.terms.push(m[1]);
-            search.regex = true;
-            continue;
-        }
-        m = word.match(/^title:([^ ]+)( |$)/i);
-        if (m != null) {
-            search.terms.push(m[1]);
-            search.title = true;
-            continue;
-        }
-        m = word.match(/^logic:([^ ]+)( |$)/i);
-        if (m != null) {
-            search.terms.push(m[1]);
-            search.logic = true;
-            continue;
-        }
 
-        if (word == "rev" || word == "reverse") {
-            search.reverse = true;
-        } else {
-            search.terms.push(word);
-        }
+        search.terms.push(word);
     }
 
     if (search.terms.join(' ') == 'list') {
