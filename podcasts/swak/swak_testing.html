@@ -30,6 +30,20 @@ comments or thoughts on the UX, please reach out to me!
     font-size: 12pt;
 }
 
+.clickable {
+    cursor: pointer;
+    color: #ccf;
+}
+
+.clickable:hover {
+    text-decoration: underline;
+}
+
+.target {
+    background-color: #44c;
+    color: #fff;
+}
+
 body {
     background-color: var(--bg-color);
     color: var(--text-color);
@@ -353,7 +367,7 @@ input[type="checkbox"]:checked::after {
 </head>
 <body>
 <div class="container">
-    <div class="search-card">
+    <div class="search-card" id="search-card">
         <form class="search-form">
             <div class="search-bar">
                 <select aria-label="Search style" id="search_type" class="search-style">
@@ -396,7 +410,7 @@ input[type="checkbox"]:checked::after {
     </div>
     
     <div class="results-container">
-        <div class="results-header">
+        <div class="results-header" id="results-header">
             <div class="result-stats" id="totalsCount">...</div>
         </div>
         
@@ -1224,8 +1238,11 @@ document.addEventListener("DOMContentLoaded", function(event) {
     let info = window.location.hash.substring(1);
     info = info.split(",");
     if (info.length == 4 || info.length == 5) {
-        document.getElementById("search_input").innerHTML = '';
-        document.getElementById("footer").innerHTML = '';
+        document.getElementById("search-card").style.display = 'none';
+        document.getElementById("results-header").style.display = 'none';
+        document.getElementById("footer").style.display = 'none';
+        // document.getElementById("search_input").innerHTML = '';
+        // document.getElementById("footer").innerHTML = '';
         showTranscript(parseInt(info[0]), parseInt(info[1]), parseInt(info[2]), parseInt(info[3])).then(() => {
             if (info.length == 5) {
                 let at = parseInt(info[4]);
