@@ -10,8 +10,8 @@
     --bg-color: #121212;
     --card-color: #1e1e1e;
     --text-color: #e0e0e0;
-    --accent-color: #7c4dff;
-    --accent-hover: #9370ff;
+    --accent-color: #a0a0ff;
+    --accent-hover: #c0c0ff;
     --border-color: #333333;
     --secondary-color: #2d2d2d;
     --error-color: #cf6679;
@@ -33,6 +33,14 @@ body {
     flex-direction: column;
     align-items: center;
     padding: 2rem;
+}
+
+.created {
+    font-size: 8pt;
+    padding-top: 0.25em;
+}
+.created span {
+    font-size: 8pt;
 }
 
 .container {
@@ -385,7 +393,7 @@ input[type="checkbox"]:checked::after {
         
         <div class="results-list" id="results"></div>
         
-        <div class="created" id="footer"><hr> Created: <span id="created">(loading)</span></div>
+        <div class="created" id="footer">Created: <span id="created">(loading)</span></div>
     </div>
 </div>
     
