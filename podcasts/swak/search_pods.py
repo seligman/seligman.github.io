@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-# This example shows how to pull down the data to search all transcripts
-# for this podcast.
-
-# Please see https://seligman.github.io/podcasts/swak/swak.html to search online.
+# This example shows how to pull down the data to search 
+# all transcripts for this podcast.
+# 
+# Please see the following link to search online:
+# https://seligman.github.io/podcasts/swak/swak.html
 
 from urllib.request import Request, urlopen
 import gzip, json, os, sys, textwrap
