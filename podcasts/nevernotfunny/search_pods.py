@@ -147,12 +147,19 @@ def create_helpers(cur):
     # And mark this item as fixed up:
     cur['fixed'] = True
 
-def show_transcript(cur, start_at, end_at, output=print):
+def show_transcript(cur, start_at, end_at, segments=None, output=print):
     # Show a transcript, from one word to the end word
     phrase = None
     ended_sentence = False
     last_speaker = ''
     phrase_at = -1
+
+    # If there are segments, pull them out into an array to 
+    # track when to show the next one
+    segments_to_show = []
+    if segments is not None:
+        for offset, title in zip(segments["offset"], segments["title"]):
+            segments_to_show.append((offset / 100, title))
 
     for word in range(start_at, end_at):
         offset, word_len = cur['offset'][word]
@@ -186,6 +193,16 @@ def show_transcript(cur, start_at, end_at, output=print):
 
             # Store where this phrase starts
             phrase_at = cur['start'][word]
+
+            # See if it's time to show the next segment title
+            segment_title = None
+            while len(segments_to_show) > 0 and segments_to_show[0][0] <= phrase_at:
+                _, segment_title = segments_to_show.pop(0)
+            if segment_title is not None:
+                for row in textwrap.wrap("Segment: " + segment_title, subsequent_indent=" " * 10):
+                    output(row)
+                output("")
+
             # Show the timestamp
             phrase = f"{phrase_at//3600:2d}:{(phrase_at%3600)//60:02d}:{phrase_at%60:02d}:"
 
@@ -222,6 +239,10 @@ def search_transcripts(*search):
         #                                   # This is cumulative number of seconds
         #     'speaker': 'AAABBBCCDDD@@@',  # One char per word for each speaker.
         #                                   # "A" == Speaker 1, etc.  "@" == No known speaker
+        #     'segments': {                 # Optional section for the detected segments
+        #         'title': [],              # Titles for each segment
+        #         'offset': [],             # Start offset for each segment, each timestamp is in 100th of seconds
+        #     },
         # }
 
         for i, hit in enumerate(enumerate_hits(cur['words'], search)):
@@ -236,7 +257,7 @@ def search_transcripts(*search):
             # Show each match
             print("")
             word_num = cur['index_to_word'][hit]
-            show_transcript(cur, max(0, word_num - 10), min(len(cur['offset']), word_num + 10))
+            show_transcript(cur, max(0, word_num - 10), min(len(cur['offset']), word_num + 10), hit.get("segments"))
 
 @cmd("list", 0, "= List all episodes")
 def list_episodes():
@@ -251,7 +272,7 @@ def dump_episode(num):
     for i, cur in enumerate(enumerate_items()):
         if i == num:
             create_helpers(cur)
-            show_transcript(cur, 0, len(cur['start']))
+            show_transcript(cur, 0, len(cur['start']), cur.get("segments"))
             exit(0)
 
 @cmd("dump_all", 1, "<dir_name> = Dump all episodes to text and JSON files")
@@ -276,7 +297,7 @@ def dump_all_episodes(dir_name):
             write_line(f"Link: {cur['link']}")
             write_line("")
 
-            show_transcript(cur, 0, len(cur['speaker']), write_line)
+            show_transcript(cur, 0, len(cur['speaker']), cur.get("segments"), write_line)
 
         # Clean up the data to prepare it to be dumped:
         del cur['index_to_word']
