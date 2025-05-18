@@ -15,14 +15,14 @@ Podcast Search Pages:
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-05-16 15:12:15 with 389 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-05-16 17:29:29 with 2,500 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-05-12 14:07:07 with 375 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-05-09 15:58:54 with 958 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-05-18 21:06:21 with 958 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-01-07 15:42:39 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-05-15 15:14:31 with 1,962 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-05-18 21:06:32 with 1,962 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2024-10-13 20:12:44 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-05-15 15:28:04 with 1,009 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-05-18 21:06:09 with 1,009 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-05-15 15:28:09 with 639 items
-* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-05-15 15:02:55 with 425 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-05-17 14:47:21 with 1,470 items
+* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-05-18 21:06:13 with 425 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-05-18 21:06:44 with 1,470 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2024-12-21 04:35:13 with 931 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-05-12 14:13:36 with 175 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-05-16 15:13:31 with 60 items
