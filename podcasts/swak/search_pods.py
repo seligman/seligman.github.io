@@ -147,19 +147,26 @@ def create_helpers(cur):
     # And mark this item as fixed up:
     cur['fixed'] = True
 
-def show_transcript(cur, start_at, end_at, segments=None, output=print):
+def show_transcript(cur, start_at, end_at, segments=None, summary=None, output=print):
     # Show a transcript, from one word to the end word
     phrase = None
     ended_sentence = False
     last_speaker = ''
     phrase_at = -1
 
+    # If there is a summary, go ahead and show it
+    if summary is not None:
+        summary = "Summary: " + summary
+        for row in textwrap.wrap(summary, subsequent_indent=" " * 10):
+            output(row)
+        output("")
+
     # If there are segments, pull them out into an array to 
     # track when to show the next one
     segments_to_show = []
     if segments is not None:
         for offset, title in zip(segments["offset"], segments["title"]):
-            segments_to_show.append((offset / 100, title))
+            segments_to_show.append((offset, title))
 
     for word in range(start_at, end_at):
         offset, word_len = cur['offset'][word]
@@ -241,8 +248,8 @@ def search_transcripts(*search):
         #                                   # "A" == Speaker 1, etc.  "@" == No known speaker
         #     'segments': {                 # Optional section for the detected segments
         #         'title': [],              # Titles for each segment
-        #         'offset': [],             # Start offset for each segment, each timestamp is in 100th of seconds
-        #     },
+        #         'offset': [] }            # Start offset for each segment in seconds
+        #     'summary': '...'              # Optional machine generated summary of episode
         # }
 
         for i, hit in enumerate(enumerate_hits(cur['words'], search)):
@@ -257,7 +264,7 @@ def search_transcripts(*search):
             # Show each match
             print("")
             word_num = cur['index_to_word'][hit]
-            show_transcript(cur, max(0, word_num - 10), min(len(cur['offset']), word_num + 10), hit.get("segments"))
+            show_transcript(cur, max(0, word_num - 10), min(len(cur['offset']), word_num + 10))
 
 @cmd("list", 0, "= List all episodes")
 def list_episodes():
@@ -272,7 +279,11 @@ def dump_episode(num):
     for i, cur in enumerate(enumerate_items()):
         if i == num:
             create_helpers(cur)
-            show_transcript(cur, 0, len(cur['start']), cur.get("segments"))
+            print(f"Title: {cur['title']}")
+            print(f"Published: {cur['published']}")
+            print(f"Link: {cur['link']}")
+            print("")
+            show_transcript(cur, 0, len(cur['start']), cur.get("segments"), cur.get("summary"))
             exit(0)
 
 @cmd("dump_all", 1, "<dir_name> = Dump all episodes to text and JSON files")
@@ -297,7 +308,7 @@ def dump_all_episodes(dir_name):
             write_line(f"Link: {cur['link']}")
             write_line("")
 
-            show_transcript(cur, 0, len(cur['speaker']), cur.get("segments"), write_line)
+            show_transcript(cur, 0, len(cur['speaker']), cur.get("segments"), cur.get("summary"), write_line)
 
         # Clean up the data to prepare it to be dumped:
         del cur['index_to_word']
@@ -307,9 +318,15 @@ def dump_all_episodes(dir_name):
         cur['speaker'] = [(ord(x) - ord('A')) for x in cur['speaker']]
         cur['words'] = cur['words'].split(' ')
 
+        # Just use a modified JSON dump here to prevent way too much file space being wasted
+        # indenting all of the items in the lists, and keep each key/value pair on its own line
         with open(os.path.join(dir_name, f"ep_{i + 1:04d}.json"), "wt", newline="", encoding="utf-8") as f:
-            json.dump(cur, f, indent=4, sort_keys=True)
-            f.write("\n")
+            f.write("{\n")
+            temp = [{"key": x, "value": cur[x], "extra": ","} for x in sorted(cur)]
+            temp[-1]["extra"] = ""
+            for item in temp:
+                f.write(" " * 4 + json.dumps(item['key']) + ": " + json.dumps(item['value'], separators=(',', ':')) + item['extra'] + "\n")
+            f.write("}\n")
 
     print("All done.")
 
