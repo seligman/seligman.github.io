@@ -20,8 +20,8 @@ Podcast Search Pages:
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-05-22 04:15:13 with 1,964 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-05-21 14:22:18 with 1,010 items
-* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-05-19 23:58:33 with 639 items
-* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-05-22 12:19:45 with 426 items
+* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-05-22 14:57:02 with 640 items
+* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-05-22 14:57:05 with 426 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-05-20 00:03:42 with 1,470 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-05-20 00:04:51 with 931 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-05-20 00:04:13 with 176 items
