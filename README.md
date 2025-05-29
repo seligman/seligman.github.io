@@ -11,9 +11,9 @@ Webpages for different projects that I'm playing with:
 Podcast Search Pages:
 <!-- Podcasts Start -->
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-05-23 04:32:00 with 330 items
-* [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-05-20 00:01:10 with 166 items
+* [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-05-29 20:33:18 with 167 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-05-23 14:39:55 with 390 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-05-28 17:22:24 with 2,505 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-05-29 17:15:32 with 2,506 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-05-26 16:41:36 with 377 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-05-28 15:23:00 with 959 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-05-20 00:02:23 with 57 items
