@@ -14,10 +14,10 @@ Podcast Search Pages:
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-05-29 20:33:18 with 167 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-06-06 14:45:30 with 392 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-06-06 19:51:55 with 2,511 items
-* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-06-02 12:27:24 with 378 items
+* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-06-09 14:31:38 with 379 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-06-06 20:46:08 with 962 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-05-20 00:02:23 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-06-05 13:39:55 with 1,969 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-06-09 14:32:05 with 1,970 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-06-04 16:29:05 with 1,012 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-06-05 13:50:21 with 642 items
