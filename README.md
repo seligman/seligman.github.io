@@ -17,7 +17,7 @@ Podcast Search Pages:
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-06-16 15:32:02 with 380 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-06-18 15:59:39 with 965 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-05-20 00:02:23 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-06-16 04:02:27 with 1,972 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-06-19 03:26:40 with 1,973 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-06-12 17:56:27 with 1,013 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-06-12 11:22:24 with 643 items
