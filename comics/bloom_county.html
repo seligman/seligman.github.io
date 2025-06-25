@@ -155,11 +155,40 @@ async function loadComicData(batch_num) {
     } catch (error) { }
 }
 
-function highlightText(text, searchTerm) {
-    if (!searchTerm) return text;
-    
+function escapeHtml(text) {
+    if (typeof text !== 'string') {
+        return text;
+    }
+
+    const htmlEscapeMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '/': '&#x2F;'
+    };
+
+    return text.replace(/[&<>"'\/]/g, function (match) {
+        return htmlEscapeMap[match];
+    });
+}
+
+function highlightText(text, hit, /* text, searchTerm */) {
+    return (
+        escapeHtml(text.substring(0, hit["start"])) + 
+        '<span class="highlight">' + 
+        escapeHtml(text.substring(hit["start"], hit["start"] + hit["len"])) + 
+        '</span>' + 
+        escapeHtml(text.substring(hit["start"] + hit["len"]))
+    );
+
+    /* if (!searchTerm) return text; */
+    /* 
     const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
     return text.replace(regex, '<span class="highlight">$1</span>');
+    return text;
+    */
 }
 
 function formatDate(dateString) {
@@ -172,6 +201,38 @@ function formatDate(dateString) {
     });
 }
 
+function findByWords(search, target) {
+    let m;
+    let re = /[\S.]+/g;
+    let words = [];
+    while ((m = re.exec(target)) !== null) {
+        words.push({"word": m[0].replaceAll(".", ""), "start": m.index, "len": m[0].length});
+    }
+
+    search = search.replaceAll(/[.,?!]/g, "").replaceAll(/[\s]/g, ' ').split(/\s+/).filter(word => word.length > 0);
+    if (search.length == 0) {
+        return null;
+    } else {
+        for (let i = 0; i <= words.length - search.length; i++) {
+            if (words[i]["word"].startsWith(search[0])) {
+                let hit = words[i];
+                for (let j = 1; j < search.length; j++) {
+                    if (words[i+j]["word"].startsWith(search[j])) {
+                        hit = words[j+i];
+                    } else {
+                        hit = null;
+                        break;
+                    }
+                }
+                if (hit !== null) {
+                    return {"start": words[i]["start"], "len": hit["start"] - words[i]["start"] + hit["len"]};
+                }
+            }
+        }
+    }
+    return null;
+}
+
 function searchComics(searchTerm) {
     if (!searchTerm.trim()) {
         resultsContainer.style.display = 'none';
@@ -182,12 +243,15 @@ function searchComics(searchTerm) {
     let bailed = false;
     searchTerm = searchTerm.toLowerCase();
     for (const [date, text] of comicData) {
-        if (text.includes(searchTerm)) {
+        let hit = findByWords(searchTerm, text);
+        if (hit !== null) {
+        /* if (text.includes(searchTerm)) { */
             if (matches.length > 50) {
                 bailed = true;
                 break;
             }
-            matches.push([date, text]);
+            /* matches.push([date, text]); */
+            matches.push([date, text, hit])
         }
     }
 
@@ -199,10 +263,10 @@ function searchComics(searchTerm) {
         return;
     }
 
-    resultsList.innerHTML = matches.map(([date, text]) => `
+    resultsList.innerHTML = matches.map(([date, text, hit]) => `
         <div class="result-item">
             <div class="result-date">${formatDate(date)}</div>
-            <div class="result-text">${highlightText(text, searchTerm)}</div>
+            <div class="result-text">${highlightText(text, hit)}</div>
         </div>
     `).join('');
 }
