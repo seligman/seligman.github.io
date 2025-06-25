@@ -37,3 +37,6 @@ Some Podcast to Text examples:
 * [Whisper.CPP (Tiny Model)](https://seligman.github.io/podcast_to_text/Example-Results-Whisper_CPP-Tiny.html)
 * [WhisperTimestamped](https://seligman.github.io/podcast_to_text/Example-Results-WhisperTimestamped-Medium.html)
 * [WhisperX (Medium Model)](https://seligman.github.io/podcast_to_text/Example-Results-WhisperX-Medium.html)
+
+Comic Search Pages:
+* [Bloom County](https://seligman.github.io/comics/bloom_county.html)
