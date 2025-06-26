@@ -14,7 +14,6 @@ body {
     background-color: #f5f5f0;
     color: #333;
 }
-
 .header {
     text-align: center;
     margin-bottom: 30px;
@@ -24,19 +23,16 @@ body {
     border-radius: 10px;
     box-shadow: 0 4px 15px rgba(0,0,0,0.1);
 }
-
 .header h1 {
     margin: 0;
     font-size: 2.5em;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
 }
-
 .header p {
     margin: 10px 0 0 0;
     opacity: 0.9;
     font-style: italic;
 }
-
 .search-container {
     margin-bottom: 30px;
     background: white;
@@ -44,7 +40,6 @@ body {
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
-
 .search-box {
     width: 100%;
     padding: 15px;
@@ -54,20 +49,17 @@ body {
     box-sizing: border-box;
     transition: border-color 0.3s ease;
 }
-
 .search-box:focus {
     outline: none;
     border-color: #3498db;
     box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
 }
-
 .results-container {
     background: white;
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     overflow: hidden;
 }
-
 .results-header {
     background: #34495e;
     color: white;
@@ -75,52 +67,43 @@ body {
     font-weight: bold;
     font-size: 18px;
 }
-
 .results-list {
     padding: 0;
 }
-
 .result-item {
     padding: 15px 20px;
     border-bottom: 1px solid #eee;
     transition: background-color 0.2s ease;
 }
-
 .result-item:hover {
     background-color: #f8f9fa;
 }
-
 .result-item:last-child {
     border-bottom: none;
 }
-
 .result-date {
     font-weight: bold;
     color: #2c3e50;
     margin-bottom: 8px;
     font-size: 14px;
 }
-
 .result-text {
     color: #555;
     line-height: 1.5;
     font-style: italic;
 }
-
 .highlight {
     background-color: #fff3cd;
     padding: 2px 4px;
     border-radius: 3px;
     font-weight: bold;
 }
-
 .no-results {
     padding: 40px 20px;
     text-align: center;
     color: #7f8c8d;
     font-style: italic;
 }
-
 .search-hint {
     color: #7f8c8d;
     font-size: 14px;
@@ -151,7 +134,17 @@ async function loadComicData(batch_num) {
         const decomp = data.stream().pipeThrough(ds);
         const decoded = await new Response(decomp).blob();
         const text = await decoded.text();
-        comicData = comicData.concat(JSON.parse(text));
+        const parsed = JSON.parse(text);
+        for (let i = 0; i < parsed.length; i++) {
+            let m;
+            let re = /[\S.]+/g;
+            let words = [];
+            while ((m = re.exec(parsed[i][1])) !== null) {
+                words.push({word: m[0].replaceAll(".", ""), start: m.index, len: m[0].length});
+            }
+            parsed[i].push(words);
+        }
+        comicData = comicData.concat(parsed);
     } catch (error) { }
 }
 
@@ -183,11 +176,11 @@ function highlightText(text, hit, /* text, searchTerm */) {
         escapeHtml(text.substring(hit["start"] + hit["len"]))
     );
 
-    /* if (!searchTerm) return text; */
-    /* 
-    const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-    return text.replace(regex, '<span class="highlight">$1</span>');
-    return text;
+    /*
+        if (!searchTerm) return text;
+        const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        return text.replace(regex, '<span class="highlight">$1</span>');
+        return text;
     */
 }
 
@@ -201,15 +194,7 @@ function formatDate(dateString) {
     });
 }
 
-function findByWords(search, target) {
-    let m;
-    let re = /[\S.]+/g;
-    let words = [];
-    while ((m = re.exec(target)) !== null) {
-        words.push({"word": m[0].replaceAll(".", ""), "start": m.index, "len": m[0].length});
-    }
-
-    search = search.replaceAll(/[.,?!]/g, "").replaceAll(/[\s]/g, ' ').split(/\s+/).filter(word => word.length > 0);
+function findByWords(search, words) {
     if (search.length == 0) {
         return null;
     } else {
@@ -225,7 +210,7 @@ function findByWords(search, target) {
                     }
                 }
                 if (hit !== null) {
-                    return {"start": words[i]["start"], "len": hit["start"] - words[i]["start"] + hit["len"]};
+                    return {start: words[i]["start"], len: hit["start"] - words[i]["start"] + hit["len"]};
                 }
             }
         }
@@ -242,8 +227,10 @@ function searchComics(searchTerm) {
     const matches = [];
     let bailed = false;
     searchTerm = searchTerm.toLowerCase();
-    for (const [date, text] of comicData) {
-        let hit = findByWords(searchTerm, text);
+    let searchWords = searchTerm.replaceAll(/[.,?!]/g, "").replaceAll(/[\s]/g, ' ').split(/\s+/).filter(word => word.length > 0);
+
+    for (const [date, text, words] of comicData) {
+        let hit = findByWords(searchWords, words);
         if (hit !== null) {
         /* if (text.includes(searchTerm)) { */
             if (matches.length > 50) {
@@ -286,6 +273,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
             await loadComicData(i);
         }
         document.getElementById('count').innerText = "" + comicData.length;
+        searchBox.disabled = false;
         searchBox.focus();
     });
 });
@@ -304,6 +292,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         class="search-box" 
         placeholder="Search for words or phrases in the comic strips..."
         autocomplete="off"
+        disabled
     >
     <div class="search-hint">Start typing to search through the <span id="count">(loading)</span> entries...</div>
 </div>
