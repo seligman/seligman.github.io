@@ -112,6 +112,7 @@ body {
 }
 </style>
 <script>
+const targetURL = "https://www.gocomics.com/bloomcounty/YYYY/MM/DD";
 let comicData = [];
 let searchBox = null;
 let resultsContainer = null;
@@ -185,7 +186,8 @@ function highlightText(text, hit, /* text, searchTerm */) {
 }
 
 function formatDate(dateString) {
-    const date = new Date(dateString);
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('en-US', {
         weekday: 'long',
         year: 'numeric',
@@ -216,6 +218,17 @@ function findByWords(search, words) {
         }
     }
     return null;
+}
+
+function fillUrlWithDate(urlTemplate, dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+
+    const filledUrl = urlTemplate
+        .replace(/YYYY/g, String(year))
+        .replace(/MM/g, String(month).padStart(2, '0'))
+        .replace(/DD/g, String(day).padStart(2, '0'));
+
+    return filledUrl;
 }
 
 function searchComics(searchTerm) {
@@ -250,12 +263,21 @@ function searchComics(searchTerm) {
         return;
     }
 
-    resultsList.innerHTML = matches.map(([date, text, hit]) => `
-        <div class="result-item">
-            <div class="result-date">${formatDate(date)}</div>
-            <div class="result-text">${highlightText(text, hit)}</div>
-        </div>
-    `).join('');
+    if (targetURL.length > 0) {
+        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+            <div class="result-item">
+                <div class="result-date"><a href="${fillUrlWithDate(targetURL, date)}">${formatDate(date)}</a></div>
+                <div class="result-text">${highlightText(text, hit)}</div>
+            </div>
+        `).join('');
+    } else {
+        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+            <div class="result-item">
+                <div class="result-date">${formatDate(date)}</div>
+                <div class="result-text">${highlightText(text, hit)}</div>
+            </div>
+        `).join('');
+    }
 }
 
 document.addEventListener("DOMContentLoaded", function(event) {
