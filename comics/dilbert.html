@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="64x64" href="dilbert.png"/>
+<title>Dilbert Comic Search</title>
+<style>
+body {
+    font-family: 'Georgia', serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f0;
+    color: #333;
+}
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: linear-gradient(135deg, #2c3e50, #3498db);
+    color: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+.header h1 {
+    margin: 0;
+    font-size: 2.5em;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+.header p {
+    margin: 10px 0 0 0;
+    opacity: 0.9;
+    font-style: italic;
+}
+.search-container {
+    margin-bottom: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.search-box {
+    width: 100%;
+    padding: 15px;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+    transition: border-color 0.3s ease;
+}
+.search-box:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+}
+.results-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+.results-header {
+    background: #34495e;
+    color: white;
+    padding: 15px 20px;
+    font-weight: bold;
+    font-size: 18px;
+}
+.results-list {
+    padding: 0;
+}
+.result-item {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s ease;
+}
+.result-item:hover {
+    background-color: #f8f9fa;
+}
+.result-item:last-child {
+    border-bottom: none;
+}
+.result-date {
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+.result-text {
+    color: #555;
+    line-height: 1.5;
+    font-style: italic;
+}
+.highlight {
+    background-color: #fff3cd;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+.no-results {
+    padding: 40px 20px;
+    text-align: center;
+    color: #7f8c8d;
+    font-style: italic;
+}
+.search-hint {
+    color: #7f8c8d;
+    font-size: 14px;
+    margin-top: 10px;
+    text-align: center;
+}
+</style>
+<script>
+const targetURL = "https://dilbert-viewer.herokuapp.com/YYYY-MM-DD";
+let comicData = [];
+let searchBox = null;
+let resultsContainer = null;
+let resultsHeader = null;
+let resultsList = null;
+
+function binaryStringToUint8Array(binaryString) {
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function loadComicData(batch_num) {
+    try {
+        const resp = await fetch("./dilbert_" + String(batch_num).padStart(3, '0') + ".json.gz");
+        const data = await resp.blob();
+        const ds = new DecompressionStream("gzip");
+        const decomp = data.stream().pipeThrough(ds);
+        const decoded = await new Response(decomp).blob();
+        const text = await decoded.text();
+        const parsed = JSON.parse(text);
+        for (let i = 0; i < parsed.length; i++) {
+            let m;
+            let re = /[\S.]+/g;
+            let words = [];
+            while ((m = re.exec(parsed[i][1])) !== null) {
+                words.push({word: m[0].replaceAll(".", ""), start: m.index, len: m[0].length});
+            }
+            parsed[i].push(words);
+        }
+        comicData = comicData.concat(parsed);
+    } catch (error) { }
+}
+
+function escapeHtml(text) {
+    if (typeof text !== 'string') {
+        return text;
+    }
+
+    const htmlEscapeMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '/': '&#x2F;'
+    };
+
+    return text.replace(/[&<>"'\/]/g, function (match) {
+        return htmlEscapeMap[match];
+    });
+}
+
+function highlightText(text, hit, /* text, searchTerm */) {
+    return (
+        escapeHtml(text.substring(0, hit["start"])) + 
+        '<span class="highlight">' + 
+        escapeHtml(text.substring(hit["start"], hit["start"] + hit["len"])) + 
+        '</span>' + 
+        escapeHtml(text.substring(hit["start"] + hit["len"]))
+    );
+
+    /*
+        if (!searchTerm) return text;
+        const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+        return text.replace(regex, '<span class="highlight">$1</span>');
+        return text;
+    */
+}
+
+function formatDate(dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+}
+
+function findByWords(search, words) {
+    if (search.length == 0) {
+        return null;
+    } else {
+        for (let i = 0; i <= words.length - search.length; i++) {
+            if (words[i]["word"].startsWith(search[0])) {
+                let hit = words[i];
+                for (let j = 1; j < search.length; j++) {
+                    if (words[i+j]["word"].startsWith(search[j])) {
+                        hit = words[j+i];
+                    } else {
+                        hit = null;
+                        break;
+                    }
+                }
+                if (hit !== null) {
+                    return {start: words[i]["start"], len: hit["start"] - words[i]["start"] + hit["len"]};
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function fillUrlWithDate(urlTemplate, dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+
+    const filledUrl = urlTemplate
+        .replace(/YYYY/g, String(year))
+        .replace(/MM/g, String(month).padStart(2, '0'))
+        .replace(/DD/g, String(day).padStart(2, '0'));
+
+    return filledUrl;
+}
+
+function searchComics(searchTerm) {
+    if (!searchTerm.trim()) {
+        resultsContainer.style.display = 'none';
+        return;
+    }
+
+    const matches = [];
+    let bailed = false;
+    searchTerm = searchTerm.toLowerCase();
+    let searchWords = searchTerm.replaceAll(/[.,?!]/g, "").replaceAll(/[\s]/g, ' ').split(/\s+/).filter(word => word.length > 0);
+
+    for (const [date, text, words] of comicData) {
+        let hit = findByWords(searchWords, words);
+        if (hit !== null) {
+        /* if (text.includes(searchTerm)) { */
+            if (matches.length > 50) {
+                bailed = true;
+                break;
+            }
+            /* matches.push([date, text]); */
+            matches.push([date, text, hit])
+        }
+    }
+
+    resultsContainer.style.display = 'block';
+    resultsHeader.textContent = `Found ${bailed ? 'at least ' : ''}${matches.length} match${matches.length !== 1 ? 'es' : ''}`;
+
+    if (matches.length === 0) {
+        resultsList.innerHTML = '<div class="no-results">No matches found. Try a different search term.</div>';
+        return;
+    }
+
+    if (targetURL.length > 0) {
+        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+            <div class="result-item">
+                <div class="result-date"><a href="${fillUrlWithDate(targetURL, date)}">${formatDate(date)}</a></div>
+                <div class="result-text">${highlightText(text, hit)}</div>
+            </div>
+        `).join('');
+    } else {
+        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+            <div class="result-item">
+                <div class="result-date">${formatDate(date)}</div>
+                <div class="result-text">${highlightText(text, hit)}</div>
+            </div>
+        `).join('');
+    }
+}
+
+document.addEventListener("DOMContentLoaded", function(event) {
+    searchBox = document.getElementById('searchBox');
+    resultsContainer = document.getElementById('resultsContainer');
+    resultsHeader = document.getElementById('resultsHeader');
+    resultsList = document.getElementById('resultsList');
+
+    searchBox.addEventListener('input', (e) => {
+        searchComics(e.target.value);
+    });
+
+    window.addEventListener('load', async () => {
+        for (let i = 0; i < 2; i++) {
+            await loadComicData(i);
+        }
+        document.getElementById('count').innerText = "" + comicData.length;
+        searchBox.disabled = false;
+        searchBox.focus();
+    });
+});
+
+</script>
+</head>
+<body>
+<div class="header">
+    <h1>&#128083; Dilbert Search</h1>
+    <p>Search through Scott Adams's comic</p>
+</div>
+<div class="search-container">
+    <input 
+        type="text" 
+        id="searchBox" 
+        class="search-box" 
+        placeholder="Search for words or phrases in the comic strips..."
+        autocomplete="off"
+        disabled
+    >
+    <div class="search-hint">Start typing to search through the <span id="count">(loading)</span> entries...</div>
+</div>
+<div class="results-container" id="resultsContainer" style="display: none;">
+    <div class="results-header" id="resultsHeader">Found 0 matches</div>
+    <div class="results-list" id="resultsList"></div>
+</div>
+<img src="https://d13wbvtlmw75ie.cloudfront.net/hit/4x02pepdtt82crm.png" width="1" height="1">
+</body>
+</html>

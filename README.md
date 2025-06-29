@@ -41,5 +41,6 @@ Some Podcast to Text examples:
 Comic Search Pages:
 * [Bloom County](https://seligman.github.io/comics/bloom_county.html)
 * [Calvin and Hobbes](https://seligman.github.io/comics/calvin_and_hobbes.html)
+* [Dilbert](https://seligman.github.io/comics/dilbert.html)
 * [The Far Side](https://seligman.github.io/comics/far_side.html)
 * [Peanuts](https://seligman.github.io/comics/peanuts.html)
