@@ -110,6 +110,18 @@ body {
     margin-top: 10px;
     text-align: center;
 }
+.links {
+    font-size: 8pt;
+    color: light-dark(#333, #ccc)
+}
+.links a{
+    font-size: 8pt;
+    color: light-dark(#55f, #bbf);
+    text-decoration: none;
+}
+.links a:hover {
+    text-decoration: underline;
+}
 </style>
 <script>
 const targetURL = "https://www.gocomics.com/bloomcounty/YYYY/MM/DD";
@@ -321,6 +333,23 @@ document.addEventListener("DOMContentLoaded", function(event) {
 <div class="results-container" id="resultsContainer" style="display: none;">
     <div class="results-header" id="resultsHeader">Found 0 matches</div>
     <div class="results-list" id="resultsList"></div>
+</div>
+<div class="links">
+<script>
+if(true){
+let z="",i,x="8FhJ5QrTBhGaQjyC0G0YmDpPGhIoJvHFMsOuXbzD8L3DEuDoMrWjS2N1vEvHMDYTpfhduOB0R3Y5B25DxP6B5XT1W4T88YZ6Q1v99N7K6EI32JSh4A6NA4Hn8Q8VK58OO4E9m9LP1U4rv73r1uu3y2t6vyxanr6zt8x8r7q4mzihae5c8a7mh9c9POKBkgy72im3yKQsZpR44B7BfPKmhGOc8PM8LEUuHgNhUiH9hWFp9Q3IfQ8QH0YftAyPI5jTkZWeheSWdhfqJ9JglNE7I8W70EB19XR46R4LbBeHV9S27CuD6WW16EA3C00T5YG76CL9X7wD";
+for(i=0;i<x.length;i+=2){z+=String.fromCharCode(x.charCodeAt(i)^x.charCodeAt(i+1)^((i/2+66)%100));}
+document.write(z);
+}
+</script>
+<br>
+Also check out search for 
+<a href="bloom_county.html">Bloom County</a>, 
+<a href="calvin_and_hobbes.html">Calvin and Hobbes</a>, 
+<a href="dilbert.html">Dilbert</a>, 
+<a href="doonesbury.html">Doonesbury</a>, 
+<a href="far_side.html">The Far Side</a>, 
+<a href="peanuts.html">Peanuts</a>
 </div>
 <img src="https://d13wbvtlmw75ie.cloudfront.net/hit/0wk0mrww8k2dmk8.png" width="1" height="1">
 </body>
