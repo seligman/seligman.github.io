@@ -10,7 +10,7 @@ Webpages for different projects that I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-06-22 01:33:50 with 332 items
+* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-07-06 05:17:52 with 333 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-06-25 11:38:43 with 168 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-06-27 16:36:40 with 395 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-07-03 20:03:54 with 2,523 items
