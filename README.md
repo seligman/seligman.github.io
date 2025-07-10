@@ -17,11 +17,11 @@ Podcast Search Pages:
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-07-07 14:19:24 with 383 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-07-04 16:28:11 with 969 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-05-20 00:02:23 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-07-07 03:32:58 with 1,979 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-07-10 13:33:21 with 1,980 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-07-09 12:53:57 with 1,016 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-07-03 12:44:57 with 646 items
-* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-07-03 13:03:06 with 432 items
+* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-07-10 13:33:07 with 433 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-07-07 02:32:04 with 1,483 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-05-20 00:04:51 with 931 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-06-23 15:22:20 with 179 items
