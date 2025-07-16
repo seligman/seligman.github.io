@@ -138,7 +138,7 @@ async function loadComicData(batch_num) {
         const parsed = JSON.parse(text);
         for (let i = 0; i < parsed.length; i++) {
             let m;
-            let re = /[\S.]+/g;
+            let re = /[ -~]+/g;
             let words = [];
             while ((m = re.exec(parsed[i][1])) !== null) {
                 words.push({word: m[0].replaceAll(".", ""), start: m.index, len: m[0].length});
