@@ -150,7 +150,7 @@ async function loadComicData(batch_num) {
         const parsed = JSON.parse(text);
         for (let i = 0; i < parsed.length; i++) {
             let m;
-            let re = /[ -~]+/g;
+            let re = /[\S]+/g;
             let words = [];
             while ((m = re.exec(parsed[i][1])) !== null) {
                 words.push({word: m[0].replaceAll(".", ""), start: m.index, len: m[0].length});
@@ -351,6 +351,6 @@ Also check out search for
 <a href="far_side.html">The Far Side</a>, 
 <a href="peanuts.html">Peanuts</a>
 </div>
-<img src="https://d13wbvtlmw75ie.cloudfront.net/hit/4x02pepdtt82crm.png" width="1" height="1">
+<!-- <img src="https://d13wbvtlmw75ie.cloudfront.net/hit/4x02pepdtt82crm.png" width="1" height="1"> -->
 </body>
 </html>
