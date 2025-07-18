@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/png" sizes="64x64" href="bloom_county.png"/>
-<title>Bloom County Comic Search</title>
+<link rel="icon" type="image/png" sizes="64x64" href="oots.png"/>
+<title>Order of the Stick Comic Search</title>
 <style>
 body {
     font-family: 'Georgia', serif;
@@ -124,7 +124,7 @@ body {
 }
 </style>
 <script>
-const targetURL = "https://www.gocomics.com/bloomcounty/YYYY/MM/DD";
+const targetURL = "";
 let comicData = [];
 let searchBox = null;
 let resultsContainer = null;
@@ -141,7 +141,7 @@ function binaryStringToUint8Array(binaryString) {
 
 async function loadComicData(batch_num) {
     try {
-        const resp = await fetch("./bloom_county_" + String(batch_num).padStart(3, '0') + ".json.gz");
+        const resp = await fetch("./oots_" + String(batch_num).padStart(3, '0') + ".json.gz");
         const data = await resp.blob();
         const ds = new DecompressionStream("gzip");
         const decomp = data.stream().pipeThrough(ds);
@@ -335,7 +335,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     });
 
     window.addEventListener('load', async () => {
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < 1; i++) {
             await loadComicData(i);
         }
         document.getElementById('count').innerText = "" + comicData.length;
@@ -348,8 +348,8 @@ document.addEventListener("DOMContentLoaded", function(event) {
 </head>
 <body>
 <div class="header">
-    <h1>&#127803; Bloom County Search</h1>
-    <p>Search through Berkeley Breathed's classic comic</p>
+    <h1>&#127922; Order of the Stick Search</h1>
+    <p>Search through Rich Burlew's comic</p>
 </div>
 <div class="search-container">
     <input 
@@ -384,6 +384,6 @@ Also check out search for
 <a href="oots.html">Order of the Stick</a>, 
 <a href="peanuts.html">Peanuts</a>
 </div>
-<img src="https://d13wbvtlmw75ie.cloudfront.net/hit/0wk0mrww8k2dmk8.png" width="1" height="1">
+<img src="https://d13wbvtlmw75ie.cloudfront.net/hit/rxt8umh201yutek.png" width="1" height="1">
 </body>
 </html>
