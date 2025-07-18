@@ -149,13 +149,7 @@ async function loadComicData(batch_num) {
         const text = await decoded.text();
         const parsed = JSON.parse(text);
         for (let i = 0; i < parsed.length; i++) {
-            let m;
-            let re = /[ -~]+/g;
-            let words = [];
-            while ((m = re.exec(parsed[i][1])) !== null) {
-                words.push({word: m[0].replaceAll(".", ""), start: m.index, len: m[0].length});
-            }
-            parsed[i].push(words);
+            parsed[i].push(parsed[i][1].toLowerCase());
         }
         comicData = comicData.concat(parsed);
     } catch (error) { }
@@ -180,21 +174,14 @@ function escapeHtml(text) {
     });
 }
 
-function highlightText(text, hit, /* text, searchTerm */) {
+function highlightText(text, hit) {
     return (
         escapeHtml(text.substring(0, hit["start"])) + 
         '<span class="highlight">' + 
-        escapeHtml(text.substring(hit["start"], hit["start"] + hit["len"])) + 
+        escapeHtml(text.substring(hit["start"], hit["end"])) + 
         '</span>' + 
-        escapeHtml(text.substring(hit["start"] + hit["len"]))
+        escapeHtml(text.substring(hit["end"]))
     );
-
-    /*
-        if (!searchTerm) return text;
-        const regex = new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
-        return text.replace(regex, '<span class="highlight">$1</span>');
-        return text;
-    */
 }
 
 function formatDate(dateString) {
@@ -209,26 +196,73 @@ function formatDate(dateString) {
 }
 
 function findByWords(search, words) {
-    if (search.length == 0) {
-        return null;
-    } else {
-        for (let i = 0; i <= words.length - search.length; i++) {
-            if (words[i]["word"].startsWith(search[0])) {
-                let hit = words[i];
-                for (let j = 1; j < search.length; j++) {
-                    if (words[i+j]["word"].startsWith(search[j])) {
-                        hit = words[j+i];
-                    } else {
-                        hit = null;
-                        break;
-                    }
-                }
-                if (hit !== null) {
-                    return {start: words[i]["start"], len: hit["start"] - words[i]["start"] + hit["len"]};
+    const maxWordsApart = 5;
+    const wordMatches = [];
+
+    for (const searchWord of search) {
+        const regex = new RegExp(searchWord, 'gi');
+        let match;
+        const matches = [];
+
+        while ((match = regex.exec(words)) !== null) {
+            const wordsBefore = words.substring(0, match.index).split(/\s+/).length - 1;
+            matches.push({
+                start: match.index,
+                end: match.index + match[0].length,
+                word: match[0],
+                wordPosition: wordsBefore
+            });
+            if (match.index === regex.lastIndex) regex.lastIndex++;
+        }
+
+        if (matches.length === 0) {
+            return null;
+        }
+
+        wordMatches.push(matches);
+    }
+
+    function findBestSequence(matchGroups, currentSequence = [], groupIndex = 0) {
+        if (groupIndex === matchGroups.length) {
+            return currentSequence;
+        }
+
+        const currentGroup = matchGroups[groupIndex];
+        let bestSequence = null;
+
+        for (const match of currentGroup) {
+            if (currentSequence.length === 0 ||
+                (match.wordPosition > currentSequence[currentSequence.length - 1].wordPosition &&
+                    match.wordPosition - currentSequence[currentSequence.length - 1].wordPosition <= maxWordsApart)) {
+
+                const newSequence = [...currentSequence, match];
+                const result = findBestSequence(matchGroups, newSequence, groupIndex + 1);
+
+                if (result && (bestSequence === null || result.length > bestSequence.length)) {
+                    bestSequence = result;
                 }
             }
         }
+
+        return bestSequence;
     }
+
+    const bestSequence = findBestSequence(wordMatches);
+
+    if (bestSequence && bestSequence.length === search.length) {
+        const startPos = Math.min(...bestSequence.map(m => m.start));
+        const endPos = Math.max(...bestSequence.map(m => m.end));
+
+        return {
+            found: true,
+            start: startPos,
+            end: endPos,
+            matchedText: words.substring(startPos, endPos),
+            wordMatches: bestSequence,
+            wordsApart: bestSequence[bestSequence.length - 1].wordPosition - bestSequence[0].wordPosition
+        };
+    }
+
     return null;
 }
 
@@ -252,17 +286,15 @@ function searchComics(searchTerm) {
     const matches = [];
     let bailed = false;
     searchTerm = searchTerm.toLowerCase();
-    let searchWords = searchTerm.replaceAll(/[.,?!]/g, "").replaceAll(/[\s]/g, ' ').split(/\s+/).filter(word => word.length > 0);
+    let searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 0);
 
     for (const [date, text, words] of comicData) {
         let hit = findByWords(searchWords, words);
         if (hit !== null) {
-        /* if (text.includes(searchTerm)) { */
             if (matches.length > 50) {
                 bailed = true;
                 break;
             }
-            /* matches.push([date, text]); */
             matches.push([date, text, hit])
         }
     }
