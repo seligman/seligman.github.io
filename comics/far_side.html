@@ -149,7 +149,7 @@ async function loadComicData(batch_num) {
         const text = await decoded.text();
         const parsed = JSON.parse(text);
         for (let i = 0; i < parsed.length; i++) {
-            parsed[i].push(parsed[i][1].toLowerCase());
+            parsed[i].push(prepareWords(parsed[i][1]));
         }
         comicData = comicData.concat(parsed);
     } catch (error) { }
@@ -178,9 +178,9 @@ function highlightText(text, hit) {
     return (
         escapeHtml(text.substring(0, hit["start"])) + 
         '<span class="highlight">' + 
-        escapeHtml(text.substring(hit["start"], hit["end"])) + 
+        escapeHtml(text.substring(hit["start"], hit["end"] + 1)) + 
         '</span>' + 
-        escapeHtml(text.substring(hit["end"]))
+        escapeHtml(text.substring(hit["end"] + 1))
     );
 }
 
@@ -195,76 +195,157 @@ function formatDate(dateString) {
     });
 }
 
-function findByWords(search, words) {
-    const maxWordsApart = 5;
-    const wordMatches = [];
-
-    for (const searchWord of search) {
-        const regex = new RegExp(searchWord, 'gi');
-        let match;
-        const matches = [];
-
-        while ((match = regex.exec(words)) !== null) {
-            const wordsBefore = words.substring(0, match.index).split(/\s+/).length - 1;
-            matches.push({
-                start: match.index,
-                end: match.index + match[0].length,
-                word: match[0],
-                wordPosition: wordsBefore
-            });
-            if (match.index === regex.lastIndex) regex.lastIndex++;
+/* -- Search helper start --------------- */
+function prepareWords(words) {
+    if (typeof words !== 'string') {
+        return words;
+    }
+    
+    const original = words;
+    const normalized = words.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const words_array = normalized.split(/\s+/).filter(w => w.length > 0);
+    
+    const charMap = [];
+    let normalizedText = '';
+    
+    for (let i = 0; i < original.length; i++) {
+        const char = original[i];
+        if (/[a-z0-9]/i.test(char)) {
+            charMap.push(i);
+            normalizedText += char.toLowerCase();
         }
+    }
+    
+    return {
+        original: original,
+        normalized: normalized,
+        words: words_array,
+        normalizedText: normalizedText,
+        charMap: charMap
+    };
+}
 
-        if (matches.length === 0) {
+function searchInWords(words, search) {
+    const wordsData = typeof words === 'string' ? prepareWords(words) : words;
+    const searchData = typeof search === 'string' ? prepareWords(search) : search;
+    
+    if (!wordsData || !searchData || !searchData.words || searchData.words.length === 0) {
+        return null;
+    }
+    
+    return findMatch(wordsData.normalizedText, searchData.words, wordsData.charMap, wordsData.original);
+}
+
+function findMatch(text, searchWords, charMap, originalText) {
+    const firstWord = searchWords[0];
+    
+    let pos = 0;
+    while (pos < text.length) {
+        const firstMatch = findWordInText(text, firstWord, pos);
+        if (!firstMatch) {
+            break;
+        }
+        
+        const fullMatch = tryCompleteMatch(text, searchWords, firstMatch.start, charMap, originalText);
+        if (fullMatch) {
+            return fullMatch;
+        }
+        
+        pos = firstMatch.start + 1;
+    }
+    
+    return null;
+}
+
+function findWordInText(text, word, startPos) {
+    const exactPos = text.indexOf(word, startPos);
+    if (exactPos !== -1) {
+        return { start: exactPos, end: exactPos + word.length - 1 };
+    }
+    
+    for (let i = startPos; i < text.length; i++) {
+        if (i + word.length > text.length) break;
+        
+        const segment = text.substring(i, i + word.length + 10);
+        if (segment.includes(word)) {
+            const wordStart = segment.indexOf(word);
+            return { start: i + wordStart, end: i + wordStart + word.length - 1 };
+        }
+        
+        if (word.includes(text.substring(i, Math.min(i + word.length, text.length)))) {
+            const candidateEnd = Math.min(i + word.length * 2, text.length);
+            const candidate = text.substring(i, candidateEnd);
+            if (word.includes(candidate) && candidate.length >= 2) {
+                return { start: i, end: i + candidate.length - 1 };
+            }
+        }
+    }
+    
+    return null;
+}
+
+function tryCompleteMatch(text, searchWords, startPos, charMap, originalText) {
+    let matches = [];
+    let currentPos = startPos;
+    let wordBoundaries = 0;
+    
+    for (const searchWord of searchWords) {
+        const wordMatch = findWordInText(text, searchWord, currentPos);
+        if (!wordMatch) {
             return null;
         }
-
-        wordMatches.push(matches);
-    }
-
-    function findBestSequence(matchGroups, currentSequence = [], groupIndex = 0) {
-        if (groupIndex === matchGroups.length) {
-            return currentSequence;
-        }
-
-        const currentGroup = matchGroups[groupIndex];
-        let bestSequence = null;
-
-        for (const match of currentGroup) {
-            if (currentSequence.length === 0 ||
-                (match.wordPosition > currentSequence[currentSequence.length - 1].wordPosition &&
-                    match.wordPosition - currentSequence[currentSequence.length - 1].wordPosition <= maxWordsApart)) {
-
-                const newSequence = [...currentSequence, match];
-                const result = findBestSequence(matchGroups, newSequence, groupIndex + 1);
-
-                if (result && (bestSequence === null || result.length > bestSequence.length)) {
-                    bestSequence = result;
+        
+        if (matches.length > 0) {
+            const gap = wordMatch.start - matches[matches.length - 1].end - 1;
+            if (gap > 0) {
+                const gapStart = charMap[matches[matches.length - 1].end + 1] || 0;
+                const gapEnd = charMap[wordMatch.start] || text.length;
+                let boundaries = 0;
+                for (let i = gapStart; i < gapEnd; i++) {
+                    if (!/[a-z0-9]/i.test(charMap.indexOf(i) >= 0 ? text[charMap.indexOf(i)] : '')) {
+                        boundaries++;
+                    }
+                }
+                wordBoundaries += Math.max(0, boundaries - 1);
+                if (wordBoundaries > 5) {
+                    return null;
                 }
             }
         }
-
-        return bestSequence;
+        
+        matches.push(wordMatch);
+        currentPos = wordMatch.end + 1;
     }
-
-    const bestSequence = findBestSequence(wordMatches);
-
-    if (bestSequence && bestSequence.length === search.length) {
-        const startPos = Math.min(...bestSequence.map(m => m.start));
-        const endPos = Math.max(...bestSequence.map(m => m.end));
-
-        return {
-            found: true,
-            start: startPos,
-            end: endPos,
-            matchedText: words.substring(startPos, endPos),
-            wordMatches: bestSequence,
-            wordsApart: bestSequence[bestSequence.length - 1].wordPosition - bestSequence[0].wordPosition
-        };
+    
+    if (!validateMatch(text, searchWords, matches, charMap, originalText)) {
+        return null;
     }
-
-    return null;
+    
+    return {
+        start: charMap[matches[0].start],
+        end: charMap[matches[matches.length - 1].end]
+    };
 }
+
+function validateMatch(text, searchWords, matches, charMap, originalText) {
+    if (searchWords.length === 1 && matches.length === 1) {
+        const match = matches[0];
+        const originalStart = charMap[match.start];
+        const originalEnd = charMap[match.end];
+        
+        for (let i = originalStart + 1; i < originalEnd; i++) {
+            if (!charMap.includes(i)) {
+                const char = originalText[i];
+                if (/\s/.test(char)) {
+                    return false;
+                }
+            }
+        }
+    }
+    
+    return true;
+}
+/* -- Search helper end ----------------- */
 
 function fillUrlWithDate(urlTemplate, dateString) {
     const [year, month, day] = dateString.split('-').map(Number);
@@ -285,11 +366,10 @@ function searchComics(searchTerm) {
 
     const matches = [];
     let bailed = false;
-    searchTerm = searchTerm.toLowerCase();
-    let searchWords = searchTerm.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+    searchTerm = prepareWords(searchTerm);
 
     for (const [date, text, words] of comicData) {
-        let hit = findByWords(searchWords, words);
+        let hit = searchInWords(words, searchTerm);
         if (hit !== null) {
             if (matches.length > 50) {
                 bailed = true;
