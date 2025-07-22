@@ -187,6 +187,8 @@ function highlightText(text, hit) {
 function formatDate(dateString) {
     const [year, month, day] = dateString.split('-').map(Number);
     if (month === undefined) {
+        return String(year).padStart(4, '0');
+    } else {
         const date = new Date(year, month - 1, day);
         return date.toLocaleDateString('en-US', {
             weekday: 'long',
@@ -194,8 +196,6 @@ function formatDate(dateString) {
             month: 'long',
             day: 'numeric'
         });
-    } else {
-        return String(year).padStart(4, '0');
     }
 }
 
