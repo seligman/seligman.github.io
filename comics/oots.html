@@ -124,7 +124,7 @@ body {
 }
 </style>
 <script>
-const targetURL = "";
+const targetURL = "https://www.giantitp.com/comics/ootsYYYY.html";
 let comicData = [];
 let searchBox = null;
 let resultsContainer = null;
@@ -186,13 +186,17 @@ function highlightText(text, hit) {
 
 function formatDate(dateString) {
     const [year, month, day] = dateString.split('-').map(Number);
-    const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
+    if (month === undefined) {
+        const date = new Date(year, month - 1, day);
+        return date.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    } else {
+        return String(year).padStart(4, '0');
+    }
 }
 
 /* -- Search helper start --------------- */
@@ -347,15 +351,13 @@ function validateMatch(text, searchWords, matches, charMap, originalText) {
 }
 /* -- Search helper end ----------------- */
 
-function fillUrlWithDate(urlTemplate, dateString) {
-    const [year, month, day] = dateString.split('-').map(Number);
+function fillUrl(url, values) {
+    const [year, month, day] = values.split('-').map(Number);
 
-    const filledUrl = urlTemplate
-        .replace(/YYYY/g, String(year))
+    return url
+        .replace(/YYYY/g, String(year).padStart(4, '0'))
         .replace(/MM/g, String(month).padStart(2, '0'))
         .replace(/DD/g, String(day).padStart(2, '0'));
-
-    return filledUrl;
 }
 
 function searchComics(searchTerm) {
@@ -390,7 +392,7 @@ function searchComics(searchTerm) {
     if (targetURL.length > 0) {
         resultsList.innerHTML = matches.map(([date, text, hit]) => `
             <div class="result-item">
-                <div class="result-date"><a href="${fillUrlWithDate(targetURL, date)}">${formatDate(date)}</a></div>
+                <div class="result-date"><a href="${fillUrl(targetURL, date)}">${formatDate(date)}</a></div>
                 <div class="result-text">${highlightText(text, hit)}</div>
             </div>
         `).join('');
