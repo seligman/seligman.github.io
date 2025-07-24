@@ -54,6 +54,11 @@ body {
     border-color: #3498db;
     box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
 }
+.search-box:disabled {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    cursor: not-allowed;
+}
 .results-container {
     background: white;
     border-radius: 10px;
@@ -125,11 +130,13 @@ body {
 </style>
 <script>
 const targetURL = "https://www.gocomics.com/bloomcounty/YYYY/MM/DD";
+const lookupURL = "./bloom_county.json";
 let comicData = [];
 let searchBox = null;
 let resultsContainer = null;
 let resultsHeader = null;
 let resultsList = null;
+let lookupCache = null;
 
 function binaryStringToUint8Array(binaryString) {
     const bytes = new Uint8Array(binaryString.length);
@@ -142,6 +149,9 @@ function binaryStringToUint8Array(binaryString) {
 async function loadComicData(batch_num) {
     try {
         const resp = await fetch("./bloom_county_" + String(batch_num).padStart(3, '0') + ".json.gz");
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        }
         const data = await resp.blob();
         const ds = new DecompressionStream("gzip");
         const decomp = data.stream().pipeThrough(ds);
@@ -152,7 +162,30 @@ async function loadComicData(batch_num) {
             parsed[i].push(prepareWords(parsed[i][1]));
         }
         comicData = comicData.concat(parsed);
-    } catch (error) { }
+        return true;
+    } catch (error) {
+        console.error(`Failed to load batch ${batch_num}:`, error);
+        return false;
+    }
+}
+
+async function loadLookupData() {
+    if (lookupURL && lookupURL.trim() !== "" && lookupCache === null) {
+        try {
+            const resp = await fetch(lookupURL);
+            const data = await resp.json();
+            lookupCache = data;
+        } catch (error) {
+            lookupCache = {};
+        }
+    }
+}
+
+function fromData(dateString) {
+    if (lookupCache && lookupCache[dateString]) {
+        return lookupCache[dateString];
+    }
+    return null;
 }
 
 function escapeHtml(text) {
@@ -354,6 +387,13 @@ function validateMatch(text, searchWords, matches, charMap, originalText) {
 function fillUrl(url, values) {
     const [year, month, day] = values.split('-').map(Number);
 
+    if (year != null && month != null && day != null) {
+        const lookupUrl = fromData(String(year).padStart(4, '0') + "-" + String(month).padStart(2, '0') + "-" + String(day).padStart(2, '0'));
+        if (lookupUrl !== null) {
+            return lookupUrl;
+        }
+    }
+
     return url
         .replace(/YYYY/g, String(year).padStart(4, '0'))
         .replace(/MM/g, String(month).padStart(2, '0'))
@@ -417,11 +457,28 @@ document.addEventListener("DOMContentLoaded", function(event) {
     });
 
     window.addEventListener('load', async () => {
-        for (let i = 0; i < 2; i++) {
-            await loadComicData(i);
+        await loadLookupData();
+        
+        const batchCount = parseInt(2);
+        const failedBatches = [];
+        
+        for (let i = 0; i < batchCount; i++) {
+            const success = await loadComicData(i);
+            if (!success) {
+                failedBatches.push(i);
+            }
+            document.getElementById('count').innerText = `Loaded ${comicData.length}...`;
         }
-        document.getElementById('count').innerText = "" + comicData.length;
+        
+        if (failedBatches.length > 0) {
+            const batchList = failedBatches.map(i => `bloom_county_${String(i).padStart(3, '0')}.json.gz`).join(', ');
+            alert(`Error: Failed to load the following data files:\n${batchList}\n\nSome search results may be incomplete.`);
+        }
+        
+        document.getElementById('count').innerText = `Start typing to search through the ${comicData.length} entries`;
+        
         searchBox.disabled = false;
+        searchBox.placeholder = "Search for words or phrases in the comic strips...";
         searchBox.focus();
     });
 });
@@ -438,11 +495,13 @@ document.addEventListener("DOMContentLoaded", function(event) {
         type="text" 
         id="searchBox" 
         class="search-box" 
-        placeholder="Search for words or phrases in the comic strips..."
+        placeholder="Loading data files..."
         autocomplete="off"
         disabled
     >
-    <div class="search-hint">Start typing to search through the <span id="count">(loading)</span> entries...</div>
+    <div class="search-hint">
+        <span id="count"></span>
+    </div>
 </div>
 <div class="results-container" id="resultsContainer" style="display: none;">
     <div class="results-header" id="resultsHeader">Found 0 matches</div>
