@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" sizes="64x64" href="foxtrot.png"/>
+<title>Foxtrot Comic Search</title>
+<style>
+body {
+    font-family: 'Georgia', serif;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #f5f5f0;
+    color: #333;
+}
+.header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: linear-gradient(135deg, #2c3e50, #3498db);
+    color: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+.header h1 {
+    margin: 0;
+    font-size: 2.5em;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+.header p {
+    margin: 10px 0 0 0;
+    opacity: 0.9;
+    font-style: italic;
+}
+.search-container {
+    margin-bottom: 30px;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.search-box {
+    width: 100%;
+    padding: 15px;
+    font-size: 16px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+    transition: border-color 0.3s ease;
+}
+.search-box:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 10px rgba(52, 152, 219, 0.3);
+}
+.search-box:disabled {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    cursor: not-allowed;
+}
+.results-container {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    overflow: hidden;
+}
+.results-header {
+    background: #34495e;
+    color: white;
+    padding: 15px 20px;
+    font-weight: bold;
+    font-size: 18px;
+}
+.results-list {
+    padding: 0;
+}
+.result-item {
+    padding: 15px 20px;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s ease;
+}
+.result-item:hover {
+    background-color: #f8f9fa;
+}
+.result-item:last-child {
+    border-bottom: none;
+}
+.result-date {
+    font-weight: bold;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    font-size: 14px;
+}
+.result-text {
+    color: #555;
+    line-height: 1.5;
+    font-style: italic;
+}
+.highlight {
+    background-color: #fff3cd;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+.no-results {
+    padding: 40px 20px;
+    text-align: center;
+    color: #7f8c8d;
+    font-style: italic;
+}
+.search-hint {
+    color: #7f8c8d;
+    font-size: 14px;
+    margin-top: 10px;
+    text-align: center;
+}
+.links {
+    font-size: 8pt;
+    color: light-dark(#333, #ccc)
+}
+.links a{
+    font-size: 8pt;
+    color: light-dark(#55f, #bbf);
+    text-decoration: none;
+}
+.links a:hover {
+    text-decoration: underline;
+}
+</style>
+<script>
+const targetURL = "https://www.gocomics.com/foxtrot/YYYY/MM/DD";
+const lookupURL = "";
+let comicData = [];
+let searchBox = null;
+let resultsContainer = null;
+let resultsHeader = null;
+let resultsList = null;
+let lookupCache = null;
+
+function binaryStringToUint8Array(binaryString) {
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function loadComicData(batch_num) {
+    try {
+        const resp = await fetch("./foxtrot_" + String(batch_num).padStart(3, '0') + ".json.gz");
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+        }
+        const data = await resp.blob();
+        const ds = new DecompressionStream("gzip");
+        const decomp = data.stream().pipeThrough(ds);
+        const decoded = await new Response(decomp).blob();
+        const text = await decoded.text();
+        const parsed = JSON.parse(text);
+        for (let i = 0; i < parsed.length; i++) {
+            parsed[i].push(prepareWords(parsed[i][1]));
+        }
+        comicData = comicData.concat(parsed);
+        return true;
+    } catch (error) {
+        console.error(`Failed to load batch ${batch_num}:`, error);
+        return false;
+    }
+}
+
+async function loadLookupData() {
+    if (lookupURL && lookupURL.trim() !== "" && lookupCache === null) {
+        try {
+            const resp = await fetch(lookupURL);
+            const data = await resp.json();
+            lookupCache = data;
+        } catch (error) {
+            lookupCache = {};
+        }
+    }
+}
+
+function fromData(dateString) {
+    if (lookupCache && lookupCache[dateString]) {
+        return lookupCache[dateString];
+    }
+    return null;
+}
+
+function escapeHtml(text) {
+    if (typeof text !== 'string') {
+        return text;
+    }
+
+    const htmlEscapeMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#x27;',
+        '/': '&#x2F;'
+    };
+
+    return text.replace(/[&<>"'\/]/g, function (match) {
+        return htmlEscapeMap[match];
+    });
+}
+
+function highlightText(text, hit) {
+    return (
+        escapeHtml(text.substring(0, hit["start"])) + 
+        '<span class="highlight">' + 
+        escapeHtml(text.substring(hit["start"], hit["end"] + 1)) + 
+        '</span>' + 
+        escapeHtml(text.substring(hit["end"] + 1))
+    );
+}
+
+function formatDate(dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (month === undefined) {
+        return String(year).padStart(4, '0');
+    } else {
+        const date = new Date(year, month - 1, day);
+        return date.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    }
+}
+
+/* -- Search helper start --------------- */
+function prepareWords(words) {
+    if (typeof words !== 'string') {
+        return words;
+    }
+    
+    const original = words;
+    const normalized = words.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    const words_array = normalized.split(/\s+/).filter(w => w.length > 0);
+    
+    const charMap = [];
+    let normalizedText = '';
+    
+    for (let i = 0; i < original.length; i++) {
+        const char = original[i];
+        if (/[a-z0-9]/i.test(char)) {
+            charMap.push(i);
+            normalizedText += char.toLowerCase();
+        }
+    }
+    
+    return {
+        original: original,
+        normalized: normalized,
+        words: words_array,
+        normalizedText: normalizedText,
+        charMap: charMap
+    };
+}
+
+function searchInWords(words, search) {
+    const wordsData = typeof words === 'string' ? prepareWords(words) : words;
+    const searchData = typeof search === 'string' ? prepareWords(search) : search;
+    
+    if (!wordsData || !searchData || !searchData.words || searchData.words.length === 0) {
+        return null;
+    }
+    
+    return findMatch(wordsData.normalizedText, searchData.words, wordsData.charMap, wordsData.original);
+}
+
+function findMatch(text, searchWords, charMap, originalText) {
+    const firstWord = searchWords[0];
+    
+    let pos = 0;
+    while (pos < text.length) {
+        const firstMatch = findWordInText(text, firstWord, pos);
+        if (!firstMatch) {
+            break;
+        }
+        
+        const fullMatch = tryCompleteMatch(text, searchWords, firstMatch.start, charMap, originalText);
+        if (fullMatch) {
+            return fullMatch;
+        }
+        
+        pos = firstMatch.start + 1;
+    }
+    
+    return null;
+}
+
+function findWordInText(text, word, startPos) {
+    const exactPos = text.indexOf(word, startPos);
+    if (exactPos !== -1) {
+        return { start: exactPos, end: exactPos + word.length - 1 };
+    }
+    
+    for (let i = startPos; i < text.length; i++) {
+        if (i + word.length > text.length) break;
+        
+        const segment = text.substring(i, i + word.length + 10);
+        if (segment.includes(word)) {
+            const wordStart = segment.indexOf(word);
+            return { start: i + wordStart, end: i + wordStart + word.length - 1 };
+        }
+        
+        if (word.includes(text.substring(i, Math.min(i + word.length, text.length)))) {
+            const candidateEnd = Math.min(i + word.length * 2, text.length);
+            const candidate = text.substring(i, candidateEnd);
+            if (word.includes(candidate) && candidate.length >= 2) {
+                return { start: i, end: i + candidate.length - 1 };
+            }
+        }
+    }
+    
+    return null;
+}
+
+function tryCompleteMatch(text, searchWords, startPos, charMap, originalText) {
+    let matches = [];
+    let currentPos = startPos;
+    let wordBoundaries = 0;
+    
+    for (const searchWord of searchWords) {
+        const wordMatch = findWordInText(text, searchWord, currentPos);
+        if (!wordMatch) {
+            return null;
+        }
+        
+        if (matches.length > 0) {
+            const gap = wordMatch.start - matches[matches.length - 1].end - 1;
+            if (gap > 0) {
+                const gapStart = charMap[matches[matches.length - 1].end + 1] || 0;
+                const gapEnd = charMap[wordMatch.start] || text.length;
+                let boundaries = 0;
+                for (let i = gapStart; i < gapEnd; i++) {
+                    if (!/[a-z0-9]/i.test(charMap.indexOf(i) >= 0 ? text[charMap.indexOf(i)] : '')) {
+                        boundaries++;
+                    }
+                }
+                wordBoundaries += Math.max(0, boundaries - 1);
+                if (wordBoundaries > 5) {
+                    return null;
+                }
+            }
+        }
+        
+        matches.push(wordMatch);
+        currentPos = wordMatch.end + 1;
+    }
+    
+    if (!validateMatch(text, searchWords, matches, charMap, originalText)) {
+        return null;
+    }
+    
+    return {
+        start: charMap[matches[0].start],
+        end: charMap[matches[matches.length - 1].end]
+    };
+}
+
+function validateMatch(text, searchWords, matches, charMap, originalText) {
+    if (searchWords.length === 1 && matches.length === 1) {
+        const match = matches[0];
+        const originalStart = charMap[match.start];
+        const originalEnd = charMap[match.end];
+        
+        for (let i = originalStart + 1; i < originalEnd; i++) {
+            if (!charMap.includes(i)) {
+                const char = originalText[i];
+                if (/\s/.test(char)) {
+                    return false;
+                }
+            }
+        }
+    }
+    
+    return true;
+}
+/* -- Search helper end ----------------- */
+
+function fillUrl(url, values) {
+    const [year, month, day] = values.split('-').map(Number);
+
+    if (year != null && month != null && day != null) {
+        const lookupUrl = fromData(String(year).padStart(4, '0') + "-" + String(month).padStart(2, '0') + "-" + String(day).padStart(2, '0'));
+        if (lookupUrl !== null) {
+            return lookupUrl;
+        }
+    }
+
+    return url
+        .replace(/YYYY/g, String(year).padStart(4, '0'))
+        .replace(/MM/g, String(month).padStart(2, '0'))
+        .replace(/DD/g, String(day).padStart(2, '0'));
+}
+
+function searchComics(searchTerm) {
+    if (!searchTerm.trim()) {
+        resultsContainer.style.display = 'none';
+        return;
+    }
+
+    const matches = [];
+    let bailed = false;
+    searchTerm = prepareWords(searchTerm);
+
+    for (const [date, text, words] of comicData) {
+        let hit = searchInWords(words, searchTerm);
+        if (hit !== null) {
+            if (matches.length > 50) {
+                bailed = true;
+                break;
+            }
+            matches.push([date, text, hit])
+        }
+    }
+
+    resultsContainer.style.display = 'block';
+    resultsHeader.textContent = `Found ${bailed ? 'at least ' : ''}${matches.length} match${matches.length !== 1 ? 'es' : ''}`;
+
+    if (matches.length === 0) {
+        resultsList.innerHTML = '<div class="no-results">No matches found. Try a different search term.</div>';
+        return;
+    }
+
+    if (targetURL.length > 0) {
+        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+            <div class="result-item">
+                <div class="result-date"><a href="${fillUrl(targetURL, date)}">${formatDate(date)}</a></div>
+                <div class="result-text">${highlightText(text, hit)}</div>
+            </div>
+        `).join('');
+    } else {
+        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+            <div class="result-item">
+                <div class="result-date">${formatDate(date)}</div>
+                <div class="result-text">${highlightText(text, hit)}</div>
+            </div>
+        `).join('');
+    }
+}
+
+document.addEventListener("DOMContentLoaded", function(event) {
+    searchBox = document.getElementById('searchBox');
+    resultsContainer = document.getElementById('resultsContainer');
+    resultsHeader = document.getElementById('resultsHeader');
+    resultsList = document.getElementById('resultsList');
+
+    searchBox.addEventListener('input', (e) => {
+        searchComics(e.target.value);
+    });
+
+    window.addEventListener('load', async () => {
+        await loadLookupData();
+        
+        const batchCount = parseInt(1);
+        const failedBatches = [];
+        
+        for (let i = 0; i < batchCount; i++) {
+            const success = await loadComicData(i);
+            if (!success) {
+                failedBatches.push(i);
+            }
+            document.getElementById('count').innerText = `Loaded ${comicData.length}...`;
+        }
+        
+        if (failedBatches.length > 0) {
+            const batchList = failedBatches.map(i => `foxtrot_${String(i).padStart(3, '0')}.json.gz`).join(', ');
+            alert(`Error: Failed to load the following data files:\n${batchList}\n\nSome search results may be incomplete.`);
+        }
+        
+        document.getElementById('count').innerText = `Start typing to search through the ${comicData.length} entries`;
+        
+        searchBox.disabled = false;
+        searchBox.placeholder = "Search for words or phrases in the comic strips...";
+        searchBox.focus();
+    });
+});
+
+</script>
+</head>
+<body>
+<div class="header">
+    <h1>&#128126; Foxtrot Search</h1>
+    <p>Search through Bill Amend's classic comic</p>
+</div>
+<div class="search-container">
+    <input 
+        type="text" 
+        id="searchBox" 
+        class="search-box" 
+        placeholder="Loading data files..."
+        autocomplete="off"
+        disabled
+    >
+    <div class="search-hint">
+        <span id="count"></span>
+    </div>
+</div>
+<div class="results-container" id="resultsContainer" style="display: none;">
+    <div class="results-header" id="resultsHeader">Found 0 matches</div>
+    <div class="results-list" id="resultsList"></div>
+</div>
+<div class="links">
+<script>
+if(true){
+let z="",i,x="8FhJ5QrTBhGaQjyC0G0YmDpPGhIoJvHFMsOuXbzD8L3DEuDoMrWjS2N1vEvHMDYTpfhduOB0R3Y5B25DxP6B5XT1W4T88YZ6Q1v99N7K6EI32JSh4A6NA4Hn8Q8VK58OO4E9m9LP1U4rv73r1uu3y2t6vyxanr6zt8x8r7q4mzihae5c8a7mh9c9POKBkgy72im3yKQsZpR44B7BfPKmhGOc8PM8LEUuHgNhUiH9hWFp9Q3IfQ8QH0YftAyPI5jTkZWeheSWdhfqJ9JglNE7I8W70EB19XR46R4LbBeHV9S27CuD6WW16EA3C00T5YG76CL9X7wD";
+for(i=0;i<x.length;i+=2){z+=String.fromCharCode(x.charCodeAt(i)^x.charCodeAt(i+1)^((i/2+66)%100));}
+document.write(z);
+}
+</script>
+<br>
+Also check out search for 
+<a href="bloom_county.html">Bloom County</a>, 
+<a href="calvin_and_hobbes.html">Calvin and Hobbes</a>, 
+<a href="dilbert.html">Dilbert</a>, 
+<a href="doonesbury.html">Doonesbury</a>, 
+<a href="far_side.html">The Far Side</a>, 
+<a href="foxtrot.html">Foxtrot</a>, 
+<a href="oots.html">Order of the Stick</a>, 
+<a href="peanuts.html">Peanuts</a>
+</div>
+<img src="https://d13wbvtlmw75ie.cloudfront.net/hit/yryhd4kt0ywrpm4.png" width="1" height="1">
+</body>
+</html>
