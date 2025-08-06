@@ -21,12 +21,12 @@ Podcast Search Pages:
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-05-20 00:02:23 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-08-04 15:05:32 with 1,988 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-07-23 15:11:50 with 1,018 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-08-06 12:29:10 with 1,019 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-07-31 12:04:30 with 650 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-07-31 22:54:03 with 436 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-08-01 23:39:34 with 1,490 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-08-05 15:14:14 with 935 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-08-05 15:13:07 with 2,600 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-08-06 12:29:40 with 2,601 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-07-27 16:56:58 with 181 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-07-31 22:54:43 with 68 items
 <!-- Podcasts End -->
