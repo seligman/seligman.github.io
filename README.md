@@ -12,12 +12,12 @@ Podcast Search Pages:
 <!-- Podcasts Start -->
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-08-19 14:51:30 with 336 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-08-19 15:00:18 with 170 items
-* [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-08-13 16:07:31 with 414 items
+* [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-08-20 12:55:11 with 415 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-08-15 15:04:36 with 401 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2025-08-19 15:00:47 with 42 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-08-20 04:38:49 with 2,547 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-08-19 14:53:43 with 389 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-08-20 04:39:54 with 977 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-08-20 15:56:39 with 978 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-08-20 04:40:05 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-08-20 04:40:12 with 1,993 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
