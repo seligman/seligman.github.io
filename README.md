@@ -10,25 +10,25 @@ Webpages for different projects that I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-08-19 14:51:30 with 336 items
+* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-08-21 15:45:15 with 336 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-08-20 20:35:13 with 170 items
-* [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-08-20 12:55:11 with 415 items
-* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-08-15 15:04:36 with 401 items
-* [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2025-08-21 01:18:33 with 42 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-08-20 18:57:00 with 2,548 items
-* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-08-19 14:53:43 with 389 items
+* [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-08-21 13:05:08 with 415 items
+* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-08-21 13:06:20 with 401 items
+* [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2025-08-21 15:51:22 with 43 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-08-21 13:06:46 with 2,548 items
+* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-08-21 15:46:50 with 389 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-08-20 15:56:39 with 978 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-08-20 04:40:05 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-08-21 04:48:21 with 1,994 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-05-19 23:57:36 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-08-21 01:17:54 with 1,021 items
-* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-08-14 22:41:48 with 652 items
-* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-08-19 14:55:56 with 438 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-08-21 15:47:14 with 1,021 items
+* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-08-21 15:48:18 with 653 items
+* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-08-21 15:49:16 with 439 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-08-21 01:19:14 with 1,496 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-08-17 03:27:39 with 937 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-08-20 12:50:42 with 2,610 items
-* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-08-19 15:02:30 with 182 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-08-19 15:02:35 with 70 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-08-21 15:49:39 with 2,611 items
+* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-08-21 15:52:30 with 182 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-08-21 15:52:36 with 71 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
