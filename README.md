@@ -10,7 +10,7 @@ Webpages for different projects that I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-08-22 04:01:37 with 336 items
+* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2025-08-25 21:05:42 with 336 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2025-08-20 20:35:13 with 170 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-08-24 13:48:55 with 415 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-08-22 15:54:23 with 402 items
@@ -22,7 +22,7 @@ Podcast Search Pages:
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-08-25 04:18:53 with 1,995 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-08-24 13:50:55 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-08-21 15:47:14 with 1,021 items
-* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-08-22 04:06:35 with 653 items
+* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-08-25 21:08:10 with 653 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-08-25 04:16:56 with 439 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-08-22 15:58:49 with 1,497 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-08-22 04:10:43 with 938 items
