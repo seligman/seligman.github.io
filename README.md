@@ -21,11 +21,11 @@ Podcast Search Pages:
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-08-20 04:40:05 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-09-01 05:13:10 with 1,997 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-08-24 13:50:55 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-09-03 22:45:49 with 1,023 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-09-04 00:23:17 with 1,023 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2025-08-25 04:15:44 with 214 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-08-28 12:54:28 with 654 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-08-28 16:28:03 with 440 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-09-03 22:47:36 with 1,500 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-09-04 00:23:39 with 1,500 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-08-31 12:47:50 with 939 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-09-03 22:46:38 with 2,618 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-08-31 16:24:34 with 183 items
