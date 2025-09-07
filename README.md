@@ -15,7 +15,7 @@ Podcast Search Pages:
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-09-03 12:28:49 with 417 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-09-05 18:15:52 with 404 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2025-09-04 00:33:23 with 45 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-09-04 22:34:59 with 2,555 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-09-07 01:34:09 with 2,556 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-09-01 15:31:28 with 391 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-09-06 16:27:27 with 981 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-08-20 04:40:05 with 57 items
