@@ -19,7 +19,7 @@ Podcast Search Pages:
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-09-15 14:32:33 with 393 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-09-12 16:30:47 with 982 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-08-20 04:40:05 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-09-16 17:59:55 with 2,002 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2025-09-18 05:15:20 with 2,003 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-08-24 13:50:55 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2025-09-17 14:10:53 with 1,025 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2025-08-25 04:15:44 with 214 items
@@ -29,7 +29,7 @@ Podcast Search Pages:
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-09-12 03:49:50 with 941 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-09-17 14:10:59 with 2,626 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-08-31 16:24:34 with 183 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-09-13 20:08:25 with 77 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-09-18 05:15:30 with 78 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
