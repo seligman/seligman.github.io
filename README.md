@@ -15,7 +15,7 @@ Podcast Search Pages:
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2025-12-17 18:54:34 with 430 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2025-12-19 15:58:28 with 410 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2025-12-18 21:24:07 with 60 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-12-23 01:31:01 with 2,611 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2025-12-23 20:02:34 with 2,612 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2025-12-22 17:34:36 with 407 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2025-12-23 01:42:48 with 1,000 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2025-11-14 19:20:20 with 57 items
@@ -26,7 +26,7 @@ Podcast Search Pages:
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2025-12-18 21:21:58 with 670 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2025-12-23 01:36:11 with 456 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2025-12-23 01:45:42 with 1,526 items
-* [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-12-23 14:34:05 with 614 items
+* [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2025-12-23 20:03:24 with 724 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2025-12-23 14:32:45 with 2,705 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2025-11-19 12:50:17 with 188 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2025-12-23 01:46:45 with 88 items
