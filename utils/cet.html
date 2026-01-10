@@ -25,18 +25,15 @@
         .subscore { margin-bottom: 10px; }
         .subscore-name { font-weight: bold; }
 
-        /* Print Styles */
         @media print {
             body { background-color: white; padding: 0; }
             .container { box-shadow: none; border: none; width: 100%; max-width: 100%; }
             .btn-container, button { display: none !important; }
             .question-row { page-break-inside: avoid; border-color: #f0f0f0; }
             
-            /* Highlight selected answer for print */
-            .option input[type="radio"] { display: none; } /* Hide radio circles */
+            .option input[type="radio"] { display: none; }
             .option label { color: #999; font-size: 0.75em; }
             
-            /* Use a checkmark for the checked item */
             .option input[type="radio"]:checked + label {
                 color: #000;
                 font-weight: bold;
@@ -47,7 +44,7 @@
             }
 
             #results {
-                display: block !important; /* Force show results if printing */
+                display: block !important;
                 border: 1px solid #333;
                 background: white;
                 page-break-before: auto;
@@ -61,20 +58,20 @@
     <h1>Compulsive Exercise Test (CET)</h1>
     
     <div class="instructions">
-        Instructions: Please read each statement and select the answer that best describes you. All questions must be answered to calculate results.
+        Instructions: Please read each statement carefully and select the answer that best indicates how true each statement 
+        is to you.  Please answer all the questions as honestly as you can.
     </div>
 
     <form id="cetForm">
         <div id="questionsContainer"></div>
         <div class="btn-container">
-            <button type="button" id="submitBtn" onclick="calculateScore()" disabled>Complete All Questions to Calculate</button>
+            <button type="button" id="submitBtn" onclick="calculateScore()" disabled>Complete All Questions</button>
         </div>
     </form>
 
     <div id="results">
         <h2>Your Results</h2>
-        <p><strong>Total Score: <span id="totalScore">0</span> / 120</strong></p>
-        <p><small>The higher your score, the more problematic your exercise behaviors are likely to be.</small></p>
+        <p><strong>Total Score: <span id="totalScore">0</span></strong></p>
         <hr>
         <div id="subscaleResults"></div>
     </div>
@@ -89,11 +86,11 @@
         "I find exercise a chore",
         "If I feel I have eaten too much, I will do more exercise",
         "My weekly pattern of exercise is repetitive",
-        "I do not exercise to be slim", // Reverse
+        "I do not exercise to be slim",
         "If I cannot exercise I feel low or depressed",
         "I feel extremely guilty if I miss an exercise session",
         "I usually continue to exercise despite injury unless I am very ill or too injured",
-        "I enjoy exercising", // Reverse
+        "I enjoy exercising",
         "I exercise to burn calories and lose weight",
         "I feel less stressed and/or tense after I exercise",
         "If I miss an exercise session, I will try and make up for it when I next exercise",
@@ -122,7 +119,6 @@
     const submitBtn = document.getElementById('submitBtn');
     const form = document.getElementById('cetForm');
 
-    // Generate Questions
     questions.forEach((q, index) => {
         const qNum = index + 1;
         const row = document.createElement('div');
@@ -145,7 +141,6 @@
         container.appendChild(row);
     });
 
-    // Validation: Enable button only when all 24 are checked
     form.addEventListener('change', () => {
         const checkedCount = form.querySelectorAll('input[type="radio"]:checked').length;
         if (checkedCount === questions.length) {
@@ -169,22 +164,21 @@
             scores[i] = val;
         }
 
-        const total = Object.values(scores).reduce((a, b) => a + b, 0);
-        document.getElementById('totalScore').innerText = total;
-
+        let total = 0;
         let subscaleHtml = '';
         for (const [name, items] of Object.entries(subscales)) {
-            const subtotal = items.reduce((sum, itemNum) => sum + scores[itemNum], 0);
+            const subtotal = Math.round(items.reduce((sum, itemNum) => sum + scores[itemNum], 0) / items.length);
+            total += subtotal;
             subscaleHtml += `
                 <div class="subscore">
                     <span class="subscore-name">${name}:</span> ${subtotal}
                 </div>`;
         }
         
+        document.getElementById('totalScore').innerText = total;
         document.getElementById('subscaleResults').innerHTML = subscaleHtml;
         document.getElementById('results').style.display = 'block';
         
-        // Minor delay to allow UI to render before scrolling
         setTimeout(() => {
             window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
         }, 100);
