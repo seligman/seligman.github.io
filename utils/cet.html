@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compulsive Exercise Test (CET)</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f7f6; }
+        .container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .instructions { font-style: italic; color: #666; margin-bottom: 20px; }
+        .question-row { border-bottom: 1px solid #eee; padding: 15px 0; display: flex; flex-direction: column; }
+        .question-text { font-weight: 500; margin-bottom: 10px; }
+        .options { display: flex; justify-content: space-between; gap: 5px; }
+        .option { text-align: center; flex: 1; position: relative; }
+        .option label { display: block; font-size: 0.8em; margin-bottom: 5px; cursor: pointer; transition: color 0.2s; }
+        input[type="radio"] { cursor: pointer; }
+        
+        .btn-container { margin-top: 30px; text-align: center; }
+        button { background-color: #3498db; color: white; border: none; padding: 12px 24px; font-size: 16px; border-radius: 4px; cursor: pointer; transition: all 0.3s; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; opacity: 0.7; }
+
+        #results { margin-top: 30px; padding: 20px; border: 2px solid #3498db; border-radius: 8px; display: none; background: #ebf5fb; }
+        .subscore { margin-bottom: 10px; }
+        .subscore-name { font-weight: bold; }
+
+        /* Print Styles */
+        @media print {
+            body { background-color: white; padding: 0; }
+            .container { box-shadow: none; border: none; width: 100%; max-width: 100%; }
+            .btn-container, button { display: none !important; }
+            .question-row { page-break-inside: avoid; border-color: #f0f0f0; }
+            
+            /* Highlight selected answer for print */
+            .option input[type="radio"] { display: none; } /* Hide radio circles */
+            .option label { color: #999; font-size: 0.75em; }
+            
+            /* Use a checkmark for the checked item */
+            .option input[type="radio"]:checked + label {
+                color: #000;
+                font-weight: bold;
+                text-decoration: underline;
+            }
+            .option input[type="radio"]:checked + label::before {
+                content: "✓ ";
+            }
+
+            #results {
+                display: block !important; /* Force show results if printing */
+                border: 1px solid #333;
+                background: white;
+                page-break-before: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Compulsive Exercise Test (CET)</h1>
+    
+    <div class="instructions">
+        Instructions: Please read each statement and select the answer that best describes you. All questions must be answered to calculate results.
+    </div>
+
+    <form id="cetForm">
+        <div id="questionsContainer"></div>
+        <div class="btn-container">
+            <button type="button" id="submitBtn" onclick="calculateScore()" disabled>Complete All Questions to Calculate</button>
+        </div>
+    </form>
+
+    <div id="results">
+        <h2>Your Results</h2>
+        <p><strong>Total Score: <span id="totalScore">0</span> / 120</strong></p>
+        <p><small>The higher your score, the more problematic your exercise behaviors are likely to be.</small></p>
+        <hr>
+        <div id="subscaleResults"></div>
+    </div>
+</div>
+
+<script>
+    const questions = [
+        "I feel happier and/or more positive after I exercise",
+        "I exercise to improve my appearance",
+        "I like my days to be organized and structured of which exercise is just one part",
+        "I feel less anxious after I exercise",
+        "I find exercise a chore",
+        "If I feel I have eaten too much, I will do more exercise",
+        "My weekly pattern of exercise is repetitive",
+        "I do not exercise to be slim", // Reverse
+        "If I cannot exercise I feel low or depressed",
+        "I feel extremely guilty if I miss an exercise session",
+        "I usually continue to exercise despite injury unless I am very ill or too injured",
+        "I enjoy exercising", // Reverse
+        "I exercise to burn calories and lose weight",
+        "I feel less stressed and/or tense after I exercise",
+        "If I miss an exercise session, I will try and make up for it when I next exercise",
+        "If I cannot exercise I feel agitated and/or irritable",
+        "Exercise improves my mood",
+        "If I cannot exercise, I worry that I will gain weight",
+        "I follow a set routine for my exercise sessions (e.g. walk or run the same route, etc.)",
+        "If I cannot exercise I feel angry and/or frustrated",
+        "I do not enjoy exercising",
+        "I feel like I've let myself down if I miss an exercise session",
+        "If I cannot exercise I feel anxious",
+        "I feel less depressed or low after I exercise"
+    ];
+
+    const reverseItems = [8, 12];
+    const subscales = {
+        "Avoidance and rule-driven behavior": [9, 10, 11, 15, 16, 20, 22, 23],
+        "Weight-control exercise": [2, 6, 8, 13, 18],
+        "Mood improvement": [1, 4, 14, 17, 24],
+        "Lack of exercise enjoyment": [5, 12, 21],
+        "Exercise rigidity": [3, 7, 19]
+    };
+    const labels = ["Never True", "Rarely True", "Sometimes True", "Often True", "Usually True", "Always True"];
+
+    const container = document.getElementById('questionsContainer');
+    const submitBtn = document.getElementById('submitBtn');
+    const form = document.getElementById('cetForm');
+
+    // Generate Questions
+    questions.forEach((q, index) => {
+        const qNum = index + 1;
+        const row = document.createElement('div');
+        row.className = 'question-row';
+        
+        let optionsHtml = '';
+        for(let i=0; i<=5; i++) {
+            const label = labels[i];
+            optionsHtml += `
+                <div class="option">
+                    <input type="radio" name="q${qNum}" id="q${qNum}_${i}" value="${i}" required>
+                    <label for="q${qNum}_${i}">${label}</label>
+                </div>`;
+        }
+
+        row.innerHTML = `
+            <div class="question-text">${qNum}. ${q}</div>
+            <div class="options">${optionsHtml}</div>
+        `;
+        container.appendChild(row);
+    });
+
+    // Validation: Enable button only when all 24 are checked
+    form.addEventListener('change', () => {
+        const checkedCount = form.querySelectorAll('input[type="radio"]:checked').length;
+        if (checkedCount === questions.length) {
+            submitBtn.disabled = false;
+            submitBtn.innerText = "Calculate My Results";
+        } else {
+            submitBtn.disabled = true;
+            submitBtn.innerText = `Answered ${checkedCount}/${questions.length} questions...`;
+        }
+    });
+
+    function calculateScore() {
+        const data = new FormData(form);
+        let scores = {};
+        
+        for(let i=1; i<=24; i++) {
+            let val = parseInt(data.get(`q${i}`));
+            if (reverseItems.includes(i)) {
+                val = 5 - val;
+            }
+            scores[i] = val;
+        }
+
+        const total = Object.values(scores).reduce((a, b) => a + b, 0);
+        document.getElementById('totalScore').innerText = total;
+
+        let subscaleHtml = '';
+        for (const [name, items] of Object.entries(subscales)) {
+            const subtotal = items.reduce((sum, itemNum) => sum + scores[itemNum], 0);
+            subscaleHtml += `
+                <div class="subscore">
+                    <span class="subscore-name">${name}:</span> ${subtotal}
+                </div>`;
+        }
+        
+        document.getElementById('subscaleResults').innerHTML = subscaleHtml;
+        document.getElementById('results').style.display = 'block';
+        
+        // Minor delay to allow UI to render before scrolling
+        setTimeout(() => {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }, 100);
+    }
+</script>
+
+</body>
+</html>
