@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="icon" type="image/png" sizes="64x64" href="Garfield.png"/>
+<link rel="icon" type="image/png" sizes="64x64" href="garfield.png"/>
 <title>Garfield Comic Search</title>
 <style>
 body {
@@ -148,7 +148,7 @@ function binaryStringToUint8Array(binaryString) {
 
 async function loadComicData(batch_num) {
     try {
-        const resp = await fetch("./Garfield_" + String(batch_num).padStart(3, '0') + ".json.gz");
+        const resp = await fetch("./garfield_" + String(batch_num).padStart(3, '0') + ".json.gz");
         if (!resp.ok) {
             throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
         }
@@ -471,7 +471,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
         }
         
         if (failedBatches.length > 0) {
-            const batchList = failedBatches.map(i => `Garfield_${String(i).padStart(3, '0')}.json.gz`).join(', ');
+            const batchList = failedBatches.map(i => `garfield_${String(i).padStart(3, '0')}.json.gz`).join(', ');
             alert(`Error: Failed to load the following data files:\n${batchList}\n\nSome search results may be incomplete.`);
         }
         
