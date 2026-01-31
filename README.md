@@ -28,8 +28,8 @@ Podcast Search Pages:
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-01-29 14:18:43 with 460 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-01-30 22:41:01 with 1,535 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-01-29 16:29:46 with 945 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-01-29 14:18:48 with 2,727 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-01-25 07:59:55 with 1,324 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-01-31 14:56:26 with 2,728 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-01-31 05:46:58 with 1,325 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-01-28 04:39:32 with 194 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-01-29 17:20:18 with 96 items
 <!-- Podcasts End -->
