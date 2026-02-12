@@ -27,7 +27,7 @@ Podcast Search Pages:
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-02-12 15:15:16 with 678 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-02-12 15:36:14 with 462 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-02-12 15:36:51 with 1,538 items
-* [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-02-05 15:23:22 with 946 items
+* [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-02-12 18:25:26 with 947 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-02-12 15:36:17 with 2,735 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-02-10 20:34:36 with 1,338 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-02-09 14:43:37 with 196 items
