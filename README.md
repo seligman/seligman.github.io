@@ -16,7 +16,7 @@ Podcast Search Pages:
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-02-20 17:07:02 with 416 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-02-19 15:01:38 with 69 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-02-20 20:30:13 with 2,643 items
-* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-02-16 16:14:26 with 414 items
+* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-02-23 18:27:42 with 415 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-02-18 17:59:28 with 1,005 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-01-28 04:35:09 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-02-22 00:31:11 with 2,054 items
@@ -30,7 +30,7 @@ Podcast Search Pages:
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-02-12 18:25:26 with 947 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-02-22 00:30:51 with 2,740 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-02-22 15:30:47 with 1,342 items
-* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-02-17 19:43:37 with 197 items
+* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-02-23 18:32:42 with 198 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-02-20 13:35:07 with 100 items
 <!-- Podcasts End -->
 
