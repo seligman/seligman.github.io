@@ -17,7 +17,7 @@ Podcast Search Pages:
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-02-26 06:21:08 with 70 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-02-26 19:29:34 with 2,646 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-02-23 18:27:42 with 415 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-02-26 21:50:59 with 1,005 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-02-27 13:03:19 with 1,005 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-01-28 04:35:09 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-02-26 06:06:07 with 2,058 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-12-23 01:32:19 with 425 items
