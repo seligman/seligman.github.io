@@ -31,7 +31,7 @@ Podcast Search Pages:
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-03-04 17:46:17 with 2,746 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-03-01 05:44:22 with 1,344 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-03-05 03:18:46 with 198 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-02-26 19:31:31 with 101 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-03-05 06:00:49 with 101 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
