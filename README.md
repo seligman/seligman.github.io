@@ -27,12 +27,12 @@ Podcast Search Pages:
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2025-12-23 01:34:05 with 214 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-03-12 15:01:25 with 682 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-03-12 18:47:06 with 466 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-03-13 21:46:51 with 1,545 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-03-14 13:53:21 with 1,545 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-03-12 18:48:21 with 951 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-03-12 18:47:10 with 2,751 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-03-08 08:11:54 with 1,346 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-03-14 13:52:46 with 2,752 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-03-14 04:19:05 with 1,347 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-03-05 03:18:46 with 198 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-03-13 12:26:20 with 105 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-03-14 13:53:26 with 106 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
