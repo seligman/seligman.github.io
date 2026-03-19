@@ -23,13 +23,13 @@ Podcast Search Pages:
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-03-16 13:11:38 with 2,063 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-12-23 01:32:19 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-03-18 13:07:04 with 1,050 items
-* [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-03-12 11:40:45 with 13 items
+* [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-03-19 01:10:06 with 15 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2025-12-23 01:34:05 with 214 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-03-12 15:01:25 with 682 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-03-12 18:47:06 with 466 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-03-18 18:52:31 with 1,546 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-03-12 18:48:21 with 951 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-03-18 13:07:11 with 2,754 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-03-19 00:38:38 with 2,754 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-03-15 04:17:59 with 1,348 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-03-17 12:29:30 with 199 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-03-14 13:53:26 with 106 items
