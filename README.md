@@ -17,7 +17,7 @@ Podcast Search Pages:
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-04-01 14:45:57 with 441 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-03-29 14:25:27 with 421 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-04-02 14:19:05 with 74 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-04-02 20:53:29 with 2,667 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-04-03 19:01:51 with 2,668 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-03-30 17:52:08 with 420 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-04-01 16:27:14 with 1,007 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-01-28 04:35:09 with 57 items
@@ -28,10 +28,10 @@ Podcast Search Pages:
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-03-30 08:44:26 with 215 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-04-02 12:04:43 with 685 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-04-02 14:18:47 with 469 items
-* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-04-02 14:19:46 with 1,550 items
+* [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-04-03 20:08:19 with 1,551 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-03-23 15:01:42 with 951 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-04-02 14:18:51 with 2,773 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-03-29 04:57:56 with 1,352 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-04-03 19:54:30 with 1,352 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-04-02 14:46:27 with 200 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-04-02 14:46:33 with 111 items
 <!-- Podcasts End -->
