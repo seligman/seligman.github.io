@@ -27,11 +27,11 @@ Podcast Search Pages:
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-04-02 14:19:30 with 18 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-03-30 08:44:26 with 215 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-04-02 12:04:43 with 685 items
-* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-04-02 14:18:47 with 469 items
+* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-04-04 05:48:48 with 469 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-04-03 20:08:19 with 1,551 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-03-23 15:01:42 with 951 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-04-02 14:18:51 with 2,773 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-04-03 19:54:30 with 1,352 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-04-04 06:04:51 with 1,353 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-04-02 14:46:27 with 200 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-04-02 14:46:33 with 111 items
 <!-- Podcasts End -->
