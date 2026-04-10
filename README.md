@@ -10,7 +10,7 @@ Webpages for different projects that I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-04-09 19:23:34 with 6 items
+* [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-04-10 15:12:11 with 7 items
 * [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-04-06 11:14:19 with 916 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-04-09 17:07:18 with 366 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-04-09 05:38:57 with 177 items
