@@ -23,8 +23,8 @@ Podcast Search Pages:
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-04-13 04:47:30 with 2,072 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-12-23 01:32:19 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-04-08 17:17:10 with 1,053 items
-* [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-04-08 18:31:01 with 19 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-04-15 22:17:21 with 1,054 items
+* [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-04-15 22:17:28 with 21 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-03-30 08:44:26 with 215 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-04-09 12:57:15 with 686 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-04-09 16:19:13 with 470 items
