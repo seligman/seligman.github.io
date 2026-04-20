@@ -11,7 +11,7 @@ Webpages for different projects that I'm playing with:
 Podcast Search Pages:
 <!-- Podcasts Start -->
 * [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-04-17 13:28:50 with 8 items
-* [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-04-17 00:46:26 with 918 items
+* [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-04-20 11:33:48 with 919 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-04-16 18:53:19 with 368 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-04-10 15:43:50 with 177 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-04-15 16:10:01 with 443 items
