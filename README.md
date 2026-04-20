@@ -21,7 +21,7 @@ Podcast Search Pages:
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-04-13 14:30:25 with 422 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-04-15 16:10:50 with 1,009 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-04-16 11:58:46 with 2,073 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-04-20 03:51:46 with 2,074 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2025-12-23 01:32:19 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-04-15 22:17:21 with 1,054 items
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-04-15 22:17:28 with 21 items
