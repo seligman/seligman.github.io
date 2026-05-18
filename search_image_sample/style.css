@@ -1,0 +1,164 @@
+:root {
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #15171a;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 16px;
+}
+
+a {
+    color: #6db3f2;
+}
+
+#controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+#query {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 16px;
+    background: #23262b;
+    color: #e6e6e6;
+    border: 1px solid #383c42;
+    border-radius: 6px;
+}
+
+#query:focus {
+    outline: none;
+    border-color: #6db3f2;
+}
+
+#library {
+    padding: 10px;
+    background: #23262b;
+    color: #e6e6e6;
+    border: 1px solid #383c42;
+    border-radius: 6px;
+}
+
+#grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.tile {
+    display: block;
+    aspect-ratio: 1 / 1;
+    background: #23262b;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.tile img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.tile:hover {
+    outline: 2px solid #6db3f2;
+}
+
+.message {
+    color: #9aa0a6;
+    padding: 24px 4px;
+}
+
+#detail {
+    max-width: 880px;
+    margin: 0 auto;
+}
+
+#back {
+    display: inline-block;
+    margin-bottom: 16px;
+}
+
+.detail-image {
+    text-align: center;
+    background: #0e0f11;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.detail-image img {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 4px;
+    cursor: zoom-in;
+}
+
+.detail-name {
+    font-size: 20px;
+    margin: 16px 0 4px;
+    word-break: break-all;
+}
+
+.hint {
+    color: #9aa0a6;
+    font-size: 13px;
+    margin-top: 6px;
+}
+
+.section {
+    margin-top: 20px;
+}
+
+.section h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #9aa0a6;
+    border-bottom: 1px solid #2c2f34;
+    padding-bottom: 6px;
+    margin-bottom: 8px;
+}
+
+table.facts {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table.facts td {
+    padding: 4px 8px 4px 0;
+    vertical-align: top;
+    font-size: 14px;
+}
+
+table.facts td.key {
+    color: #9aa0a6;
+    white-space: nowrap;
+    width: 1px;
+}
+
+p {
+    font-size: 14px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.chip {
+    background: #2c2f34;
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 13px;
+}
