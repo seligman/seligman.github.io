@@ -24,7 +24,7 @@ Podcast Search Pages:
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-05-18 14:24:36 with 2,084 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-05-17 01:01:06 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-05-14 19:00:45 with 1,058 items
-* [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-05-14 13:29:42 with 28 items
+* [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-05-21 00:06:48 with 29 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-05-20 14:40:31 with 215 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-05-14 19:00:58 with 691 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-05-14 13:29:09 with 475 items
