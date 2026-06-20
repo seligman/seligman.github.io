@@ -23,7 +23,7 @@ Podcast Search Pages:
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-06-18 12:26:21 with 2,095 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-05-17 01:01:06 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-06-10 11:41:12 with 1,062 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-06-20 15:30:34 with 1,063 items
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-06-18 12:26:25 with 34 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-05-20 14:40:31 with 215 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-06-18 13:41:33 with 696 items
@@ -31,7 +31,7 @@ Podcast Search Pages:
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-06-19 17:02:07 with 1,570 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-03-23 15:01:42 with 951 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-06-18 12:25:57 with 2,817 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-06-14 07:01:39 with 1,374 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-06-20 11:05:43 with 1,375 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-05-28 15:37:38 with 208 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-06-13 12:07:25 with 117 items
 <!-- Podcasts End -->
