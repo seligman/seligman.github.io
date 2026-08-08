@@ -10,7 +10,7 @@ Webpages for different projects that I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-07-31 13:30:44 with 23 items
+* [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-08-08 22:52:27 with 24 items
 * [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-08-06 12:21:53 with 943 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-02 01:45:30 with 381 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-07-22 14:50:02 with 181 items
@@ -33,7 +33,7 @@ Podcast Search Pages:
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-08-08 11:00:05 with 2,857 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-08-08 06:59:55 with 1,391 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-07-28 13:53:20 with 211 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-07-31 13:31:34 with 120 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-08-08 22:55:05 with 121 items
 <!-- Podcasts End -->
 
 Some Podcast to Text examples:
