@@ -16,23 +16,23 @@ Podcast Search Pages:
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-07-22 14:50:02 with 181 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-08-12 14:34:25 with 458 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-08-07 16:42:53 with 436 items
-* [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-08-06 12:22:35 with 93 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-08-12 09:21:09 with 2,734 items
+* [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-08-13 11:55:49 with 94 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-08-13 01:12:35 with 2,735 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-08-10 15:57:08 with 439 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-07-27 12:47:20 with 1,011 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-08-09 23:01:47 with 2,112 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-08-13 11:55:53 with 2,113 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-05-17 01:01:06 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-08-05 12:14:19 with 1,070 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-08-13 11:55:28 with 1,071 items
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-07-10 14:04:47 with 35 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-05-20 14:40:31 with 215 items
-* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-08-06 12:22:11 with 703 items
+* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-08-13 11:21:00 with 704 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-08-06 12:22:16 with 487 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-08-07 16:43:22 with 1,578 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-08-07 11:05:11 with 954 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-08-12 13:47:27 with 2,859 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-08-13 11:55:32 with 2,860 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-08-09 10:03:20 with 1,392 items
-* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-07-28 13:53:20 with 211 items
+* [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-08-13 11:56:03 with 212 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-08-08 22:55:05 with 121 items
 <!-- Podcasts End -->
 
