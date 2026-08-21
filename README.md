@@ -15,7 +15,7 @@ Podcast Search Pages:
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-16 11:33:09 with 382 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-08-19 14:02:24 with 182 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-08-19 14:41:16 with 459 items
-* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-08-14 13:40:18 with 437 items
+* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-08-21 13:29:07 with 438 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-08-20 15:20:01 with 95 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-08-20 18:50:35 with 2,740 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-08-17 13:46:08 with 440 items
