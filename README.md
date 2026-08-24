@@ -21,6 +21,7 @@ Podcast Search Pages:
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-08-23 04:34:01 with 113 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-08-21 19:59:06 with 2,741 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-08-23 04:34:05 with 136 items
+* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-08-24 16:06:24 with 2,634 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-08-24 15:48:55 with 441 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-07-27 12:47:20 with 1,011 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
