@@ -12,7 +12,7 @@ Podcast Search Pages:
 <!-- Podcasts Start -->
 * [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-08-28 13:53:38 with 27 items
 * [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-08-24 15:48:51 with 947 items
-* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-16 11:33:09 with 382 items
+* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-30 05:05:13 with 383 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-08-19 14:02:24 with 182 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-08-26 14:39:05 with 460 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-08-28 14:06:51 with 439 items
