@@ -11,7 +11,7 @@ Webpages for different projects that I'm playing with:
 Podcast Search Pages:
 <!-- Podcasts Start -->
 * [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-08-28 13:53:38 with 27 items
-* [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-08-24 15:48:51 with 947 items
+* [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-08-31 14:07:47 with 948 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-30 05:05:13 with 383 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-08-19 14:02:24 with 182 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-08-26 14:39:05 with 460 items
@@ -22,7 +22,7 @@ Podcast Search Pages:
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-08-27 20:57:53 with 2,744 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-08-25 22:31:05 with 137 items
 * [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-08-30 15:33:00 with 2,640 items
-* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-08-24 15:48:55 with 441 items
+* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-08-31 14:07:49 with 442 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-07-27 12:47:20 with 1,011 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-08-31 11:44:13 with 2,118 items
