@@ -10,16 +10,16 @@ Webpages for different projects that I'm playing with:
 
 Podcast Search Pages:
 <!-- Podcasts Start -->
-* [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-09-04 16:18:36 with 28 items
+* [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-09-11 14:47:39 with 29 items
 * [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-09-07 10:48:10 with 949 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-30 05:05:13 with 383 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-08-19 14:02:24 with 182 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-09-09 12:04:04 with 462 items
-* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-08-28 14:06:51 with 439 items
+* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-09-11 14:41:41 with 440 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-09-03 12:05:00 with 97 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-09-08 04:15:38 with 142 items
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-09-02 23:22:00 with 114 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-09-09 18:16:06 with 2,749 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-09-10 22:24:23 with 2,750 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-09-08 21:52:52 with 138 items
 * [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-09-09 13:50:17 with 2,646 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-09-07 11:45:47 with 443 items
