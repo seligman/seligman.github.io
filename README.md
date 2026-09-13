@@ -12,7 +12,7 @@ Podcast Search Pages:
 <!-- Podcasts Start -->
 * [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-09-11 14:47:39 with 29 items
 * [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-09-07 10:48:10 with 949 items
-* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-08-30 05:05:13 with 383 items
+* [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-09-13 03:43:53 with 384 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-08-19 14:02:24 with 182 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-09-09 12:04:04 with 462 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-09-11 14:41:41 with 440 items
@@ -21,7 +21,7 @@ Podcast Search Pages:
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-09-02 23:22:00 with 114 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-09-10 22:24:23 with 2,750 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-09-08 21:52:52 with 138 items
-* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-09-12 13:24:27 with 2,647 items
+* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-09-13 11:54:23 with 2,649 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-09-07 11:45:47 with 443 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-07-27 12:47:20 with 1,011 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
@@ -36,10 +36,10 @@ Podcast Search Pages:
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-09-09 13:51:59 with 958 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-09-12 13:23:08 with 2,878 items
 * [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-08-23 04:34:22 with 100 items
-* [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-08-29 11:56:25 with 363 items
+* [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-09-13 02:51:55 with 364 items
 * [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-08-23 04:34:27 with 73 items
 * [TWiP](https://seligman.github.io/podcasts/twip/twip.html), last updated 2026-09-08 14:20:20 with 287 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-09-12 06:09:14 with 1,401 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-09-13 08:18:57 with 1,402 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-08-13 11:56:03 with 212 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-09-03 15:38:00 with 125 items
 * [Urban Agriculture](https://seligman.github.io/podcasts/urban_agriculture/urban_agriculture.html), last updated 2026-08-23 04:34:32 with 29 items
