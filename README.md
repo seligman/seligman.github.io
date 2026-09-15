@@ -19,7 +19,7 @@ Podcast Search Pages:
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-09-03 12:05:00 with 97 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-09-08 04:15:38 with 142 items
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-09-02 23:22:00 with 114 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-09-10 22:24:23 with 2,750 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-09-14 23:12:40 with 2,751 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-09-08 21:52:52 with 138 items
 * [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-09-13 11:54:23 with 2,649 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-09-14 15:06:54 with 444 items
@@ -34,7 +34,7 @@ Podcast Search Pages:
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-09-10 14:36:34 with 492 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-09-11 17:06:25 with 1,586 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-09-09 13:51:59 with 958 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-09-12 13:23:08 with 2,878 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-09-15 13:57:16 with 2,879 items
 * [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-08-23 04:34:22 with 100 items
 * [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-09-13 02:51:55 with 364 items
 * [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-08-23 04:34:27 with 73 items
