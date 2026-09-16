@@ -1,1 +1,1 @@
-{"model": "all-MiniLM-L6-v2", "dim": 384, "chunk_count": 182688, "episode_count": 2879, "shard_size": 1000, "embedding_shard_count": 27, "last_updated": "2026-09-15 15:16:49"}
+{"model": "all-MiniLM-L6-v2", "dim": 384, "chunk_count": 182707, "episode_count": 2880, "shard_size": 1000, "embedding_shard_count": 27, "last_updated": "2026-09-16 16:02:42"}
