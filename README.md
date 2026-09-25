@@ -41,7 +41,7 @@ Podcast Search Pages:
 * [TWiP](https://seligman.github.io/podcasts/twip/twip.html), last updated 2026-09-21 15:09:54 with 288 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-09-20 07:12:06 with 1,404 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-08-13 11:56:03 with 212 items
-* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-09-17 12:40:39 with 126 items
+* [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-09-25 18:40:37 with 127 items
 * [Urban Agriculture](https://seligman.github.io/podcasts/urban_agriculture/urban_agriculture.html), last updated 2026-08-23 04:34:32 with 29 items
 <!-- Podcasts End -->
 
