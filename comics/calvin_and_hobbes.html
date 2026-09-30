@@ -216,7 +216,7 @@ body {
 const targetURL = "https://www.gocomics.com/calvinandhobbes/YYYY/MM/DD";
 const lookupURL = "";
 // [name, number of strips] for each character; items refer to them by index
-const CHARACTERS = [["Calvin",3050],["Hobbes",1522],["Calvin's Mom",0],["Dad",64],["Susie Derkins",146],["Miss Wormwood",18],["Moe",29],["Rosalyn",33]];
+const CHARACTERS = [["Calvin",3541],["Hobbes",2505],["Calvin's Mom",597],["Dad",509],["Susie Derkins",217],["Miss Wormwood",91],["Moe",63],["Rosalyn",65],["Mr. Spittle",4],["Uncle Max",5],["Calvin's Father",28],["Spaceman Spiff",11],["Mrs. Wormwood",2],["Stupendous Man",1],["Calvin's Mother",15],["Miss Derkins",1],["Police Officer",1],["Cousin Ed",1],["Mr. Lockjaw",2],["Mr. Wormwood",1],["Little Tim",1],["Mrs. Derkins",1],["Farmer Brown",1],["Santa Claus",10],["Blor-Utar",1],["Doctor",7],["Teacher",18],["Principal",7],["Grandma",2],["Fred",1],["Jessica",1],["Zorg",1],["Britannica",1],["Neighbor",1],["Maeve",1],["Mo",1],["Pteranodon",1],["Roz",1],["Billy",1],["Shorty",1],["Ignoramus",1],["Daddy",1],["Mommy",1],["Ralph",1],["Monroe",1],["Howard",1],["Bucko",1],["Leonardo",1],["Classmate",1],["woman",1],["Charlie",1]];
 const HAS_VECTORS = true;
 // "Search by meaning": the same model and settings semantic\embed.mjs used for the strips
 const EMBED_LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
@@ -694,7 +694,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     window.addEventListener('load', async () => {
         await loadLookupData();
 
-        const batchCount = parseInt(1);
+        const batchCount = parseInt(2);
         const failedBatches = [];
 
         // Searching works as soon as the first batch is in; results refresh as the rest arrive
