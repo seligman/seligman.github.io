@@ -59,6 +59,64 @@ body {
     color: #6c757d;
     cursor: not-allowed;
 }
+.options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: center;
+    margin-top: 12px;
+    font-size: 14px;
+    color: #555;
+}
+.options select {
+    font-family: inherit;
+    font-size: 14px;
+}
+.mode button {
+    font-family: inherit;
+    font-size: 13px;
+    padding: 4px 10px;
+    border: 1px solid #3498db;
+    background: white;
+    color: #3498db;
+    cursor: pointer;
+}
+.mode button:first-child {
+    border-radius: 6px 0 0 6px;
+}
+.mode button:last-child {
+    border-radius: 0 6px 6px 0;
+    margin-left: -1px;
+}
+.mode button.on {
+    background: #3498db;
+    color: white;
+}
+.chips {
+    margin-top: 12px;
+    line-height: 2;
+}
+.chip {
+    display: inline-block;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 1px 9px;
+    margin: 0 4px 0 0;
+    border: 1px solid #b8c7d6;
+    border-radius: 12px;
+    background: #f4f8fb;
+    color: #2c3e50;
+    cursor: pointer;
+    line-height: 1.6;
+}
+.chip:hover {
+    border-color: #3498db;
+}
+.chip.on {
+    background: #3498db;
+    border-color: #3498db;
+    color: white;
+}
 .results-container {
     background: white;
     border-radius: 10px;
@@ -97,9 +155,23 @@ body {
     line-height: 1.5;
     font-style: italic;
 }
+.result-desc {
+    color: #666;
+    line-height: 1.45;
+    font-size: 14px;
+    margin-top: 6px;
+}
+.result-meta {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #7f8c8d;
+}
+.result-meta a {
+    color: #7f8c8d;
+}
 .highlight {
     background-color: #fff3cd;
-    padding: 2px 4px;
+    padding: 1px 0;
     border-radius: 3px;
     font-weight: bold;
 }
@@ -108,6 +180,18 @@ body {
     text-align: center;
     color: #7f8c8d;
     font-style: italic;
+}
+.more {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-top: 1px solid #eee;
+    background: #f8f9fa;
+    color: #3498db;
+    font-family: inherit;
+    font-size: 15px;
+    cursor: pointer;
 }
 .search-hint {
     color: #7f8c8d;
@@ -131,20 +215,34 @@ body {
 <script>
 const targetURL = "https://dilbert-viewer.herokuapp.com/YYYY-MM-DD";
 const lookupURL = "";
+// [name, number of strips] for each character; items refer to them by index
+const CHARACTERS = [["Dilbert",826],["Dogbert",289],["Catbert",46],["Pointy-Haired Boss",100],["Wally",73],["Alice",81],["Asok",17],["Ratbert",41]];
+const HAS_VECTORS = true;
+// "Search by meaning": the same model and settings semantic\embed.mjs used for the strips
+const EMBED_LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
+const EMBED_MODEL = "Xenova/bge-small-en-v1.5";
+const EMBED_DIMS = 384;
+const PAGE_SIZE = 50;
+const MAX_CHIPS = 30;
+
+// Each item: [date, dialogue, description, extra search words, [character indexes], rerun of date]
 let comicData = [];
+let batchSpans = [];            // [first item, count] for each batch file, to line up the vectors
+let byDate = {};                // date -> index of the first item with that date
+let alsoRan = {};               // date of a first printing -> dates it was rerun
 let searchBox = null;
 let resultsContainer = null;
 let resultsHeader = null;
 let resultsList = null;
 let lookupCache = null;
-
-function binaryStringToUint8Array(binaryString) {
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    return bytes;
-}
+let mode = "words";
+let selectedChars = new Set();
+let shown = 0;
+let lastMatches = [];
+let searchTimer = null;
+let semantic = null;            // {embed, vectors, norms} once loaded
+let semanticLoading = null;
+let searchSerial = 0;
 
 async function loadComicData(batch_num) {
     try {
@@ -158,10 +256,11 @@ async function loadComicData(batch_num) {
         const decoded = await new Response(decomp).blob();
         const text = await decoded.text();
         const parsed = JSON.parse(text);
-        for (let i = 0; i < parsed.length; i++) {
-            parsed[i].push(prepareWords(parsed[i][1]));
+        batchSpans[batch_num] = [comicData.length, parsed.length];
+        for (const item of parsed) {
+            item.push(prepareItem(item, CHARACTERS));
+            comicData.push(item);
         }
-        comicData = comicData.concat(parsed);
         return true;
     } catch (error) {
         console.error(`Failed to load batch ${batch_num}:`, error);
@@ -207,16 +306,6 @@ function escapeHtml(text) {
     });
 }
 
-function highlightText(text, hit) {
-    return (
-        escapeHtml(text.substring(0, hit["start"])) + 
-        '<span class="highlight">' + 
-        escapeHtml(text.substring(hit["start"], hit["end"] + 1)) + 
-        '</span>' + 
-        escapeHtml(text.substring(hit["end"] + 1))
-    );
-}
-
 function formatDate(dateString) {
     const [year, month, day] = dateString.split('-').map(Number);
     if (month === undefined) {
@@ -232,155 +321,85 @@ function formatDate(dateString) {
     }
 }
 
+function shortDate(dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (month === undefined) {
+        return String(year);
+    }
+    return new Date(year, month - 1, day).toLocaleDateString('en-US', {year: 'numeric', month: 'short', day: 'numeric'});
+}
+
 /* -- Search helper start --------------- */
-function prepareWords(words) {
-    if (typeof words !== 'string') {
-        return words;
-    }
-    
-    const original = words;
-    const normalized = words.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-    const words_array = normalized.split(/\s+/).filter(w => w.length > 0);
-    
-    const charMap = [];
-    let normalizedText = '';
-    
-    for (let i = 0; i < original.length; i++) {
-        const char = original[i];
-        if (/[a-z0-9]/i.test(char)) {
-            charMap.push(i);
-            normalizedText += char.toLowerCase();
-        }
-    }
-    
+// Lowercase words separated by single spaces, with a space at each end so " word" finds a word start.
+// Apostrophes are dropped, so "dont" finds "don't".
+function normalizeText(text) {
+    return ' ' + String(text || '').toLowerCase().replace(/['\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+}
+
+function queryTokens(query) {
+    return normalizeText(query).trim().split(' ').filter(w => w.length > 0);
+}
+
+function prepareItem(item, characters) {
+    const names = item[4].map(i => (characters[i] || [''])[0]).join(' / ');
     return {
-        original: original,
-        normalized: normalized,
-        words: words_array,
-        normalizedText: normalizedText,
-        charMap: charMap
+        text: normalizeText(item[1]),
+        desc: normalizeText(item[2]),
+        extra: normalizeText(item[3] + ' / ' + names),
+        year: parseInt(item[0].slice(0, 4))
     };
 }
 
-function searchInWords(words, search) {
-    const wordsData = typeof words === 'string' ? prepareWords(words) : words;
-    const searchData = typeof search === 'string' ? prepareWords(search) : search;
-    
-    if (!wordsData || !searchData || !searchData.words || searchData.words.length === 0) {
-        return null;
+// Score one item for the search words (-1 if a word is missing). Every word has to appear, at the start
+// of a word, somewhere in the dialogue, description, title, keywords or character names. Dialogue
+// counts most, whole words beat partial ones, and the words together as a phrase score extra.
+function scoreItem(prep, tokens) {
+    let score = 0;
+    for (const t of tokens) {
+        const start = ' ' + t, whole = ' ' + t + ' ';
+        if (prep.text.includes(whole)) {
+            score += 10;
+        } else if (prep.text.includes(start)) {
+            score += 7;
+        } else if (prep.desc.includes(whole) || prep.extra.includes(whole)) {
+            score += 4;
+        } else if (prep.desc.includes(start) || prep.extra.includes(start)) {
+            score += 3;
+        } else {
+            return -1;
+        }
     }
-    
-    return findMatch(wordsData.normalizedText, searchData.words, wordsData.charMap, wordsData.original);
+    if (tokens.length > 1) {
+        const phrase = ' ' + tokens.join(' ');
+        if (prep.text.includes(phrase)) {
+            score += 25;
+        } else if (prep.desc.includes(phrase) || prep.extra.includes(phrase)) {
+            score += 10;
+        }
+    }
+    return score;
 }
 
-function findMatch(text, searchWords, charMap, originalText) {
-    const firstWord = searchWords[0];
-    
-    let pos = 0;
-    while (pos < text.length) {
-        const firstMatch = findWordInText(text, firstWord, pos);
-        if (!firstMatch) {
-            break;
-        }
-        
-        const fullMatch = tryCompleteMatch(text, searchWords, firstMatch.start, charMap, originalText);
-        if (fullMatch) {
-            return fullMatch;
-        }
-        
-        pos = firstMatch.start + 1;
+// Wrap the search words in the shown text; they may have apostrophes in them ("dont" -> "don't")
+function highlightWords(text, tokens) {
+    const words = tokens.filter(t => t.length > 1 || tokens.length === 1);
+    if (words.length === 0) {
+        return escapeHtml(text);
     }
-    
-    return null;
-}
-
-function findWordInText(text, word, startPos) {
-    const exactPos = text.indexOf(word, startPos);
-    if (exactPos !== -1) {
-        return { start: exactPos, end: exactPos + word.length - 1 };
-    }
-    
-    for (let i = startPos; i < text.length; i++) {
-        if (i + word.length > text.length) break;
-        
-        const segment = text.substring(i, i + word.length + 10);
-        if (segment.includes(word)) {
-            const wordStart = segment.indexOf(word);
-            return { start: i + wordStart, end: i + wordStart + word.length - 1 };
-        }
-        
-        if (word.includes(text.substring(i, Math.min(i + word.length, text.length)))) {
-            const candidateEnd = Math.min(i + word.length * 2, text.length);
-            const candidate = text.substring(i, candidateEnd);
-            if (word.includes(candidate) && candidate.length >= 2) {
-                return { start: i, end: i + candidate.length - 1 };
-            }
+    const parts = words
+        .sort((a, b) => b.length - a.length)
+        .map(t => t.split('').map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join("['\u2019]?"));
+    const re = new RegExp("(^|[^a-z0-9])(" + parts.join('|') + ")", 'gi');
+    let out = '', last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+        const start = m.index + m[1].length;
+        out += escapeHtml(text.substring(last, start)) + '<span class="highlight">' + escapeHtml(m[2]) + '</span>';
+        last = start + m[2].length;
+        if (m[0].length === 0) {
+            re.lastIndex++;
         }
     }
-    
-    return null;
-}
-
-function tryCompleteMatch(text, searchWords, startPos, charMap, originalText) {
-    let matches = [];
-    let currentPos = startPos;
-    let wordBoundaries = 0;
-    
-    for (const searchWord of searchWords) {
-        const wordMatch = findWordInText(text, searchWord, currentPos);
-        if (!wordMatch) {
-            return null;
-        }
-        
-        if (matches.length > 0) {
-            const gap = wordMatch.start - matches[matches.length - 1].end - 1;
-            if (gap > 0) {
-                const gapStart = charMap[matches[matches.length - 1].end + 1] || 0;
-                const gapEnd = charMap[wordMatch.start] || text.length;
-                let boundaries = 0;
-                for (let i = gapStart; i < gapEnd; i++) {
-                    if (!/[a-z0-9]/i.test(charMap.indexOf(i) >= 0 ? text[charMap.indexOf(i)] : '')) {
-                        boundaries++;
-                    }
-                }
-                wordBoundaries += Math.max(0, boundaries - 1);
-                if (wordBoundaries > 5) {
-                    return null;
-                }
-            }
-        }
-        
-        matches.push(wordMatch);
-        currentPos = wordMatch.end + 1;
-    }
-    
-    if (!validateMatch(text, searchWords, matches, charMap, originalText)) {
-        return null;
-    }
-    
-    return {
-        start: charMap[matches[0].start],
-        end: charMap[matches[matches.length - 1].end]
-    };
-}
-
-function validateMatch(text, searchWords, matches, charMap, originalText) {
-    if (searchWords.length === 1 && matches.length === 1) {
-        const match = matches[0];
-        const originalStart = charMap[match.start];
-        const originalEnd = charMap[match.end];
-        
-        for (let i = originalStart + 1; i < originalEnd; i++) {
-            if (!charMap.includes(i)) {
-                const char = originalText[i];
-                if (/\s/.test(char)) {
-                    return false;
-                }
-            }
-        }
-    }
-    
-    return true;
+    return out + escapeHtml(text.substring(last));
 }
 /* -- Search helper end ----------------- */
 
@@ -400,49 +419,255 @@ function fillUrl(url, values) {
         .replace(/DD/g, String(day).padStart(2, '0'));
 }
 
-function searchComics(searchTerm) {
-    if (!searchTerm.trim()) {
+function dateLink(date, text) {
+    if (targetURL.length > 0) {
+        return `<a href="${fillUrl(targetURL, date)}">${escapeHtml(text)}</a>`;
+    }
+    return escapeHtml(text);
+}
+
+// The filters that apply in both modes: returns the index to show for item i (its first printing when
+// reruns are hidden), or -1
+function filterItem(i, yearFrom, yearTo, hideReruns) {
+    const item = comicData[i];
+    for (const c of selectedChars) {
+        if (!item[4].includes(c)) {
+            return -1;
+        }
+    }
+    let target = i;
+    if (hideReruns && item[5] && byDate[item[5]] !== undefined) {
+        target = byDate[item[5]];
+    }
+    const year = comicData[target][6].year;
+    if (year < yearFrom || year > yearTo) {
+        return -1;
+    }
+    return target;
+}
+
+function currentFilters() {
+    // The year lists are filled in once every batch has loaded
+    const from = document.getElementById('yearFrom'), to = document.getElementById('yearTo');
+    const ready = from.options.length > 0;
+    return {
+        yearFrom: ready ? parseInt(from.value) : -Infinity,
+        yearTo: ready ? parseInt(to.value) : Infinity,
+        yearsNarrowed: ready && (from.selectedIndex > 0 || to.selectedIndex < to.options.length - 1),
+        hideReruns: document.getElementById('hideReruns').checked
+    };
+}
+
+function filtersActive(f) {
+    return selectedChars.size > 0 || f.yearsNarrowed;
+}
+
+function indexItems(first) {
+    for (let i = first; i < comicData.length; i++) {
+        const item = comicData[i];
+        if (byDate[item[0]] === undefined) {
+            byDate[item[0]] = i;
+        }
+        if (item[5]) {
+            (alsoRan[item[5]] = alsoRan[item[5]] || []).push(item[0]);
+        }
+    }
+}
+
+function scheduleSearch() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(runSearch, mode === "meaning" ? 400 : 120);
+}
+
+async function runSearch() {
+    const serial = ++searchSerial;
+    const query = searchBox.value;
+    const tokens = queryTokens(query);
+    const f = currentFilters();
+    if (tokens.length === 0 && !filtersActive(f)) {
         resultsContainer.style.display = 'none';
         return;
     }
 
-    const matches = [];
-    let bailed = false;
-    searchTerm = prepareWords(searchTerm);
-
-    for (const [date, text, words] of comicData) {
-        let hit = searchInWords(words, searchTerm);
-        if (hit !== null) {
-            if (matches.length > 50) {
-                bailed = true;
-                break;
+    const best = new Map();
+    if (mode === "meaning" && tokens.length > 0) {
+        if (!await loadSemantic()) {
+            return;
+        }
+        const qv = (await semantic.embed(query, { pooling: 'cls', normalize: true })).data;
+        if (serial !== searchSerial) {
+            return;
+        }
+        const v = semantic.vectors;
+        for (let i = 0; i < comicData.length; i++) {
+            const target = filterItem(i, f.yearFrom, f.yearTo, f.hideReruns);
+            if (target < 0 || semantic.norms[i] === 0) {
+                continue;
             }
-            matches.push([date, text, hit])
+            let dot = 0;
+            const base = i * EMBED_DIMS;
+            for (let d = 0; d < EMBED_DIMS; d++) {
+                dot += qv[d] * v[base + d];
+            }
+            const score = dot / semantic.norms[i];
+            if (!best.has(target) || best.get(target) < score) {
+                best.set(target, score);
+            }
+        }
+    } else {
+        for (let i = 0; i < comicData.length; i++) {
+            const score = tokens.length > 0 ? scoreItem(comicData[i][6], tokens) : 0;
+            if (score < 0) {
+                continue;
+            }
+            const target = filterItem(i, f.yearFrom, f.yearTo, f.hideReruns);
+            if (target >= 0 && (!best.has(target) || best.get(target) < score)) {
+                best.set(target, score);
+            }
         }
     }
 
+    lastMatches = [...best.entries()].sort((a, b) => b[1] - a[1] || (comicData[a[0]][0] < comicData[b[0]][0] ? -1 : 1));
+    if (mode === "meaning" && tokens.length > 0) {
+        // Meaning always finds something; past the first few hundred it's noise
+        lastMatches = lastMatches.slice(0, 500);
+    }
+    shown = 0;
+    resultsList.innerHTML = '';
     resultsContainer.style.display = 'block';
-    resultsHeader.textContent = `Found ${bailed ? 'at least ' : ''}${matches.length} match${matches.length !== 1 ? 'es' : ''}`;
-
-    if (matches.length === 0) {
+    if (lastMatches.length === 0) {
+        resultsHeader.textContent = 'Found 0 matches';
         resultsList.innerHTML = '<div class="no-results">No matches found. Try a different search term.</div>';
         return;
     }
-
-    if (targetURL.length > 0) {
-        resultsList.innerHTML = matches.map(([date, text, hit]) => `
-            <div class="result-item">
-                <div class="result-date"><a href="${fillUrl(targetURL, date)}">${formatDate(date)}</a></div>
-                <div class="result-text">${highlightText(text, hit)}</div>
-            </div>
-        `).join('');
+    if (mode === "meaning" && tokens.length > 0) {
+        resultsHeader.textContent = 'Closest matches';
     } else {
-        resultsList.innerHTML = matches.map(([date, text, hit]) => `
+        resultsHeader.textContent = `Found ${lastMatches.length.toLocaleString()} match${lastMatches.length !== 1 ? 'es' : ''}`;
+    }
+    showMore(mode === "meaning" ? [] : tokens);
+}
+
+function showMore(tokens) {
+    const more = document.getElementById('moreButton');
+    if (more) {
+        more.remove();
+    }
+    const html = [];
+    for (const [i] of lastMatches.slice(shown, shown + PAGE_SIZE)) {
+        const [date, text, desc, extra, chars, rerun] = comicData[i];
+        const meta = [];
+        if (rerun) {
+            meta.push(`Rerun of ${dateLink(rerun, shortDate(rerun))}`);
+        }
+        if (alsoRan[date]) {
+            meta.push('Also ran ' + alsoRan[date].map(d => dateLink(d, shortDate(d))).join(', '));
+        }
+        const chips = chars.filter(c => CHARACTERS[c]).map(c =>
+            `<button class="chip${selectedChars.has(c) ? ' on' : ''}" data-char="${c}">${escapeHtml(CHARACTERS[c][0])}</button>`).join('');
+        html.push(`
             <div class="result-item">
-                <div class="result-date">${formatDate(date)}</div>
-                <div class="result-text">${highlightText(text, hit)}</div>
-            </div>
-        `).join('');
+                <div class="result-date">${dateLink(date, formatDate(date))}</div>
+                ${text ? `<div class="result-text">${highlightWords(text, tokens)}</div>` : ''}
+                ${desc ? `<div class="result-desc">${highlightWords(desc, tokens)}</div>` : ''}
+                ${chips || meta.length ? `<div class="result-meta">${chips}${meta.join(' &middot; ')}</div>` : ''}
+            </div>`);
+    }
+    shown = Math.min(shown + PAGE_SIZE, lastMatches.length);
+    resultsList.insertAdjacentHTML('beforeend', html.join(''));
+    if (shown < lastMatches.length) {
+        resultsList.insertAdjacentHTML('beforeend',
+            `<button class="more" id="moreButton">Show more (${(lastMatches.length - shown).toLocaleString()} left)</button>`);
+        document.getElementById('moreButton').onclick = () => showMore(tokens);
+    }
+}
+
+async function loadSemantic() {
+    if (semantic) {
+        return true;
+    }
+    if (!semanticLoading) {
+        semanticLoading = (async () => {
+            const status = document.getElementById('count');
+            try {
+                status.innerText = 'Loading the "meaning" model (about 35 MB, only the first time)...';
+                const lib = await import(EMBED_LIB);
+                const embed = await lib.pipeline('feature-extraction', EMBED_MODEL, { dtype: 'q8' });
+                const vectors = new Int8Array(comicData.length * EMBED_DIMS);
+                for (let n = 0; n < batchSpans.length; n++) {
+                    if (!batchSpans[n]) {
+                        continue;
+                    }
+                    const resp = await fetch("./dilbert_vec_" + String(n).padStart(3, '0') + ".bin");
+                    const part = new Int8Array(await resp.arrayBuffer());
+                    if (!resp.ok || part.length !== batchSpans[n][1] * EMBED_DIMS) {
+                        throw new Error(`vector file ${n} doesn't match its batch`);
+                    }
+                    vectors.set(part, batchSpans[n][0] * EMBED_DIMS);
+                }
+                const norms = new Float32Array(comicData.length);
+                for (let i = 0; i < comicData.length; i++) {
+                    let s = 0;
+                    for (let d = i * EMBED_DIMS; d < (i + 1) * EMBED_DIMS; d++) {
+                        s += vectors[d] * vectors[d];
+                    }
+                    norms[i] = Math.sqrt(s);
+                }
+                semantic = { embed, vectors, norms };
+                status.innerText = `Searching the ${comicData.length.toLocaleString()} strips by meaning`;
+                return true;
+            } catch (error) {
+                console.error("Unable to load search by meaning:", error);
+                status.innerText = 'Search by meaning is unavailable right now; using words instead.';
+                setMode("words");
+                return false;
+            } finally {
+                semanticLoading = null;
+            }
+        })();
+    }
+    return await semanticLoading;
+}
+
+function setMode(value) {
+    mode = value;
+    for (const b of document.querySelectorAll('.mode button')) {
+        b.classList.toggle('on', b.dataset.mode === mode);
+    }
+    searchBox.placeholder = mode === "meaning" ?
+        "Describe a strip, like: penguin hiding in a freezer" :
+        "Search for words or phrases in the comic strips...";
+    scheduleSearch();
+}
+
+function toggleChar(c) {
+    if (selectedChars.has(c)) {
+        selectedChars.delete(c);
+    } else {
+        selectedChars.add(c);
+    }
+    for (const b of document.querySelectorAll('.chip')) {
+        b.classList.toggle('on', selectedChars.has(parseInt(b.dataset.char)));
+    }
+    scheduleSearch();
+}
+
+function setupFilters() {
+    const years = [...new Set(comicData.map(x => x[6].year))].sort((a, b) => a - b);
+    const from = document.getElementById('yearFrom'), to = document.getElementById('yearTo');
+    from.innerHTML = to.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+    to.value = years[years.length - 1];
+    if (years.length < 2) {
+        document.getElementById('yearFilter').style.display = 'none';
+    }
+
+    const top = CHARACTERS.map((x, i) => [x[0], x[1], i]).filter(x => x[1] >= 3)
+        .sort((a, b) => b[1] - a[1]).slice(0, MAX_CHIPS);
+    document.getElementById('charChips').innerHTML = top.map(([name, count, i]) =>
+        `<button class="chip" data-char="${i}" title="${count.toLocaleString()} strips">${escapeHtml(name)}</button>`).join('');
+
+    if (HAS_VECTORS) {
+        document.getElementById('modeSwitch').style.display = '';
     }
 }
 
@@ -452,34 +677,55 @@ document.addEventListener("DOMContentLoaded", function(event) {
     resultsHeader = document.getElementById('resultsHeader');
     resultsList = document.getElementById('resultsList');
 
-    searchBox.addEventListener('input', (e) => {
-        searchComics(e.target.value);
+    searchBox.addEventListener('input', scheduleSearch);
+    for (const id of ['yearFrom', 'yearTo', 'hideReruns']) {
+        document.getElementById(id).addEventListener('change', scheduleSearch);
+    }
+    for (const b of document.querySelectorAll('.mode button')) {
+        b.addEventListener('click', () => setMode(b.dataset.mode));
+    }
+    document.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (chip) {
+            toggleChar(parseInt(chip.dataset.char));
+        }
     });
 
     window.addEventListener('load', async () => {
         await loadLookupData();
-        
-        const batchCount = parseInt(2);
+
+        const batchCount = parseInt(4);
         const failedBatches = [];
-        
+
+        // Searching works as soon as the first batch is in; results refresh as the rest arrive
         for (let i = 0; i < batchCount; i++) {
+            const first = comicData.length;
             const success = await loadComicData(i);
             if (!success) {
                 failedBatches.push(i);
             }
-            document.getElementById('count').innerText = `Loaded ${comicData.length}...`;
+            indexItems(first);
+            if (searchBox.disabled && comicData.length > 0) {
+                searchBox.disabled = false;
+                searchBox.placeholder = "Search for words or phrases in the comic strips...";
+                searchBox.focus();
+            }
+            if (i < batchCount - 1) {
+                document.getElementById('count').innerText = `Loaded ${comicData.length.toLocaleString()} entries, still loading...`;
+            }
+            if (searchBox.value.trim()) {
+                scheduleSearch();
+            }
         }
-        
+
         if (failedBatches.length > 0) {
             const batchList = failedBatches.map(i => `dilbert_${String(i).padStart(3, '0')}.json.gz`).join(', ');
             alert(`Error: Failed to load the following data files:\n${batchList}\n\nSome search results may be incomplete.`);
         }
-        
-        document.getElementById('count').innerText = `Start typing to search through the ${comicData.length} entries`;
-        
+
+        setupFilters();
+        document.getElementById('count').innerText = `Start typing to search through the ${comicData.length.toLocaleString()} entries`;
         searchBox.disabled = false;
-        searchBox.placeholder = "Search for words or phrases in the comic strips...";
-        searchBox.focus();
     });
 });
 
@@ -491,14 +737,24 @@ document.addEventListener("DOMContentLoaded", function(event) {
     <p>Search through Scott Adams's comic</p>
 </div>
 <div class="search-container">
-    <input 
-        type="text" 
-        id="searchBox" 
-        class="search-box" 
+    <input
+        type="text"
+        id="searchBox"
+        class="search-box"
         placeholder="Loading data files..."
         autocomplete="off"
         disabled
     >
+    <div class="options">
+        <span class="mode" id="modeSwitch" style="display: none;" title="Words finds the exact words; meaning finds strips that match a description">
+            <button data-mode="words" class="on">Words</button><button data-mode="meaning">Meaning</button>
+        </span>
+        <span id="yearFilter">
+            Years <select id="yearFrom"></select> to <select id="yearTo"></select>
+        </span>
+        <label><input type="checkbox" id="hideReruns" checked> Hide reruns</label>
+    </div>
+    <div class="chips" id="charChips"></div>
     <div class="search-hint">
         <span id="count"></span>
     </div>
@@ -518,14 +774,14 @@ document.write(z);
 <br>
 Not affiliated with the creators of this comic.<br>
 If you find this useful, consider <a target="_blank" href="https://coff.ee/seligman">buying me a coffee</a>.<br>
-Also check out search for 
-<a href="bloom_county.html">Bloom County</a>, 
-<a href="calvin_and_hobbes.html">Calvin and Hobbes</a>, 
-<a href="dilbert.html">Dilbert</a>, 
-<a href="doonesbury.html">Doonesbury</a>, 
-<a href="far_side.html">The Far Side</a>, 
-<a href="foxtrot.html">FoxTrot</a>, 
-<a href="oots.html">Order of the Stick</a>, 
+Also check out search for
+<a href="bloom_county.html">Bloom County</a>,
+<a href="calvin_and_hobbes.html">Calvin and Hobbes</a>,
+<a href="dilbert.html">Dilbert</a>,
+<a href="doonesbury.html">Doonesbury</a>,
+<a href="far_side.html">The Far Side</a>,
+<a href="foxtrot.html">FoxTrot</a>,
+<a href="oots.html">Order of the Stick</a>,
 <a href="peanuts.html">Peanuts</a>.
 </div>
 <img src="https://d13wbvtlmw75ie.cloudfront.net/hit/4x02pepdtt82crm.png" width="1" height="1">
