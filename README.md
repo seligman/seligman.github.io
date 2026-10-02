@@ -19,7 +19,7 @@ Podcast Search Pages:
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-09-24 05:34:21 with 98 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-10-01 16:16:24 with 144 items
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-10-01 16:16:47 with 116 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-09-30 19:20:43 with 2,758 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-10-01 21:13:53 with 2,759 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-09-24 04:54:52 with 139 items
 * [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-10-01 16:22:46 with 2,661 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-09-28 17:29:39 with 446 items
