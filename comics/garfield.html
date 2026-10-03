@@ -216,7 +216,7 @@ body {
 const targetURL = "https://www.gocomics.com/garfield/YYYY/MM/DD";
 const lookupURL = "";
 // [name, number of strips] for each character; items refer to them by index
-const CHARACTERS = [["Garfield",11312],["Jon Arbuckle",7213],["Odie",2225],["Nermal",124],["Arlene",125],["Liz",505],["Pooky",64],["Mud Fence",1],["Lyman",1],["Archie",1]];
+const CHARACTERS = [["Garfield",12544],["Jon Arbuckle",8258],["Odie",2579],["Nermal",475],["Arlene",253],["Liz",563],["Pooky",132],["Uncle Roy",7],["Aunt Gussie",5],["Santa Claus",2],["Jim Davis",2],["Mud Fence",1],["Matt-the-Rat",1],["Girl Scout",1],["Tommy the Clown",1],["Roy Gato",1],["Jon's father",1],["Reba Arbuckle",1],["Honest Ed",1],["Archie",5],["Mouse",320],["Fluffy",9],["Irma",26],["Lyman",2],["Jinx",2],["veterinarian",2],["Guido",2],["Grandma",2],["Dribble",1],["Nadine",1],["Mom",1],["Bingo",1],["Puddy",1],["Flufey",1],["woman",1],["man",1],["Psychoanalyst",1],["Frascal",1],["Od",1],["Tweedledee",1],["Bozo",1],["Squeak",1],["Jabberjaw",1],["Irvia",1],["Judee",1],["Eugene",1],["Nick",1],["Judy",1],["Arlen",1],["Odied",1],["Rotundo",1],["Lizard",1],["Lori",1],["Jock",1],["Dana",1],["Simba",1],["Snoopy",1]];
 const HAS_VECTORS = true;
 // "Search by meaning": the same model and settings semantic\embed.mjs used for the strips
 const EMBED_LIB = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1";
@@ -694,7 +694,7 @@ document.addEventListener("DOMContentLoaded", function(event) {
     window.addEventListener('load', async () => {
         await loadLookupData();
 
-        const batchCount = parseInt(3);
+        const batchCount = parseInt(4);
         const failedBatches = [];
 
         // Searching works as soon as the first batch is in; results refresh as the rest arrive
