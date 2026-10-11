@@ -2,17 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex, noimageindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Image Details</title>
-<link rel="stylesheet" href="style.css">
+<title>Example</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/style.css?v=4403090e15">
 </head>
-<body>
+<body class="detail-page">
 <div id="detail">
-<a id="back" href="#">Back to search</a>
-<div id="detail-body"></div>
+<div id="detail-top">
+<a id="back" class="button" href="#">Back to search</a>
 </div>
-<script>window.APP_CONFIG = {"mode": "static", "libraries": ["Example"], "data": "data/"};</script>
-<script src="site.js"></script>
-<script src="detail.js"></script>
+<div id="detail-message" class="notice" hidden></div>
+<div id="detail-stage-wrap">
+<div id="detail-stage"></div>
+<div id="detail-tools"></div>
+</div>
+<aside id="detail-info" aria-label="Information"></aside>
+</div>
+<footer class="export-credits">Photos: 18 Creative Commons pictures found through Openverse, by Ivan Radic, Alan Levine, striatic, DanBrady, Matthew Paul Argall, Tobyotter, londoncyclist, Calgary Reviews, lindsay.dee.bunny, Julien.Belli, magnetismus, Archives Branch USMC History Division, Kt Ann and Ruth and Dave (CC BY 2.0), and Vovogov90 and rawpixel (CC0 1.0). Each picture&#x27;s title, creator, license and source is listed in sample/images/CREDITS.md of the Search Images project. The descriptions are examples written for this demo.</footer>
+<script type="application/json" id="app-config">{"mode": "static", "page": "detail", "libraries": ["Example"], "libraryList": [{"id": "7988a4a1eb9cc425", "name": "Example"}], "capabilities": {"admin": false, "static": true, "map": false, "images": true, "originals": false, "panos": false, "file_names": false, "folders": false}, "data": "data/", "tiles": null, "tilesMax": null, "tileSize": 256, "title": "Example", "dataVersion": "8b5d5eeaf0"}</script>
+<script src="assets/site.js?v=c3e9f9e6b9"></script>
+<script src="assets/shell.js?v=0ea247a5b5"></script>
+<script src="assets/search-core.js?v=9f31278a58"></script>
+<script src="assets/viewer.js?v=420798691d"></script>
+<script src="assets/detail.js?v=1742529326"></script>
 </body>
 </html>

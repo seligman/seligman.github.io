@@ -2,18 +2,70 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="robots" content="noindex, noimageindex">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Image Search</title>
-<link rel="stylesheet" href="style.css">
+<title>Example</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/style.css?v=4403090e15">
 </head>
-<body>
-<div id="controls">
-<input id="query" type="search" placeholder="Search images..." autofocus>
-<select id="library"></select>
+<body class="search-page">
+<div id="search-bar">
+<div id="search-row" role="search">
+<div id="search-box">
+<input id="query" type="search" placeholder="Search pictures" aria-label="Search pictures" autocomplete="off" spellcheck="false" enterkeyhint="search">
+<button id="syntax-button" type="button" class="icon-button" aria-label="Search tips" aria-expanded="false" aria-controls="syntax-help" title="Search tips">?</button>
+<div id="syntax-help" class="popover" hidden></div>
 </div>
-<div id="grid"></div>
-<script>window.APP_CONFIG = {"mode": "static", "libraries": ["Example"], "data": "data/"};</script>
-<script src="site.js"></script>
-<script src="app.js"></script>
+<button id="facets-button" type="button" class="button tool-button" aria-controls="facets" aria-expanded="false">Filters <span id="facets-count" class="count-badge" hidden></span></button>
+</div>
+<div id="search-tools">
+<label class="tool"><span class="tool-label">Sort</span>
+<select id="sort">
+<option value="relevance">Best match</option>
+<option value="newest">Newest first</option>
+<option value="oldest">Oldest first</option>
+<option value="name">File name</option>
+<option value="quality">Best looking</option>
+</select></label>
+<label class="tool tool-check"><input id="group" type="checkbox"> Group similar</label>
+<label class="tool tool-size"><span class="tool-label">Size</span><input id="size" type="range" min="0" max="2" step="1" aria-label="Thumbnail size"></label>
+<button id="select-button" type="button" class="button tool-button" aria-pressed="false" hidden>Select</button>
+</div>
+</div>
+<div id="index-banner" class="notice warn" hidden></div>
+<div id="search-layout">
+<aside id="facets" aria-labelledby="facets-title">
+<div id="facets-head">
+<h2 id="facets-title">Filters</h2>
+<button id="facets-close" type="button" class="icon-button" aria-label="Close the filters">&times;</button>
+</div>
+<div id="drawer-tools" hidden></div>
+<div id="facet-list"></div>
+<div id="facets-foot">
+<button id="facets-done" type="button" class="button primary">Show the pictures</button>
+</div>
+</aside>
+<main id="results">
+<div id="results-head">
+<h1 id="result-count" aria-live="polite"></h1>
+<span id="result-notes"></span>
+<a id="map-link" class="button subtle small" hidden></a>
+</div>
+<p id="query-notes" hidden></p>
+<div id="active-filters" hidden></div>
+<div id="selection-bar" hidden></div>
+<div id="month-bar" aria-hidden="true"><span id="month-label" hidden></span></div>
+<div id="grid" aria-label="Pictures"></div>
+<div id="empty" hidden></div>
+</main>
+</div>
+<div id="facets-backdrop" hidden></div>
+<footer class="export-credits">Photos: 18 Creative Commons pictures found through Openverse, by Ivan Radic, Alan Levine, striatic, DanBrady, Matthew Paul Argall, Tobyotter, londoncyclist, Calgary Reviews, lindsay.dee.bunny, Julien.Belli, magnetismus, Archives Branch USMC History Division, Kt Ann and Ruth and Dave (CC BY 2.0), and Vovogov90 and rawpixel (CC0 1.0). Each picture&#x27;s title, creator, license and source is listed in sample/images/CREDITS.md of the Search Images project. The descriptions are examples written for this demo.</footer>
+<script type="application/json" id="app-config">{"mode": "static", "page": "search", "libraries": ["Example"], "libraryList": [{"id": "7988a4a1eb9cc425", "name": "Example"}], "capabilities": {"admin": false, "static": true, "map": false, "images": true, "originals": false, "panos": false, "file_names": false, "folders": false}, "data": "data/", "tiles": null, "tilesMax": null, "tileSize": 256, "title": "Example", "dataVersion": "8b5d5eeaf0"}</script>
+<script src="assets/site.js?v=c3e9f9e6b9"></script>
+<script src="assets/shell.js?v=0ea247a5b5"></script>
+<script src="assets/search-core.js?v=9f31278a58"></script>
+<script src="assets/viewer.js?v=420798691d"></script>
+<script src="assets/app.js?v=2f863c21ef"></script>
 </body>
 </html>

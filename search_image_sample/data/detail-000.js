@@ -1,0 +1,3 @@
+SEARCH_DATA.detail({
+
+});
