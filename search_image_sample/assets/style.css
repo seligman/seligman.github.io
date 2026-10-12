@@ -159,12 +159,27 @@ a {
     display: none !important;
 }
 
+/* Read by screen readers, not shown. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
 /* World-map page */
 
 body.map-page {
     padding: 0;
     margin: 0;
     height: 100vh;
+    height: 100dvh;         /* (phones: without the part the toolbars cover) */
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -188,13 +203,15 @@ body.map-page {
 #map-status {
     color: var(--text-muted);
     font-size: 13px;
+    margin-left: auto;
 }
 
 #map-stage {
     position: relative;
     flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
-    background: #0c1118;
+    background: #1a2c3d;
 }
 
 #map-canvas {
@@ -206,8 +223,23 @@ body.map-page {
     cursor: grab;
 }
 
+#map-canvas.over-pin {
+    cursor: pointer;
+}
+
 #map-canvas:active {
     cursor: grabbing;
+}
+
+#map-canvas:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: -3px;
+}
+
+/* Clicked or touched since it got the focus (map.js): no ring until a key
+   is used again. */
+#map-canvas.pointer-used:focus-visible {
+    outline: none;
 }
 
 #map-zoom {
@@ -222,58 +254,152 @@ body.map-page {
 #map-zoom button {
     width: 36px;
     height: 36px;
+    font: inherit;
     font-size: 20px;
+    line-height: 1;
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border-strong);
     border-radius: 6px;
     cursor: pointer;
     opacity: 0.94;
+    box-shadow: var(--shadow);
 }
 
+#map-zoom button:hover {
+    background: var(--surface-2);
+}
+
+#map-zoom button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* Zoomed in past the map tiles' detail. */
+#map-note {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    margin: 0;
+    padding: 4px 10px;
+    max-width: calc(100% - 24px);
+    font-size: 12px;
+    color: #e8edf3;
+    background: rgba(12, 17, 24, 0.72);
+    border-radius: 12px;
+    white-space: normal;
+    pointer-events: none;
+}
+
+body.map-panel-open #map-note {
+    left: 344px;
+}
+
+/* "Could not load" and "no located pictures": a card over the map. */
+#map-message {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(420px, calc(100% - 32px));
+    padding: 18px 20px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+}
+
+#map-message h2 {
+    margin: 0 0 6px;
+    font-size: 17px;
+}
+
+#map-message p {
+    margin: 0 0 6px;
+    color: var(--text-muted);
+    white-space: normal;
+}
+
+.map-message-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+/* The list of a pin's pictures: a side panel (a sheet at the foot on phones). */
 #map-panel {
     position: absolute;
     top: 12px;
     left: 12px;
     bottom: 12px;
-    width: 280px;
+    width: 320px;
     max-width: calc(100% - 24px);
     background: var(--surface);
+    color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
-    opacity: 0.97;
+    overflow: hidden;
 }
 
 #map-panel-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    padding: 10px 10px 8px 14px;
 }
 
 #map-panel-title {
+    margin: 0;
+    font-size: 16px;
     font-weight: 600;
 }
 
-#map-panel-close {
-    background: transparent;
+#map-panel-title:focus {
+    outline: none;
+}
+
+#map-panel-title:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+#map-panel-actions {
+    padding: 0 14px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+#map-panel-grid {
+    width: 100%;
+}
+
+#map-panel-grid.is-disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+#map-panel-note {
+    margin: 6px 0 0;
+    font-size: 12px;
     color: var(--text-muted);
-    border: none;
-    cursor: pointer;
-    font-size: 16px;
-    line-height: 1;
+    white-space: normal;
 }
 
 #map-panel-list {
-    flex: 1;
+    flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    padding: 8px;
+    margin: 0;
+    padding: 10px;
+    list-style: none;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
     grid-auto-rows: min-content;
     gap: 8px;
 }
@@ -281,12 +407,21 @@ body.map-page {
 .map-panel-item {
     display: flex;
     flex-direction: column;
-    gap: 4px;
     color: inherit;
     text-decoration: none;
     background: var(--surface-2);
     border-radius: 6px;
     overflow: hidden;
+    height: 100%;
+}
+
+.map-panel-item:hover {
+    background: var(--surface-3);
+}
+
+.map-panel-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 .map-panel-item img {
@@ -294,13 +429,68 @@ body.map-page {
     aspect-ratio: 1 / 1;
     object-fit: cover;
     display: block;
+    background: var(--tile);
 }
 
-.map-panel-item span {
+.map-panel-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 5px 7px 7px;
+    min-width: 0;
+}
+
+.map-panel-name {
     font-size: 12px;
-    padding: 0 6px 6px;
+    line-height: 1.3;
+    color: var(--text);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow-wrap: anywhere;
+}
+
+.map-panel-date {
+    font-size: 11px;
     color: var(--text-muted);
-    word-break: break-all;
+}
+
+#map-panel-more {
+    margin: 0 10px 10px;
+}
+
+@media (max-width: 600px) {
+    #map-panel {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: auto;
+        max-width: none;
+        height: 58%;
+        border-radius: 12px 12px 0 0;
+        border-bottom: none;
+    }
+
+    #map-panel-list {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        padding: 8px;
+    }
+
+    .map-panel-name {
+        font-size: 11px;
+    }
+
+    /* The list covers the foot of the map: the zoom buttons stay above it. */
+    body.map-panel-open #map-zoom {
+        top: 8px;
+    }
+
+    body.map-panel-open #map-note {
+        display: none;
+    }
 }
 
 /* Text helpers shared by the pages */
@@ -362,7 +552,10 @@ body.map-page #shell-header {
 
 #shell-header nav {
     display: flex;
+    /* On a narrow window the links take a second line. */
+    flex-wrap: wrap;
     gap: 4px;
+    min-width: 0;
 }
 
 #shell-header nav a {
@@ -370,11 +563,17 @@ body.map-page #shell-header {
     padding: 5px 10px;
     border-radius: 6px;
     color: var(--text-muted);
+    white-space: nowrap;
 }
 
 #shell-header nav a:hover {
     background: var(--surface-2);
     color: var(--text);
+}
+
+#shell-header nav a:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
 }
 
 #shell-header nav a[aria-current="page"] {
@@ -765,6 +964,16 @@ details.more > summary {
 }
 
 .radio-row .check {
+    margin-bottom: 4px;
+}
+
+.check-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 0 12px;
+}
+
+.check-columns .check {
     margin-bottom: 4px;
 }
 
@@ -1482,6 +1691,68 @@ table.list tr.is-off td {
 .test-result h3 {
     font-size: 14px;
     margin: 18px 0 4px;
+}
+
+/* The model server panel (Settings page) */
+
+.server-card + .server-card {
+    margin-top: 14px;
+}
+
+.server-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 14px;
+    margin: 10px 0 0;
+    font-size: 13px;
+}
+
+.server-facts dt {
+    color: var(--text-muted);
+}
+
+.server-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+/* (Messages quote paths and log lines without spaces.) */
+.server-card .card-note {
+    overflow-wrap: anywhere;
+}
+
+.server-form {
+    margin-top: 14px;
+}
+
+.server-checks {
+    margin-top: 4px;
+}
+
+.server-log,
+.server-command,
+.server-snippet {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.server-log {
+    max-height: 260px;
+    overflow: auto;
+}
+
+.server-setup .server-snippet {
+    text-align: left;
+    max-width: 560px;
+    margin: 0 auto 14px;
+    color: var(--text);
 }
 
 .spinner {
@@ -2314,6 +2585,30 @@ button.facet-title::after {
     border: 1px solid var(--border-strong);
 }
 
+/* Places: the regions and towns of a chosen country (region) below it,
+   indented; a place that holds the chosen one is half ticked */
+.facet-value.facet-level-1 {
+    padding-left: 22px;
+}
+
+.facet-value.facet-level-2 {
+    padding-left: 38px;
+}
+
+.facet-value.is-open .facet-check {
+    border-color: var(--accent-fill);
+}
+
+.facet-value.is-open .facet-check::after {
+    content: "";
+    position: absolute;
+    left: 2.5px;
+    top: 5px;
+    width: 7px;
+    height: 2px;
+    background: var(--accent-fill);
+}
+
 .facet-more {
     padding: 4px 0 0;
     background: none;
@@ -2371,8 +2666,21 @@ button.facet-title::after {
     font-size: 14px;
 }
 
+/* A note's short form, for narrow screens (app.js renderHead) */
+#result-notes .note-short {
+    display: none;
+}
+
 #map-link {
     margin-left: auto;
+}
+
+#surprise-button {
+    margin-left: auto;
+}
+
+#surprise-button:not([hidden]) ~ #map-link {
+    margin-left: 0;
 }
 
 #query-notes {
@@ -2475,6 +2783,208 @@ button.facet-title::after {
     font-weight: 700;
     box-shadow: var(--shadow);
     pointer-events: none;
+}
+
+/* The timeline above the grid (app.js): a bar per year, month or day */
+
+#timeline {
+    /* The bars: at least 3:1 against the panel in both themes. */
+    --chart-fill: #8792a2;
+    margin: 0 0 12px;
+    padding: 6px 12px 8px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) #timeline {
+        --chart-fill: #7d8794;
+    }
+}
+
+:root[data-theme="dark"] #timeline {
+    --chart-fill: #7d8794;
+}
+
+.timeline-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 10px;
+    min-height: 28px;
+}
+
+.timeline-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 0 -4px;
+    padding: 2px 4px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.timeline-toggle::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    margin: 0 2px 3px 0;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg);
+    transition: transform 0.15s;
+}
+
+#timeline.is-closed .timeline-toggle::after {
+    margin-bottom: 0;
+    transform: rotate(-45deg);
+}
+
+.timeline-summary {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.timeline-hint {
+    color: var(--text);
+    font-size: 13px;
+}
+
+.timeline-out {
+    margin-left: auto;
+}
+
+.timeline-bars {
+    display: flex;
+    /* (A few bars, as on "On this day", stand in the middle.) */
+    justify-content: center;
+    gap: 2px;
+    margin-top: 6px;
+    /* A sideways drag chooses bars; scrolling the page still works. */
+    touch-action: pan-y;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.timeline-bar {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: stretch;
+    min-width: 0;
+    max-width: 96px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-muted);
+    font: inherit;
+    cursor: pointer;
+}
+
+.timeline-bar.is-empty {
+    cursor: default;
+}
+
+.timeline-track {
+    display: flex;
+    align-items: flex-end;
+    height: 52px;
+    border-radius: 3px 3px 0 0;
+}
+
+.timeline-bar:hover:not(.is-empty) .timeline-track,
+.timeline-bar.is-dragged .timeline-track {
+    background: var(--surface-2);
+}
+
+.timeline-fill {
+    display: block;
+    width: 100%;
+    border-radius: 3px 3px 0 0;
+    background: var(--chart-fill);
+}
+
+.timeline-bar:hover .timeline-fill,
+.timeline-bar.is-dragged .timeline-fill,
+.timeline-bar.is-chosen .timeline-fill,
+.timeline-bar.is-anchor .timeline-fill {
+    background: var(--accent-fill);
+}
+
+/* Chosen bars are told apart by more than their colour: their label too;
+   the start of a range (Shift) is outlined until its end is chosen. */
+.timeline-bar.is-chosen .timeline-label,
+.timeline-bar.is-anchor .timeline-label {
+    color: var(--text);
+    font-weight: 650;
+}
+
+.timeline-bar.is-anchor .timeline-track {
+    outline: 2px dashed var(--accent);
+    outline-offset: -2px;
+}
+
+.timeline-label {
+    height: 16px;
+    margin-top: 2px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 15px;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    white-space: nowrap;
+    overflow: visible;
+}
+
+.timeline-bar:focus-visible,
+.timeline-toggle:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+/* The place names panel of the Manage page (place-names.js) */
+
+.place-names {
+    margin-top: 20px;
+}
+
+.place-names h2 {
+    margin: 0 0 4px;
+}
+
+.place-names .lead {
+    margin: 0 0 8px;
+}
+
+.place-names-status,
+.place-names-job {
+    margin: 8px 0;
+    font-size: 14px;
+}
+
+.place-names-job {
+    color: var(--text-muted);
+}
+
+.place-names-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 6px;
+}
+
+.place-names-credit {
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    font-size: 12px;
 }
 
 /* The grid: blocks placed by app.js, thumbnails inside them */
@@ -2658,6 +3168,27 @@ button.facet-title::after {
 
 .tile-stack:hover,
 .tile-stack:focus-visible {
+    outline: 2px solid var(--accent);
+}
+
+/* An opened stack's link to the Duplicates page (admin). */
+.tile-review {
+    position: absolute;
+    left: 6px;
+    bottom: 6px;
+    z-index: 2;
+    padding: 2px 9px;
+    border-radius: 12px;
+    background: var(--overlay-chip);
+    color: var(--link);
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    box-shadow: var(--shadow);
+}
+
+.tile-review:hover,
+.tile-review:focus-visible {
     outline: 2px solid var(--accent);
 }
 
@@ -2953,6 +3484,49 @@ body.no-pictures #search-layout {
         padding: 5px 8px;
     }
 
+    /* The map page too: the map gets the height. */
+    body.map-page #shell-header {
+        min-height: 0;
+        padding: 8px 12px 6px;
+        gap: 6px 10px;
+    }
+
+    body.map-page .shell-title {
+        display: none;
+    }
+
+    body.map-page #shell-header nav a {
+        padding: 5px 8px;
+    }
+
+    /* "On this day" beside Manage and Settings: a calendar (its words stay
+       for screen readers) */
+    #shell-header nav a.nav-today.is-short {
+        position: relative;
+        padding-left: 11px;
+        padding-right: 11px;
+    }
+
+    #shell-header nav a.nav-today.is-short::before {
+        content: "";
+        display: inline-block;
+        width: 12px;
+        height: 10px;
+        border: 2px solid currentColor;
+        border-top-width: 5px;
+        border-radius: 3px;
+        vertical-align: -3px;
+    }
+
+    #shell-header nav a.nav-today.is-short .nav-text {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+
     #shell-job {
         min-width: 0;
         padding: 4px 9px;
@@ -3004,9 +3578,27 @@ body.no-pictures #search-layout {
         font-size: 13px;
     }
 
+    #result-notes .note-long {
+        display: none;
+    }
+
+    #result-notes .note-short {
+        display: inline;
+    }
+
     #map-link {
         flex: 0 0 auto;
         margin-left: auto;
+        padding: 3px 8px;
+    }
+
+    #result-count {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    #surprise-button {
+        flex: 0 0 auto;
         padding: 3px 8px;
     }
 
@@ -3522,6 +4114,164 @@ a.info-chip:focus-visible {
     color: var(--danger-fg);
 }
 
+/* The owner's edits: the badge, added tags, the model's text, the form */
+
+.info-badge.is-edited {
+    background: var(--ok-soft);
+    color: var(--ok-text);
+}
+
+.info-chip.is-added {
+    box-shadow: inset 0 0 0 1px var(--ok);
+}
+
+.info-chip.is-added::after {
+    content: " \2022";
+    color: var(--ok);
+}
+
+.info-model-text {
+    margin: 8px 0 0;
+    font-size: 13px;
+}
+
+.info-model-text summary {
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.info-model-text .info-small {
+    margin-top: 4px;
+    padding-left: 10px;
+    border-left: 2px solid var(--border);
+}
+
+.info-edit .info-title {
+    margin-bottom: 12px;
+}
+
+.edit-field {
+    margin: 0 0 14px;
+}
+
+.edit-label {
+    display: block;
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.info-edit textarea.input {
+    min-height: 96px;
+    resize: vertical;
+}
+
+.edit-field > .button.subtle {
+    margin-top: 2px;
+    padding-left: 0;
+}
+
+.edit-tag-add {
+    display: flex;
+    gap: 6px;
+}
+
+.edit-chips {
+    margin: 8px 0 4px;
+}
+
+.edit-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding-right: 4px;
+}
+
+.edit-chip.is-added::after {
+    content: none;
+}
+
+.edit-chip-x {
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.edit-chip-x:hover {
+    background: var(--surface-3);
+    color: var(--text);
+}
+
+.edit-chip-x:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    color: var(--text);
+}
+
+/* A model's tag the owner removed, shown to be put back. */
+.edit-chip.is-removed {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--border);
+    color: var(--text-muted);
+}
+
+.edit-chip.is-removed .edit-chip-text {
+    text-decoration: line-through;
+}
+
+.edit-error {
+    margin: 4px 0 0;
+    color: var(--danger-fg);
+    font-size: 13px;
+}
+
+.info-edit .input.is-invalid {
+    border-color: var(--danger-fg);
+}
+
+.info-title[tabindex="-1"]:focus {
+    outline: none;
+}
+
+.edit-actions {
+    align-items: center;
+}
+
+.tag-picks {
+    margin: 4px 0 10px;
+}
+
+button.info-chip {
+    border: 0;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+button.info-chip:hover,
+button.info-chip:focus-visible,
+button.info-chip[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--link);
+}
+
+button.info-chip:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+button.info-chip[aria-pressed="true"] {
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .info-similar {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3657,6 +4407,19 @@ body.detail-page {
     font-size: 13px;
     text-align: center;
     overflow-wrap: anywhere;
+}
+
+/* The map page has no foot: the GeoNames credit sits in a corner of the map */
+
+.map-credit {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    margin: 0;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--surface);
+    font-size: 11px;
 }
 
 /* Less movement for those who asked their system for it */

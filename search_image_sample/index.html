@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Example</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="assets/style.css?v=4403090e15">
+<link rel="stylesheet" href="assets/style.css?v=6629da0b72">
 </head>
 <body class="search-page">
 <div id="search-bar">
@@ -26,6 +26,7 @@
 <option value="oldest">Oldest first</option>
 <option value="name">File name</option>
 <option value="quality">Best looking</option>
+<option value="shuffle">Shuffle</option>
 </select></label>
 <label class="tool tool-check"><input id="group" type="checkbox"> Group similar</label>
 <label class="tool tool-size"><span class="tool-label">Size</span><input id="size" type="range" min="0" max="2" step="1" aria-label="Thumbnail size"></label>
@@ -49,23 +50,25 @@
 <div id="results-head">
 <h1 id="result-count" aria-live="polite"></h1>
 <span id="result-notes"></span>
+<button id="surprise-button" type="button" class="button subtle small" title="Open a picture of these, chosen at random" hidden><span class="wide-only">Surprise me</span><span class="narrow-only">Surprise</span></button>
 <a id="map-link" class="button subtle small" hidden></a>
 </div>
 <p id="query-notes" hidden></p>
 <div id="active-filters" hidden></div>
 <div id="selection-bar" hidden></div>
+<section id="timeline" aria-label="Timeline" hidden></section>
 <div id="month-bar" aria-hidden="true"><span id="month-label" hidden></span></div>
 <div id="grid" aria-label="Pictures"></div>
 <div id="empty" hidden></div>
 </main>
 </div>
 <div id="facets-backdrop" hidden></div>
-<footer class="export-credits">Photos: 18 Creative Commons pictures found through Openverse, by Ivan Radic, Alan Levine, striatic, DanBrady, Matthew Paul Argall, Tobyotter, londoncyclist, Calgary Reviews, lindsay.dee.bunny, Julien.Belli, magnetismus, Archives Branch USMC History Division, Kt Ann and Ruth and Dave (CC BY 2.0), and Vovogov90 and rawpixel (CC0 1.0). Each picture&#x27;s title, creator, license and source is listed in sample/images/CREDITS.md of the Search Images project. The descriptions are examples written for this demo.</footer>
-<script type="application/json" id="app-config">{"mode": "static", "page": "search", "libraries": ["Example"], "libraryList": [{"id": "7988a4a1eb9cc425", "name": "Example"}], "capabilities": {"admin": false, "static": true, "map": false, "images": true, "originals": false, "panos": false, "file_names": false, "folders": false}, "data": "data/", "tiles": null, "tilesMax": null, "tileSize": 256, "title": "Example", "dataVersion": "8b5d5eeaf0"}</script>
-<script src="assets/site.js?v=c3e9f9e6b9"></script>
-<script src="assets/shell.js?v=0ea247a5b5"></script>
-<script src="assets/search-core.js?v=9f31278a58"></script>
-<script src="assets/viewer.js?v=420798691d"></script>
-<script src="assets/app.js?v=2f863c21ef"></script>
+<footer class="export-credits">Photos: 19 Creative Commons pictures. Eighteen were found through Openverse, by Ivan Radic, Alan Levine, striatic, DanBrady, Matthew Paul Argall, Tobyotter, londoncyclist, Calgary Reviews, lindsay.dee.bunny, Julien.Belli, magnetismus, Archives Branch USMC History Division, Kt Ann and Ruth and Dave (CC BY 2.0, https://creativecommons.org/licenses/by/2.0/), and Vovogov90 and rawpixel (CC0 1.0). The 360-degree panorama of Roy&#x27;s Motel is by G. Edward Johnson (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/), from Wikimedia Commons (https://commons.wikimedia.org/w/index.php?curid=189899422), resized. Each picture&#x27;s title, creator, license and source is listed in sample/images/CREDITS.md of the Search Images project (https://github.com/seligman/search_images/blob/main/sample/images/CREDITS.md). The descriptions are examples written for this demo, except the 360-degree panorama&#x27;s, which was written by the Qwen3.5-9B model running locally.</footer>
+<script type="application/json" id="app-config">{"mode": "static", "page": "search", "libraries": ["Example"], "libraryList": [{"id": "ad0a616710176302", "name": "Example"}], "capabilities": {"admin": false, "static": true, "map": false, "images": true, "originals": false, "panos": true, "file_names": false, "folders": false}, "data": "data/", "tiles": null, "tilesMax": null, "tileSize": 256, "title": "Example", "dataVersion": "4f803f6d67"}</script>
+<script src="assets/site.js?v=11d5f02fd4"></script>
+<script src="assets/shell.js?v=97f68be04c"></script>
+<script src="assets/search-core.js?v=31d3a70835"></script>
+<script src="assets/viewer.js?v=2cbae9a10d"></script>
+<script src="assets/app.js?v=33161db455"></script>
 </body>
 </html>

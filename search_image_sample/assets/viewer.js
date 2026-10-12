@@ -12,6 +12,9 @@
        onClose(id)               the lightbox closed on picture id
        onHidden(ids, hidden)     pictures were hidden or shown again (admin)
        detailUrl(id)             the detail page of a picture
+       stackOf(id), onExpandStack(id)  a folded stack of similar pictures,
+                                 and opening it in the grid
+       reviewUrl(id)             the Duplicates page for that stack (admin)
    VIEWER.close(), VIEWER.isOpen(), VIEWER.update(ids) (the result list
    changed while open), VIEWER.current() (the id shown).
 
@@ -26,8 +29,11 @@
        starts with the preview, then loads the panorama and swaps it in
        once it has arrived (the preview stays if it cannot be loaded).
    VIEWER.renderInfo(box, record, detail, context)  the information pane:
-       title, date, camera, description and text with the search words
+       title, date, place, camera, description and text with the search words
        marked, clickable chips, quality, admin actions, "More like this".
+       The admin can edit the title, description and tags there ("Edit",
+       or E; Ctrl+Enter saves, Esc cancels): the record is changed in
+       place and context.onEdited(id, detail) is told.
 
    Pages are built with DOM calls and textContent only (never innerHTML).
    VIEWER.format holds the pure helpers (also used by the tests under Node).
@@ -225,7 +231,106 @@ var VIEWER = (function () {
         return {u: u - Math.floor(u), v: 0.5 - lat / Math.PI};
     }
 
+    /* ---------- Edits (pure helpers) ---------------------------------------- */
+
+    // What two tags are compared by: lower case, single spaces.
+    function tagKey(tag) {
+        return String(tag === null || tag === undefined ? "" : tag).replace(/\s+/g, " ")
+            .replace(/^ | $/g, "").toLowerCase();
+    }
+
+    // The tags typed into one box: split at commas and semicolons, lower
+    // case, no repeats.
+    function splitTags(text) {
+        var out = [];
+        String(text || "").split(/[,;]/).forEach(function (part) {
+            var tag = tagKey(part);
+            if (tag && out.indexOf(tag) < 0) {
+                out.push(tag);
+            }
+        });
+        return out;
+    }
+
+    /* The tags shown while editing: [{tag, added}], the owner's first, then
+       the model's (modelTags) that were not removed. */
+    function editedTags(modelTags, added, removed) {
+        var out = [];
+        var seen = Object.create(null);
+        var gone = Object.create(null);
+        (removed || []).forEach(function (tag) {
+            gone[tagKey(tag)] = true;
+        });
+        (added || []).forEach(function (tag) {
+            var key = tagKey(tag);
+            if (key && !seen[key]) {
+                seen[key] = true;
+                out.push({tag: key, added: true});
+            }
+        });
+        (modelTags || []).forEach(function (tag) {
+            var key = tagKey(tag);
+            if (key && !seen[key] && !gone[key]) {
+                seen[key] = true;
+                out.push({tag: key, added: false});
+            }
+        });
+        return out;
+    }
+
+    // The longest tag the server keeps (prompts.ITEM_LENGTH).
+    var TAG_LENGTH = 60;
+
+    // A message about tags that cannot be saved (too long), or "".
+    function tagProblem(tags) {
+        var long = (tags || []).filter(function (tag) {
+            return String(tag).length > TAG_LENGTH;
+        });
+        if (!long.length) {
+            return "";
+        }
+        var shown = long[0].length > 24 ? long[0].slice(0, 24) + "\u2026" : long[0];
+        return "\u201c" + shown + "\u201d is too long: a tag can have at most " + TAG_LENGTH +
+            " characters.";
+    }
+
+    /* The body of a save (POST /images/<id>/edits) from what the form
+       holds: a title or description equal to the model's (or empty) is
+       sent as null, so the model's text is used. */
+    function editBody(model, values) {
+        model = model && typeof model === "object" ? model : {};
+        function text(name) {
+            var value = String(values[name] || "").replace(/^\s+|\s+$/g, "");
+            var own = typeof model[name] === "string" ? model[name].replace(/^\s+|\s+$/g, "") : "";
+            return value && value !== own ? value : null;
+        }
+        return {title: text("title"), description: text("description"),
+                tags_add: (values.added || []).slice(),
+                tags_remove: (values.removed || []).slice()};
+    }
+
+    /* "Kahului, Hawaii, United States (3 km)": the place of a record (its
+       town, when one is near, with how far it is), or "". */
+    function placeText(rec) {
+        if (!rec || typeof rec.co !== "string" || !rec.co) {
+            return "";
+        }
+        var text = [rec.ci, rec.rg, rec.co].filter(function (part) {
+            return typeof part === "string" && part;
+        }).join(", ");
+        if (rec.ci && typeof rec.km === "number" && isFinite(rec.km)) {
+            text += rec.km < 1 ? " (under 1 km)" : " (" + Math.round(rec.km) + " km)";
+        }
+        return text;
+    }
+
     var format = {
+        tagKey: tagKey,
+        placeText: placeText,
+        splitTags: splitTags,
+        tagProblem: tagProblem,
+        editedTags: editedTags,
+        editBody: editBody,
         parseDate: parseDate,
         monthLabel: monthLabel,
         shortDate: shortDate,
@@ -1302,6 +1407,19 @@ var VIEWER = (function () {
         return text + (notes.length ? " (" + notes.join("; ") + ")" : "");
     }
 
+    // The place of a picture, as a chip that finds the pictures taken there.
+    function placeFact(rec, context) {
+        var text = placeText(rec);
+        var value = text && window.SearchCore && SearchCore.placeOf ? SearchCore.placeOf(rec) : "";
+        if (!value) {
+            return text;
+        }
+        var near = rec.ci || rec.rg || rec.co;
+        return chip(text, "place", value, context, rec.ci
+            ? "The town nearest to where it was taken. Show all pictures from " + near
+            : "Show all pictures from " + near);
+    }
+
     function describedBy(detail) {
         var provenance = detail && detail.provenance;
         var model = provenance && provenance.model;
@@ -1396,6 +1514,345 @@ var VIEWER = (function () {
         return row;
     }
 
+    /* ---------- Editing (admin) --------------------------------------------- */
+
+    // The edit open in an information pane: {id, box, detail, context,
+    // cancel} or null.
+    var editing = null;
+
+    function isEditing(box) {
+        return Boolean(editing && (!box || editing.box === box));
+    }
+
+    // True (with a note) when an edit open in box has changes not saved yet.
+    function unsavedEdit(box) {
+        if (!isEditing(box) || !editing.form || !editing.form.isDirty()) {
+            return false;
+        }
+        toast("Your changes are not saved: Save or Cancel them first.", "warn");
+        if (!box.contains(document.activeElement)) {
+            editing.form.focusFirst();
+        }
+        return true;
+    }
+
+    // Close an open edit without saving (the pane shows the picture again).
+    function cancelEdit() {
+        if (editing) {
+            editing.cancel();
+        }
+    }
+
+    function fieldBox(label, control, extra) {
+        return el("div", {className: "edit-field"}, [
+            el("label", {className: "edit-label", text: label, htmlFor: control.id}),
+            control
+        ].concat(extra || []));
+    }
+
+    /* The edit form of rec in box, from the answer of GET
+       /images/<id>/edits (data). finish(answer) after a save (the answer
+       of the POST), finish(null) to cancel. */
+    function editForm(rec, data, finish) {
+        var model = data.model_info && typeof data.model_info === "object" ? data.model_info : {};
+        var edits = data.edits || {};
+        var modelTitle = typeof model.title === "string" ? model.title : "";
+        var modelDescription = typeof model.description === "string" ? model.description : "";
+        var modelTags = Array.isArray(model.tags) ? model.tags.filter(function (tag) {
+            return typeof tag === "string";
+        }) : [];
+        var added = (edits.tags_add || []).map(tagKey);
+        var removed = (edits.tags_remove || []).map(tagKey);
+        var prefix = "edit-" + rec.i + "-";
+        var form = el("form", {className: "info-edit", attrs: {"aria-label": "Edit the picture"}});
+        form.appendChild(el("h2", {className: "info-title", text: "Edit"}));
+
+        // A button that puts the model's text back in a field.
+        function modelButton(control, original, what) {
+            var button = el("button", {type: "button", className: "button subtle small",
+                                       text: "Use the model's " + what});
+            function sync() {
+                button.hidden = control.value.replace(/^\s+|\s+$/g, "") ===
+                    original.replace(/^\s+|\s+$/g, "");
+            }
+            button.addEventListener("click", function () {
+                control.value = original;
+                sync();
+                control.focus();
+            });
+            control.addEventListener("input", sync);
+            sync();
+            return button;
+        }
+
+        var title = el("input", {type: "text", className: "input", id: prefix + "title",
+                                 value: edits.title || modelTitle, maxLength: 200,
+                                 placeholder: modelTitle || "A title of your own"});
+        title.addEventListener("keydown", function (event) {
+            // Enter goes on to the description (Ctrl+Enter saves).
+            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                description.focus();
+            }
+        });
+        form.appendChild(fieldBox("Title", title, [modelButton(title, modelTitle, "title")]));
+        var description = el("textarea", {className: "input", id: prefix + "description",
+                                          rows: 5, maxLength: 4000,
+                                          placeholder: modelDescription ||
+                                              "A description of your own"});
+        description.value = edits.description || modelDescription;
+        form.appendChild(fieldBox("Description", description,
+                                  [modelButton(description, modelDescription, "description")]));
+
+        var modelKeys = Object.create(null);
+        modelTags.forEach(function (tag) {
+            modelKeys[tagKey(tag)] = true;
+        });
+        var chips = el("div", {className: "info-chips edit-chips", attrs: {"aria-live": "polite"}});
+        var tagInput = el("input", {type: "text", className: "input", id: prefix + "tag",
+                                    placeholder: "Add a tag (a name, a place, ...)",
+                                    maxLength: 200, autocomplete: "off",
+                                    attrs: {"aria-describedby": prefix + "tag-error"}});
+        var tagError = el("p", {className: "edit-error", id: prefix + "tag-error", hidden: true});
+        var addButton = el("button", {type: "button", className: "button small", text: "Add"});
+        var resetTags = el("button", {type: "button", className: "button subtle small",
+                                      text: "Use the model's tags"});
+        function chipButton(text, label, onClick) {
+            var button = el("button", {type: "button", className: "edit-chip-x", text: text,
+                                       title: label, attrs: {"aria-label": label}});
+            button.addEventListener("click", function () {
+                onClick();
+                drawTags();
+                tagInput.focus();
+            });
+            return button;
+        }
+        function drawTags() {
+            clear(chips);
+            editedTags(modelTags, added, removed).forEach(function (item) {
+                var x = chipButton("\u00d7", "Remove the tag " + item.tag, function () {
+                    if (item.added) {
+                        added = added.filter(function (tag) {
+                            return tag !== item.tag;
+                        });
+                    }
+                    if (modelKeys[item.tag] && removed.indexOf(item.tag) < 0) {
+                        removed.push(item.tag);
+                    }
+                });
+                chips.appendChild(el("span", {
+                    className: "info-chip edit-chip" + (item.added ? " is-added" : ""),
+                    title: item.added ? "Added by you" : ""
+                }, [item.tag, x]));
+            });
+            if (!chips.childNodes.length) {
+                chips.appendChild(el("span", {className: "muted", text: "No tags."}));
+            }
+            // The model's tags taken away, to put back with a click.
+            removed.forEach(function (tag) {
+                if (!modelKeys[tag]) {
+                    return;
+                }
+                var back = chipButton("+", "Put back the tag " + tag, function () {
+                    removed = removed.filter(function (other) {
+                        return other !== tag;
+                    });
+                });
+                chips.appendChild(el("span", {className: "info-chip edit-chip is-removed",
+                                              title: "The model's tag, removed"},
+                                     [el("span", {className: "edit-chip-text", text: tag}), back]));
+            });
+            resetTags.hidden = !added.length && !removed.length;
+        }
+        // Add what the tag box holds; false (and a message) when it cannot be.
+        function addTags() {
+            var tags = splitTags(tagInput.value);
+            var problem = tagProblem(tags);
+            tagError.textContent = problem;
+            tagError.hidden = !problem;
+            tagInput.classList.toggle("is-invalid", Boolean(problem));
+            if (problem) {
+                return false;
+            }
+            tags.forEach(function (tag) {
+                var at = removed.indexOf(tag);
+                if (at >= 0) {
+                    removed.splice(at, 1);      // the model's tag, back again
+                } else if (!modelKeys[tag] && added.indexOf(tag) < 0) {
+                    added.push(tag);            // (one the model gave is there already)
+                }
+            });
+            tagInput.value = "";
+            drawTags();
+            return true;
+        }
+        addButton.addEventListener("click", function () {
+            addTags();
+            tagInput.focus();
+        });
+        tagInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                addTags();
+            }
+        });
+        resetTags.addEventListener("click", function () {
+            added = [];
+            removed = [];
+            drawTags();
+            tagInput.focus();               // (this button hides itself)
+        });
+        drawTags();
+        form.appendChild(fieldBox("Tags", el("div", {className: "edit-tag-add"},
+                                             [tagInput, addButton]),
+                                  [tagError, chips, resetTags,
+                                   el("p", {className: "info-small muted",
+                                            text: "Tags you add are searched like the " +
+                                                  "model's, and stay when the picture is " +
+                                                  "described again."})]));
+        // (The tag box's own id is the label's target.)
+        form.lastChild.firstChild.htmlFor = tagInput.id;
+
+        var save = el("button", {type: "submit", className: "button primary small", text: "Save"});
+        var cancel = el("button", {type: "button", className: "button small", text: "Cancel"});
+        cancel.addEventListener("click", function () {
+            finish(null);
+        });
+        form.appendChild(el("div", {className: "info-actions edit-actions"}, [
+            save, cancel,
+            el("span", {className: "info-small muted", text: "Ctrl+Enter saves, Esc cancels"})
+        ]));
+        var busy = false;
+        function submit() {
+            if (busy) {
+                return;
+            }
+            if (tagInput.value.replace(/\s+/g, "") && !addTags()) {
+                tagInput.focus();
+                return;
+            }
+            busy = true;
+            save.disabled = true;
+            var body = editBody(model, {title: title.value, description: description.value,
+                                        added: added, removed: removed});
+            SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/edits", body)
+                .then(function (answer) {
+                    finish(answer);
+                }, function () {
+                    busy = false;
+                    save.disabled = false;
+                });
+        }
+        form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            submit();
+        });
+        form.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+                event.preventDefault();
+                submit();
+            } else if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                finish(null);
+            }
+        });
+        form.focusFirst = function () {
+            title.focus();
+        };
+        function current() {
+            return JSON.stringify(editBody(model, {title: title.value,
+                                                   description: description.value,
+                                                   added: added, removed: removed}));
+        }
+        var initial = current();
+        // True when the form holds changes that are not saved.
+        form.isDirty = function () {
+            return Boolean(tagInput.value.replace(/\s+/g, "")) || current() !== initial;
+        };
+        return form;
+    }
+
+    /* Open the edit form of rec in box (admin): the pane shows it until it
+       is saved or cancelled, then the picture again (with detail, updated
+       by a save). */
+    function startEdit(box, rec, detail, context) {
+        if (!admin() || !rec) {
+            return;
+        }
+        if (isEditing(box) && editing.id === rec.i) {
+            return;
+        }
+        cancelEdit();
+        var token = {id: rec.i, box: box, detail: detail, context: context};
+        editing = token;
+        function done(answer) {
+            if (editing !== token) {
+                return;
+            }
+            editing = null;
+            var shown = token.detail;
+            if (answer) {
+                ["t", "d", "g", "ed"].forEach(function (key) {
+                    var value = answer.record ? answer.record[key] : undefined;
+                    if (value === undefined) {
+                        delete rec[key];
+                    } else {
+                        rec[key] = value;
+                    }
+                });
+                shown = {};
+                Object.keys(token.detail || {}).forEach(function (key) {
+                    shown[key] = token.detail[key];
+                });
+                shown.info = answer.info;
+                shown.model_info = answer.model_info;
+                shown.edits = answer.edits;
+                shown.edited = answer.edited;
+                toast(answer.edited ? "Saved. Your words are searched now."
+                    : "Saved: the model's text is used again.", "ok");
+            }
+            // (A Save button that was pressed and then disabled while the
+            // request ran has dropped the focus to the page.)
+            var focused = document.activeElement;
+            var hadFocus = !focused || focused === document.body || box.contains(focused);
+            renderInfo(box, rec, shown, token.context);
+            if (answer && token.context.onEdited) {
+                token.context.onEdited(rec.i, shown);
+            }
+            // Back at the top, where the new title and the badge are.
+            box.scrollTop = 0;
+            var heading = box.querySelector(".info-title");
+            if (heading) {
+                heading.tabIndex = -1;
+                if (hadFocus) {
+                    heading.focus({preventScroll: true});
+                }
+                if (heading.scrollIntoView && box.scrollHeight <= box.clientHeight) {
+                    heading.scrollIntoView({block: "nearest"});
+                }
+            }
+        }
+        token.cancel = function () {
+            done(null);
+        };
+        clear(box);
+        box.appendChild(el("p", {className: "muted", text: "Loading\u2026"}));
+        SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/edits").then(function (data) {
+            if (editing !== token) {
+                return;
+            }
+            clear(box);
+            var form = editForm(rec, data, done);
+            token.form = form;
+            box.appendChild(form);
+            box.scrollTop = 0;
+            form.focusFirst();
+        }, function () {
+            done(null);
+        });
+    }
+
     /* Fill box with the information about rec (a compact record); detail
        is the full record when it has arrived (server: /api/image), else
        null. context: query, libraryName(id), chipUrl, onChip, similar(id),
@@ -1403,6 +1860,15 @@ var VIEWER = (function () {
        (true in the lightbox), expandedText. */
     function renderInfo(box, rec, detail, context) {
         context = context || {};
+        if (isEditing(box)) {
+            if (rec && editing.id === rec.i) {
+                // Keep the open form; the picture is drawn again after it.
+                editing.detail = detail || editing.detail;
+                editing.context = context;
+                return;
+            }
+            editing = null;                 // another picture: the edit is dropped
+        }
         clear(box);
         if (!rec) {
             box.appendChild(el("p", {className: "muted", text: "This picture is not available."}));
@@ -1424,6 +1890,9 @@ var VIEWER = (function () {
         if (rec.pr) {
             badges.appendChild(badge("Private information", "is-warn"));
         }
+        if (rec.ed && admin()) {
+            badges.appendChild(badge("Edited", "is-edited"));
+        }
         if (badges.childNodes.length) {
             head.appendChild(badges);
         }
@@ -1444,6 +1913,7 @@ var VIEWER = (function () {
         var folder = rec.f || "";
         var factList = facts([
             ["Taken", dateText(rec, detail)],
+            ["Place", placeFact(rec, context)],
             ["Camera", rec.cm ? chip(rec.cm, "camera", rec.cm, context, "More from this camera") : ""],
             ["Settings", exposure + (lens ? (exposure ? " \u00b7 " : "") + lens : "")],
             ["Library", libraryName],
@@ -1455,13 +1925,44 @@ var VIEWER = (function () {
             box.appendChild(factList);
         }
 
-        if (!rec.ds) {
-            box.appendChild(el("p", {className: "info-note",
-                                     text: "This picture has not been described yet, so only " +
-                                           "its file name, date and camera can be searched."}));
-        } else if (rec.d) {
+        if (rec.d) {
             box.appendChild(section("", el("p", {className: "info-description"},
                                             [highlighted(rec.d, context.query, "d")])));
+        }
+        if (!rec.ds) {
+            // Not described: what can be searched is the file name, date and
+            // camera -- and the owner's words, when there are some.
+            var own = rec.t || rec.d || (rec.g && rec.g.length);
+            box.appendChild(el("p", {className: "info-note", text: !own
+                ? "This picture has not been described yet, so only its file name, date " +
+                  "and camera can be searched."
+                : "The AI model has not described this picture yet; " +
+                  (admin() ? "your" : "its") + " title, description and tags are searched " +
+                  "with its file name, date and camera."}));
+        }
+        var edits = admin() && detail && detail.edits ? detail.edits : null;
+        var model = detail && detail.model_info && typeof detail.model_info === "object"
+            ? detail.model_info : null;
+        var takenAway = edits && Array.isArray(edits.tags_remove) ? edits.tags_remove : [];
+        if (edits && model && detail.described !== false &&
+                (edits.title || edits.description || takenAway.length)) {
+            // The model's own words under the owner's (collapsed).
+            var original = el("details", {className: "info-model-text"}, [
+                el("summary", {text: "Model's text"})
+            ]);
+            if (edits.title) {
+                original.appendChild(el("p", {className: "info-small",
+                                              text: "Title: " + (model.title || "(none)")}));
+            }
+            if (edits.description) {
+                original.appendChild(el("p", {className: "info-small",
+                                              text: model.description || "(no description)"}));
+            }
+            if (takenAway.length) {
+                original.appendChild(el("p", {className: "info-small",
+                                              text: "Tags you removed: " + takenAway.join(", ")}));
+            }
+            box.appendChild(original);
         }
         if (rec.o) {
             box.appendChild(section("Text in the picture", longText(rec.o, context, "o")));
@@ -1499,6 +2000,16 @@ var VIEWER = (function () {
                 var row = chipRow(values, entry[2], context, entry[1], function (value) {
                     return "Show all pictures with " + value;
                 });
+                if (row && entry[1] === "g" && edits && edits.tags_add) {
+                    // The tags the owner added.
+                    var own = edits.tags_add.map(tagKey);
+                    Array.prototype.forEach.call(row.childNodes, function (node) {
+                        if (own.indexOf(tagKey(node.textContent)) >= 0) {
+                            node.classList.add("is-added");
+                            node.title = "Added by you. " + node.title;
+                        }
+                    });
+                }
                 if (row) {
                     box.appendChild(section(entry[0], row));
                 }
@@ -1552,7 +2063,12 @@ var VIEWER = (function () {
             box.appendChild(actions);
         }
         if (admin()) {
-            box.appendChild(adminActions(rec, context));
+            var adminRow = adminActions(rec, context);
+            adminRow.insertBefore(actionButton("Edit", function () {
+                startEdit(box, rec, detail, context);
+            }, "info-edit-button"), adminRow.firstChild);
+            adminRow.firstChild.title = "Edit the title, description and tags (E)";
+            box.appendChild(adminRow);
         }
 
         var similar = context.similar ? context.similar(rec.i) : [];
@@ -1661,7 +2177,11 @@ var VIEWER = (function () {
                 reset.hidden = !state.pano && !state.zoomed;
             }
         });
-        close.addEventListener("click", closeLightbox);
+        close.addEventListener("click", function () {
+            if (!unsavedEdit(pane)) {
+                closeLightbox();
+            }
+        });
         prev.addEventListener("click", function () {
             step(-1);
         });
@@ -1709,13 +2229,18 @@ var VIEWER = (function () {
         }
         var key = event.key;
         var handled = true;
-        if (key === "Escape") {
+        if (key === "Escape" && isEditing(lightbox.pane)) {
+            event.preventDefault();
+            cancelEdit();
+        } else if (key === "Escape") {
             event.preventDefault();
             closeLightbox();
         } else if (key === "Tab") {
             trapFocus(event);
             return;
-        } else if (typing(event.target)) {
+        } else if (typing(event.target) || isEditing(lightbox.pane)) {
+            // (While the edit form is open the keys work in it: an arrow on
+            // its Save button never leaves the picture.)
             return;
         } else if (key === "ArrowLeft" || key === "ArrowRight") {
             event.preventDefault();
@@ -1725,6 +2250,13 @@ var VIEWER = (function () {
             go(key === "Home" ? 0 : lightbox.ids.length - 1);
         } else if (key === "i" || key === "I") {
             setInfo(!lightbox.root.classList.contains("info-open"), true);
+        } else if ((key === "e" || key === "E") && admin()) {
+            event.preventDefault();
+            setInfo(true, false);
+            var edit = lightbox.pane.querySelector(".info-edit-button");
+            if (edit) {
+                edit.click();
+            }
         } else if (key === "+" || key === "=") {
             lightbox.stage.zoomBy(1.5);
         } else if (key === "-" || key === "_") {
@@ -1815,6 +2347,15 @@ var VIEWER = (function () {
                 }
                 renderPane(rec, lightbox.detail);
             },
+            onEdited: function (id, detail) {
+                lightbox.detail = detail;
+                if (lightbox.id === id) {
+                    lightbox.title.textContent = rec.t || rec.n || "";
+                }
+                if (options.onEdited) {
+                    options.onEdited(id);
+                }
+            },
             get: options.get,
             detailUrl: options.detailUrl,
             inPage: true
@@ -1850,6 +2391,11 @@ var VIEWER = (function () {
             }
         });
         note.appendChild(expand);
+        if (options.reviewUrl) {
+            note.appendChild(document.createTextNode(" "));
+            note.appendChild(el("a", {className: "button small", href: options.reviewUrl(rec.i),
+                                      text: "Review duplicates"}));
+        }
         note.hidden = false;
     }
 
@@ -1897,7 +2443,7 @@ var VIEWER = (function () {
     }
 
     function go(index) {
-        if (!lightbox.ids.length) {
+        if (!lightbox.ids.length || unsavedEdit(lightbox.pane)) {
             return;
         }
         index = clamp(index, 0, lightbox.ids.length - 1);
@@ -1905,6 +2451,9 @@ var VIEWER = (function () {
     }
 
     function step(direction) {
+        if (unsavedEdit(lightbox.pane)) {
+            return;
+        }
         var inList = lightbox.ids.indexOf(lightbox.id) >= 0;
         var target;
         if (inList) {
@@ -1954,6 +2503,9 @@ var VIEWER = (function () {
     function closeLightbox() {
         if (!lightbox || lightbox.root.hidden) {
             return;
+        }
+        if (isEditing(lightbox.pane)) {
+            editing = null;                 // (not saved)
         }
         var id = lightbox.id;
         lightbox.root.hidden = true;
@@ -2011,10 +2563,8 @@ var VIEWER = (function () {
     return {
         format: format,
         Stage: Stage,
-        Panorama: Panorama,
         renderInfo: renderInfo,
         altText: altText,
-        highlighted: highlighted,
         open: open,
         close: closeLightbox,
         update: update,

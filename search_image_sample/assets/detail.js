@@ -98,6 +98,10 @@
                 var target = SITE.searchState.read();
                 target.q = group === "q" ? value : "";
                 target.filters = {};
+                target.ids = "";
+                target.view = "";           // (a new search: the map fits it)
+                target.from = "";
+                target.to = "";
                 if (group !== "q") {
                     target.filters[group] = [value];
                 }
@@ -116,6 +120,16 @@
             onHidden: function () {
                 render();
             },
+            onEdited: function (id, edited) {
+                // (The viewer changed rec in place; "More like this" uses it.)
+                detail = edited;
+                if (data && data.records) {
+                    data.index = SearchCore.prepare(data.records);
+                    index = data.index;
+                }
+                document.title = (rec.t || rec.n || "Picture") + " - " +
+                    (SITE.title || "Image Search");
+            },
             inPage: false
         };
         function render() {
@@ -129,7 +143,13 @@
                     tag === "TEXTAREA" || tag === "SELECT") {
                 return;
             }
-            if (event.key === "+" || event.key === "=") {
+            if ((event.key === "e" || event.key === "E") && adminOn) {
+                var edit = byId("detail-info").querySelector(".info-edit-button");
+                if (edit) {
+                    event.preventDefault();
+                    edit.click();
+                }
+            } else if (event.key === "+" || event.key === "=") {
                 stage.zoomBy(1.5);
             } else if (event.key === "-" || event.key === "_") {
                 stage.zoomBy(1 / 1.5);
@@ -180,7 +200,7 @@
                     lookup[rec.i] = rec;
                 });
                 data = {byId: lookup, libraries: loaded.libraries || [],
-                        index: SearchCore.prepare(loaded.records)};
+                        records: loaded.records, index: SearchCore.prepare(loaded.records)};
             }
             done();
         });

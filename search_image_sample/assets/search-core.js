@@ -9,8 +9,11 @@
    td time of day, ev event, pp people, ty photo type, dt document type,
    c colors, ex extended words, q aesthetic, sh sharpness, qf quality
    flags, se sensitive, pr private, dk date taken, ts date and time taken,
-   cm camera, gp has GPS, p "360", dg duplicate group, h hidden,
-   ds described, v4). Any key may be missing. There is no DOM code here:
+   cm camera, gp has GPS, ci rg co cc km the place (town, region,
+   country, country code, km from the town), p "360", dg duplicate group,
+   h hidden, ed edited by the owner, ds described, v4). Any key may be
+   missing.
+   There is no DOM code here:
    the same file runs in the browser (also from file:// in an export) and
    under Node for the tests (tests/js/search_core_test.js).
 
@@ -27,7 +30,18 @@
               libraries  [{id, name}] of the index, for lib:<name>
               sort       "relevance" (the default when there are words to
                          look for), "newest" (the default otherwise),
-                         "oldest", "name" or "quality"
+                         "oldest", "name", "quality" or "shuffle" (a
+                         random order that stays the same for one seed)
+              seed       a number for "shuffle" (the page keeps one per
+                         session, so the order holds while scrolling)
+              range      {from, to}: only pictures taken from .. to
+                         (dates "YYYY", "YYYY-MM" or "YYYY-MM-DD", both
+                         included; either may be left out): the timeline's
+                         choice. Like the timeline and on:, it only counts
+                         a date taken (not a file's time, du)
+              timeline   true: work out the timeline of the matches
+              today      "YYYY-MM-DD" for on:today (default: the date of
+                         this computer)
               filters    facet selections {group: [values]}: the values of
                          one group are alternatives (OR), the groups must
                          all match (AND); every "has" value must match
@@ -41,6 +55,8 @@
                          information (default: include them)
               junk       true: leave out pictures flagged accidental or
                          blurry
+              ids        a list of picture ids: only these can match (the
+                         pictures picked on the map)
               typing     true while the query is still being typed: the
                          last word may be the start of a longer word (see
                          parse)
@@ -53,9 +69,22 @@
                every other group applied, but not the group's own
                (disjunctive facets). "month" is only filled while a year
                (or month) is selected. Selected values are always listed.
+               The values of tags, subjects, animals, food and vehicles
+               are grouped by their singular ("dog" and "dogs" are one
+               value, shown as the more common of the two; selecting
+               either finds both). "place" is a tree (see placeValues):
+               the countries, and the regions and towns under a chosen
+               one; its entries also have level, label and open.
      groups    when grouping: {shown id: [ids of the stack, shown id first]}
                for every stack of two or more matches
      collapsed how many matches are folded into stacks
+     timeline  only with options.timeline (else null): how many matches
+               were taken when: {level ("year", "month" or "day"; null when
+               none has a date), bars: [{key, count}] for every year from
+               the first to the last, the 12 months of the one year, or the
+               days of the one month the matches are in, dated, undated}. A
+               record whose date is only its file's time (du) counts as
+               undated
      sort      the order used; query: the parse() result as searched (pass
                it to highlights() so the marks agree with the matches);
                warnings: notes about parts of the query that could not be
@@ -71,9 +100,11 @@
      file: (words in that field); type: (photo, screenshot, document,
      receipt, chat, ...), people: (none, 1, 2, 3-5, 6-10, crowd, any or a
      number), year: (2019 or 2015-2019), before: / after: (YYYY, YYYY-MM or
-     YYYY-MM-DD, not including that period), lib: (library name or id),
+     YYYY-MM-DD, not including that period), on: (today: this day in
+     earlier years; MM-DD: that day in any year; or YYYY-MM-DD), place:
+     (words of the town, region or country), lib: (library name or id),
      has: (text, gps, people, animals, food, vehicles, description) and
-     is: (360, duplicate, hidden, undescribed, described, private,
+     is: (360, duplicate, hidden, undescribed, described, edited, private,
      sensitive, blurry, dark, overexposed, accidental, junk, v4 or a type).
      Another word before a colon is searched as ordinary text. With
      options.typing (the page sets it only while the box is being typed
@@ -83,6 +114,14 @@
      and such matches score well below whole words. Small words such as
      "the" and "of", and filler such as "my", "show me" and "pictures of",
      are skipped unless they are all there is.
+
+     Ranking (see "Ranking" below): a few words also find their synonyms
+     (SYNONYMS: "kids" finds children, "dog" finds puppies), at a lower
+     score; for the names of animals, vehicles and food, the real thing
+     (named in the animals, vehicles or food field) ranks above a toy,
+     statue, drawing or logo of it; and when one word is searched, a
+     picture that has it only in its text (OCR) ranks below pictures
+     about it.
 
    SearchCore.highlights(text, query, field) -> [[start, end], ...]
      Ranges of text (string offsets, end exclusive, sorted, not
@@ -108,7 +147,13 @@
    Also: prepare(records) -> index with the same search / similar /
    suggest methods and get(id); normalize(text); tokens(text); fold(word)
    (the singular a word is searched as); forms(word); facetLabel(group,
-   value); FACETS; SORTS; SYNTAX (examples for a help popover).
+   value); placeLabel(value) ("Kahului, Hawaii, United States" for a
+   value of the place facet), placeParent(value), placeOf(record) (its
+   place as the place facet names it), PLACE_SEPARATOR;
+   dateLabel(key) ("May 2019" for "2019-05"); rangeLabel(from, to) (the
+   range option in words); timelineChoice(bars, at, extend, anchor) (what
+   choosing a bar of the timeline does); FACETS; SORTS; SYNTAX (examples
+   for a help popover).
 
    Plain ES5 syntax (an IIFE, var, no arrow functions) like the other page
    scripts; no eval, no build step.
@@ -341,18 +386,143 @@ var SearchCore = (function () {
         return !IRREGULAR_PLURALS[word] && (before === "u" || before === "i") ? word : forms[1];
     }
 
+    /* ---------- Synonyms --------------------------------------------------- */
+
+    /* Words a query word also finds, at SYNONYM_FACTOR of a direct match.
+       "a b c": each of the words finds the others. "a b | x y": a and b
+       find each other, and also x and y, which are kinds of them ("dog"
+       finds puppies), but x and y do not find a and b (a puppy is a dog;
+       most dogs are not puppies). A word with other meanings is only found
+       that way too ("fall | autumn": "fall leaves" finds autumn leaves, but
+       "autumn" does not find waterfalls or a rock fall). Words are written
+       as they are searched: singular, lower case, one word each. Only
+       plain words are expanded (and tag: and animal: values), never
+       "quoted phrases" or other fields; and a synonym is not looked for in
+       the text in a picture (a newspaper that mentions the Huskies is not a
+       dog). */
+    var SYNONYM_LIST = [
+        "kid child | toddler boy girl",
+        "baby infant | newborn",
+        "mom mother mum mommy",
+        "dad father daddy",
+        "grandma grandmother granny",
+        "grandpa grandfather",
+        "dog | puppy doggy retriever labrador poodle terrier beagle bulldog dachshund " +
+            "chihuahua spaniel collie corgi pug",
+        "cat | kitten kitty tabby",
+        "horse | pony foal stallion mare",
+        "rabbit bunny",
+        "bird | seagull gull pigeon sparrow parrot owl eagle hawk crow robin duck goose " +
+            "swan penguin flamingo",
+        "fish | clownfish goldfish angelfish butterflyfish lionfish pufferfish",
+        "chicken | hen rooster",
+        "pig hog | piglet",
+        "sheep | lamb",
+        "cow cattle",
+        "duck | duckling",
+        "turtle | tortoise",
+        "car automobile | sedan suv hatchback convertible coupe",
+        "truck lorry",
+        "plane airplane aeroplane aircraft | airliner",
+        "bike bicycle",
+        "motorbike motorcycle",
+        "boat | sailboat yacht canoe kayak ferry ship",
+        "tv television",
+        "couch sofa",
+        "phone smartphone cellphone",
+        "computer | laptop",
+        "sea ocean",
+        "beach seaside",
+        "woods | forest",
+        "fall | autumn",
+        "photo picture photograph",
+        "present | gift",
+        "christmas xmas",
+        "barbecue bbq",
+        "birthday bday",
+        "party celebration",
+        "flower | rose tulip daisy sunflower orchid lily peony blossom",
+        "tree | oak pine birch",
+        "cake | cupcake cheesecake",
+        "shop store",
+        "trash garbage rubbish",
+        "stroller pram",
+        "sweater pullover",
+        "trousers pants",
+        "sunrise dawn",
+        "sunset sundown",
+        "doctor physician",
+        "police cop",
+        "bag | purse handbag backpack"
+    ];
+    // Half a direct match: a synonym in a title (about 12) stays below the
+    // word itself in tags (7), so "mom" shows the pictures tagged "mom"
+    // before every "mother duck".
+    var SYNONYM_FACTOR = 0.5;
+
+    // word -> [the other words it finds]
+    var SYNONYMS = (function () {
+        var out = Object.create(null);
+        function add(word, others) {
+            var list = out[word] || (out[word] = []);
+            others.forEach(function (other) {
+                if (other !== word && list.indexOf(other) < 0) {
+                    list.push(other);
+                }
+            });
+        }
+        SYNONYM_LIST.forEach(function (line) {
+            var parts = line.split("|");
+            var group = parts[0].split(" ").filter(Boolean);
+            var kinds = parts.length > 1 ? parts[1].split(" ").filter(Boolean) : [];
+            group.forEach(function (word) {
+                add(word, group.concat(kinds));
+            });
+        });
+        return out;
+    })();
+
+    // The other words a normalized query word finds (an empty list if none).
+    function synonymsOf(word) {
+        var forms = wordForms(word);
+        for (var k = 0; k < forms.length; k++) {
+            if (SYNONYMS[forms[k]]) {
+                return SYNONYMS[forms[k]];
+            }
+        }
+        return [];
+    }
+
+    // True when a term's word may be expanded with its synonyms.
+    function expands(term) {
+        return term.kind === "word" && !term.quoted &&
+            (!term.field || term.field === "tag" || term.field === "animal");
+    }
+
+    // The words a term looks for: its own, then its synonyms when it expands.
+    function termWords(term) {
+        if (term.words.length !== 1 || !expands(term)) {
+            return term.words;
+        }
+        return term.words.concat(synonymsOf(term.words[0]));
+    }
+
     /* ---------- Fields and weights ----------------------------------------- */
 
     // Every searchable field is a bit of a mask; WEIGHTS[bit] is its score.
     // F_DATE holds the month name of the capture date (weak: "may" and
     // "march" are ordinary words too); F_YEAR its year, which counts about
     // as much as a title word, so "receipt 2019" prefers receipts taken in
-    // 2019 over ones that merely mention the year.
+    // 2019 over ones that merely mention the year. F_PLACE: the town,
+    // region and country of the GPS position, and other names of the
+    // country (COUNTRY_WORDS) -- weak, below the description: town names
+    // hold everyday words ("Long Beach", "Lake Placid", "Mountain View"),
+    // and a picture taken in Long Beach is not a picture of a beach.
     var F_TITLE = 0, F_TAGS = 1, F_SUBJECTS = 2, F_ANIMALS = 3, F_FOOD = 4, F_VEHICLES = 5,
         F_PEOPLE = 6, F_SCENE = 7, F_EVENT = 8, F_SETTING = 9, F_KIND = 10, F_TEXT = 11,
         F_DESCRIPTION = 12, F_EXTENDED = 13, F_COLORS = 14, F_FLAGS = 15, F_FOLDER = 16,
-        F_FILE = 17, F_CAMERA = 18, F_DATE = 19, F_YEAR = 20;
-    var WEIGHTS = [10, 7, 6, 6, 6, 6, 6, 4, 4, 4, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 8];
+        F_FILE = 17, F_CAMERA = 18, F_DATE = 19, F_YEAR = 20, F_PLACE = 21;
+    var WEIGHTS = [10, 7, 6, 6, 6, 6, 6, 4, 4, 4, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 8, 2];
     var ALL_FIELDS = (1 << WEIGHTS.length) - 1;
     // A word matched only as the start of a longer word (while typing)
     // scores this much less: even in a title (2.5) it stays below a whole
@@ -370,13 +540,97 @@ var SearchCore = (function () {
     var SEQUENCE_TITLE_BONUS = 6;
     var SEQUENCE_TEXT_BONUS = 3;
 
+    /* Ranking: the real thing over pictures of it. A word names an animal,
+       a vehicle or food (a "thing") when it ends items of the animals,
+       vehicles or food field ("dog", "brown dog"), in at least THING_SHARE
+       of the pictures that have it in their words at all ("light" ends
+       "street light" in some vehicle lists, but is mostly something else).
+       It is a thing of the fields where it does that at least a third as
+       often as in the field where it does it most ("dog" ends "hot dog" in
+       a few food lists, but is an animal), and not only after a sweet
+       (EDIBLE_WORDS: a "gingerbread house" does not make "house" a food).
+       A few words for kinds of things (KIND_WORDS: "animal", "vehicle",
+       "flower", "tree", ...) are things of no field.
+       For a thing, a picture that names it (or a synonym) in its field, as
+       itself, or in its title (not as a depiction: a picture of beer
+       bottles is about beer even when its food field is empty), gets
+       REAL_BONUS; for a kind word with a field of its own (KIND_FIELDS:
+       "animal", "vehicle", "food"), any real item in that field will do,
+       and a picture without one is ranked like a depiction ("animal
+       tracks"). One that names it as a thing of another field only (a hot
+       dog for "dog") gets no bonus, and is ranked like a depiction when
+       the word is searched alone. One that is a drawing, screenshot,
+       document, meme or diagram (DEPICTION_TYPES: the dog of a cartoon,
+       the coffee of a menu), or that shows it as a toy, statue, drawing,
+       logo, costume and the like (DEPICTION words next to it in its title,
+       subjects, tags, description or those fields: "toy car", "dog
+       statue", "a painting of a horse"), keeps DEPICTION_FACTOR of its
+       score: below the real ones, but not below every passing mention.
+       When the query asks for such things itself ("toy car", "teddy
+       bear", "dog statue", "bird art", "car document"), it is the other
+       way round: a picture that shows the thing so, or is a drawing,
+       document, ... gets REAL_BONUS, and the real thing nothing. The
+       describe prompt keeps toys, statues and pictures of animals out of
+       the animals field. */
+    var THING_FIELDS = (1 << F_ANIMALS) | (1 << F_FOOD) | (1 << F_VEHICLES);
+    var THING_SHARE = 0.1;
+    // The fields whose words count for THING_SHARE: what a picture shows.
+    var CONTENT_FIELDS = (1 << F_TITLE) | (1 << F_TAGS) | (1 << F_SUBJECTS) | THING_FIELDS |
+        (1 << F_PEOPLE) | (1 << F_SCENE) | (1 << F_DESCRIPTION) | (1 << F_EXTENDED) |
+        (1 << F_COLORS);
+    var KIND_THING = 1 << 30;
+    // Kind words that have a field of their own: any real item there is one.
+    var KIND_FIELDS = dict({animal: 1 << F_ANIMALS, pet: 1 << F_ANIMALS,
+                            creature: 1 << F_ANIMALS, vehicle: 1 << F_VEHICLES,
+                            food: 1 << F_FOOD});
+    var KIND_WORDS = wordSet("animal pet creature vehicle food flower blossom bouquet rose " +
+        "tulip daisy sunflower orchid lily peony hibiscus plant tree cactus succulent fern " +
+        "palm leaf");
+    var DEPICTION_TYPES = wordSet("artwork meme screenshot document diagram");
+    // Words for art that, like DEPICTION_TYPES, ask for depictions ("bird art").
+    var ART_WORDS = wordSet("art artwork collage craft papercraft");
+    var REAL_BONUS = 3;
+    var DEPICTION_FACTOR = 0.6;
+    var DEPICTION_FIELDS = (1 << F_TITLE) | (1 << F_TAGS) | (1 << F_SUBJECTS) | THING_FIELDS |
+        (1 << F_DESCRIPTION) | (1 << F_EXTENDED);
+    // Words that make the word after them a depiction ("toy car", "stuffed dog"),
+    var DEPICTION_BEFORE = wordSet("toy plush stuffed cartoon inflatable origami lego fake " +
+        "artificial model teddy carved sculpted drawn animated statue figurine sculpture " +
+        "sticker balloon");
+    // materials that do so when the word ends a phrase ("a plastic dinosaur",
+    // "paper flowers"; but a "paper coffee cup" is a cup),
+    var DEPICTION_MATERIALS = wordSet("plastic paper ceramic porcelain rubber cardboard " +
+        "decorative");
+    // the word before them ("dog statue", "horse logo", "dinosaur costume"),
+    var DEPICTION_AFTER = wordSet("toy figurine figure statue statuette sculpture sticker " +
+        "decal magnet ornament plush plushie doll puppet costume mascot logo emblem icon " +
+        "emoji drawing painting sketch illustration cartoon print pattern poster mural sign " +
+        "symbol livery footprint pawprint balloon shaped replica carving tattoo pillow " +
+        "cutout silhouette");
+    // or the word after "of" ("a painting of a horse", "statues of two lions").
+    var DEPICTION_OF = wordSet("statue statuette figurine sculpture drawing painting " +
+        "illustration sketch poster mural model replica cartoon print carving toy sticker " +
+        "logo silhouette cutout depiction rendering render");
+    // Words that may stand between a depiction word and its thing.
+    var SMALL_WORDS = wordSet("a an the two three four some several many few one");
+    var EDIBLE_WORDS = wordSet("gingerbread chocolate candy cookie sugar marshmallow jelly " +
+                               "gummy marzipan fondant");
+    var MARK_BEFORE = 1, MARK_AFTER = 2, MARK_OF = 4, MARK_SMALL = 8, MARK_OF_WORD = 16,
+        MARK_MATERIAL = 32;
+    // One word searched alone that is found only in the text in a picture
+    // (OCR), or only in its place names, keeps this part of its score:
+    // pictures about it come first ("beach" in a description before a
+    // living room in Long Beach). Not for place: (only places match).
+    var TEXT_ONLY_FACTOR = 0.5;
+    var WEAK_FIELDS = (1 << F_TEXT) | (1 << F_PLACE);
+
     // field: names -> the fields they search.
     var FIELD_MASKS = dict({
         tag: 1 << F_TAGS, subject: 1 << F_SUBJECTS, title: 1 << F_TITLE, text: 1 << F_TEXT,
         description: 1 << F_DESCRIPTION, scene: 1 << F_SCENE, setting: 1 << F_SETTING,
         event: 1 << F_EVENT, animal: 1 << F_ANIMALS, food: 1 << F_FOOD,
         vehicle: 1 << F_VEHICLES, color: 1 << F_COLORS, camera: 1 << F_CAMERA,
-        folder: 1 << F_FOLDER, file: 1 << F_FILE
+        folder: 1 << F_FOLDER, file: 1 << F_FILE, place: 1 << F_PLACE
     });
     // Field names (and their other spellings) known to the parser.
     var FIELD_NAMES = dict({
@@ -387,7 +641,7 @@ var SearchCore = (function () {
         color: "color", colour: "color", colors: "color", colours: "color",
         camera: "camera", folder: "folder", file: "file", filename: "file", type: "type",
         people: "people", year: "year", before: "before", after: "after", lib: "lib",
-        library: "lib", has: "has", is: "is"
+        library: "lib", has: "has", is: "is", place: "place", places: "place", on: "on"
     });
     // Record keys (and field names) for highlights(text, query, field).
     var HIGHLIGHT_FIELDS = dict({
@@ -395,7 +649,18 @@ var SearchCore = (function () {
         subjects: F_SUBJECTS, a: F_ANIMALS, fo: F_FOOD, v: F_VEHICLES, pd: F_PEOPLE,
         sc: F_SCENE, st: F_SETTING, ev: F_EVENT, ty: F_KIND, dt: F_KIND, td: F_KIND,
         o: F_TEXT, text: F_TEXT, d: F_DESCRIPTION, description: F_DESCRIPTION,
-        ex: F_EXTENDED, c: F_COLORS, qf: F_FLAGS, f: F_FOLDER, n: F_FILE, cm: F_CAMERA
+        ex: F_EXTENDED, c: F_COLORS, qf: F_FLAGS, f: F_FOLDER, n: F_FILE, cm: F_CAMERA,
+        ci: F_PLACE, rg: F_PLACE, co: F_PLACE, place: F_PLACE
+    });
+
+    // Other names of countries (by ISO code) that find pictures taken
+    // there, besides the name the place names give ("usa", "uk").
+    var COUNTRY_WORDS = dict({
+        US: ["usa", "us", "america", "united states of america"],
+        GB: ["uk", "britain", "great britain"], AE: ["uae", "emirates"], NL: ["holland"],
+        CZ: ["czech republic"], KR: ["korea"], MK: ["macedonia"], TR: ["turkey", "turkiye"],
+        MM: ["burma"], SZ: ["swaziland"], CV: ["cape verde"], DE: ["deutschland"],
+        ES: ["espana"], IT: ["italia"], CH: ["schweiz", "suisse"], AT: ["osterreich"]
     });
 
     var MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august",
@@ -457,6 +722,10 @@ var SearchCore = (function () {
         add(F_FOLDER, textList(rec.f));
         add(F_FILE, textList(rec.n));
         add(F_CAMERA, textList(rec.cm));
+        if (isText(rec.co)) {
+            add(F_PLACE, textList(rec.ci).concat(textList(rec.rg), [rec.co],
+                                                 COUNTRY_WORDS[rec.cc] || []));
+        }
         var date = isText(rec.dk) ? /^(\d{4})-(\d{2})/.exec(rec.dk) : null;
         if (date) {
             var month = parseInt(date[2], 10);
@@ -509,7 +778,7 @@ var SearchCore = (function () {
     // descriptions rarely contain them, so requiring them finds nothing.
     var STOP_WORDS = wordSet("a an and are as at be by for from in into is it its of on or " +
                              "the to with this that these those there was were");
-    var FILLER_WORDS = wordSet("my our your me i we show find all");
+    var FILLER_WORDS = wordSet("my our your me i we us show find all");
     var NOUN_FILLERS = wordSet("picture pic photo photograph image");
     // "no people" and "without people" mean people:none.
     var NO_WORDS = wordSet("no without");
@@ -559,7 +828,7 @@ var SearchCore = (function () {
         pending: "undescribed", described: "described", private: "private",
         sensitive: "sensitive", blurry: "blurry", blur: "blurry", dark: "dark",
         overexposed: "overexposed", accidental: "accidental", screen_photo: "screen_photo",
-        junk: "junk", v4: "v4", old: "v4"
+        junk: "junk", v4: "v4", old: "v4", edited: "edited", edit: "edited"
     });
     var QUALITY_FLAGS = wordSet("blurry dark overexposed accidental screen_photo");
 
@@ -651,6 +920,29 @@ var SearchCore = (function () {
         return key;
     }
 
+    function two(number) {
+        return (number < 10 ? "0" : "") + number;
+    }
+
+    // on:today (this day in earlier years), on:MM-DD (that day of any year)
+    // or on:YYYY-MM-DD (that day).
+    function onFilter(value) {
+        if (value === "today") {
+            return {kind: "on", today: true};
+        }
+        var match = /^(\d{1,2})[-\/.](\d{1,2})$/.exec(value);
+        if (match) {
+            var month = parseInt(match[1], 10);
+            var day = parseInt(match[2], 10);
+            if (month < 1 || month > 12 || day < 1 || day > 31) {
+                return null;
+            }
+            return {kind: "on", key: "-" + two(month) + "-" + two(day)};
+        }
+        var key = dateKey(value);
+        return key && key.length === 10 ? {kind: "on", date: key} : null;
+    }
+
     // The filter of a field:value term, or null (with a warning) when the
     // value is not understood.
     function parseFilter(field, raw, warnings) {
@@ -670,6 +962,9 @@ var SearchCore = (function () {
             var key = dateKey(value);
             filter = key ? {kind: field, key: key} : null;
             hint = "try 2019, 2019-05 or 2019-05-14";
+        } else if (field === "on") {
+            filter = onFilter(value);
+            hint = "try on:today, or on:05-14 for a month and day";
         } else if (field === "lib") {
             filter = {kind: "lib", value: String(raw).replace(/^\s+|\s+$/g, "")};
         } else if (field === "has") {
@@ -679,7 +974,7 @@ var SearchCore = (function () {
         } else if (field === "is") {
             var state = lookupWord(IS_WORDS, value);
             filter = state ? {kind: "is", what: state} : typeFilter(value);
-            hint = "try 360, duplicate, undescribed, screenshot or document";
+            hint = "try 360, duplicate, undescribed, edited, screenshot or document";
         }
         if (!filter) {
             warnings.push(field + ":" + raw + " is not understood (" + hint + ").");
@@ -722,7 +1017,8 @@ var SearchCore = (function () {
         if (STOP_WORDS[word]) {
             return 3;
         }
-        if (FILLER_WORDS[word]) {
+        // ("US" in capitals is the country: "beach US".)
+        if (FILLER_WORDS[word] && !(word === "us" && /^U\.?S\.?$/.test(term.value))) {
             return 2;
         }
         var forms = wordForms(word);
@@ -951,14 +1247,16 @@ var SearchCore = (function () {
             return clause.terms.length > 1;
         });
         // The sequence: the plain words in order, without skipped words at
-        // either end ("photo of a dog on the beach" -> "dog on the beach").
+        // either end ("photo of a dog on the beach" -> "dog on the beach"),
+        // but for a last "us" ("contact us": the words of a web page).
         var plainTerms = terms.filter(function (term) {
             return !term.field && !term.quoted && !term.neg && term.kind !== "filter";
         });
         while (plainTerms.length && !plainTerms[0].active) {
             plainTerms.shift();
         }
-        while (plainTerms.length && !plainTerms[plainTerms.length - 1].active) {
+        while (plainTerms.length && !plainTerms[plainTerms.length - 1].active &&
+               plainTerms[plainTerms.length - 1].words[0] !== "us") {
             plainTerms.pop();
         }
         var sequence = [];
@@ -1025,6 +1323,7 @@ var SearchCore = (function () {
         {key: "event", label: "Event"},
         {key: "year", label: "Year"},
         {key: "month", label: "Month"},
+        {key: "place", label: "Place"},
         {key: "camera", label: "Camera", limit: 15},
         {key: "has", label: "Has"},
         {key: "tags", label: "Tags", limit: 20},
@@ -1044,8 +1343,17 @@ var SearchCore = (function () {
     }).filter(function (key) {
         return key !== "has";
     });
-    var MULTI_GROUPS = wordSet("type tags subjects animals food vehicles colors");
+    var MULTI_GROUPS = wordSet("type tags subjects animals food vehicles colors place");
     var LOWER_GROUPS = wordSet("tags subjects animals food vehicles colors");
+    // Groups whose values are grouped by their singular (see facetKey).
+    var FOLDED_GROUPS = wordSet("tags subjects animals food vehicles");
+    // Plurals that mean something else than their singular, kept apart.
+    var KEEP_PLURALS = wordSet("glasses sunglasses eyeglasses woods clothes shorts pants " +
+                               "jeans news series species scissors binoculars goggles " +
+                               "stairs");
+    // ...except glasses to drink from ("wine glasses" are wine glasses).
+    var DRINK_WORDS = wordSet("wine champagne beer shot drinking cocktail martini water " +
+                              "pint juice whiskey");
     var HAS_VALUES = ["text", "gps", "360"];
     var HAS_BITS = dict({text: 1, gps: 2, "360": 4});
 
@@ -1084,11 +1392,61 @@ var SearchCore = (function () {
         has: dict({text: "Has text", gps: "Has a location", "360": "360\u00b0 photos"})
     });
 
+    /* The values of the place group: "Country", "Country|Region" and
+       "Country|Region|Town" ("Country||Town" when the town's region is not
+       known). A picture has those of its place, so choosing a country
+       finds every picture taken there. */
+    var PLACE_SEPARATOR = "|";
+
+    function placeName(text) {
+        return String(text).split(PLACE_SEPARATOR).join("/");
+    }
+
+    function placeValues(rec) {
+        if (!isText(rec.co)) {
+            return [];
+        }
+        var country = placeName(rec.co);
+        var region = isText(rec.rg) ? placeName(rec.rg) : "";
+        var out = [country];
+        if (region) {
+            out.push(country + PLACE_SEPARATOR + region);
+        }
+        if (isText(rec.ci)) {
+            out.push(country + PLACE_SEPARATOR + region + PLACE_SEPARATOR + placeName(rec.ci));
+        }
+        return out;
+    }
+
+    // The place a place value is in ("" for a country).
+    function placeParent(value) {
+        var parts = String(value).split(PLACE_SEPARATOR);
+        if (parts.length >= 3) {
+            return parts[1] ? parts[0] + PLACE_SEPARATOR + parts[1] : parts[0];
+        }
+        return parts.length === 2 ? parts[0] : "";
+    }
+
+    // 0 for a country, 1 a region, 2 a town.
+    function placeLevel(value) {
+        return Math.min(2, String(value).split(PLACE_SEPARATOR).length - 1);
+    }
+
+    // "Kahului, Hawaii, United States" for a place value.
+    function placeLabel(value) {
+        return String(value).split(PLACE_SEPARATOR).filter(Boolean).reverse().join(", ");
+    }
+
     /* A label for a facet value: facetLabel("type", "doc:receipt") is
-       "Receipts", facetLabel("month", "2019-05") is "May 2019". Library
+       "Receipts", facetLabel("month", "2019-05") is "May 2019",
+       facetLabel("place", "United States|Hawaii") is "Hawaii". Library
        values are ids; the page shows their names. */
     function facetLabel(group, value) {
         var text = value === null || value === undefined ? "" : String(value);
+        if (group === "place") {
+            var parts = text.split(PLACE_SEPARATOR).filter(Boolean);
+            return parts.length ? parts[parts.length - 1] : text;
+        }
         if (group === "type") {
             return TYPE_LABELS[text] || enumWords(text.replace(/^doc:/, ""));
         }
@@ -1121,6 +1479,23 @@ var SearchCore = (function () {
         return out;
     }
 
+    /* What a value of a FOLDED_GROUPS group is grouped by: its words, each
+       singular ("golden retrievers" and "Golden Retriever" are one). */
+    function facetKey(value) {
+        var words = tokens(value);
+        if (!words.length) {
+            return value;
+        }
+        return words.map(function (word, k) {
+            return KEEP_PLURALS[word] && !(k > 0 && DRINK_WORDS[words[k - 1]]) ? word :
+                foldWord(word);
+        }).join(" ");
+    }
+
+    function sameValue(value) {
+        return value;
+    }
+
     function facetValues(rec, key) {
         var dk = isText(rec.dk) ? rec.dk : "";
         switch (key) {
@@ -1149,6 +1524,8 @@ var SearchCore = (function () {
             return /^\d{4}-\d{2}/.test(dk) ? [dk.slice(0, 7)] : [];
         case "camera":
             return isText(rec.cm) ? [rec.cm] : [];
+        case "place":
+            return placeValues(rec);
         case "tags":
             return uniqueLower(textList(rec.g));
         case "subjects":
@@ -1165,22 +1542,42 @@ var SearchCore = (function () {
         return [];
     }
 
-    // The values of one facet group for every record: one value id per
-    // record (single) or a list per record (offsets/flat).
+    /* The values of one facet group for every record: one value id per
+       record (single) or a list per record (offsets/flat). values[id] is
+       what keyOf(value) gives for the values of that id (the value itself,
+       or its facetKey in a FOLDED_GROUPS group), labels[id] what it is
+       shown as (the value; the most common of a folded group's values). */
     function buildFacet(records, key) {
         var n = records.length;
         var values = [];
         var ids = Object.create(null);
+        var folded = FOLDED_GROUPS[key] === true;
+        var keyOf = folded ? facetKey : sameValue;
+        var keys = Object.create(null);         // value as stored -> its key (folded groups)
+        var seen = [];                          // per id: {value: count} (folded groups)
         var multi = MULTI_GROUPS[key] === true;
         var single = multi ? null : new Int32Array(n);
         var offsets = multi ? new Int32Array(n + 1) : null;
         var flat = [];
         function idOf(value) {
-            var id = ids[value];
+            var name = value;
+            if (folded) {
+                name = keys[value];
+                if (name === undefined) {
+                    name = keys[value] = facetKey(value);
+                }
+            }
+            var id = ids[name];
             if (id === undefined) {
                 id = values.length;
-                ids[value] = id;
-                values.push(value);
+                ids[name] = id;
+                values.push(name);
+                if (folded) {
+                    seen.push(Object.create(null));
+                }
+            }
+            if (folded) {
+                seen[id][value] = (seen[id][value] || 0) + 1;
             }
             return id;
         }
@@ -1199,8 +1596,23 @@ var SearchCore = (function () {
         if (multi) {
             offsets[n] = flat.length;
         }
-        return {key: key, values: values, ids: ids, single: single, offsets: offsets,
-                flat: multi ? new Int32Array(flat) : null};
+        var labels = values;
+        if (folded) {
+            // The most common way of writing it; of equally common ones the
+            // singular, else the first seen.
+            labels = seen.map(function (counts, id) {
+                var best = null;
+                Object.keys(counts).forEach(function (value) {
+                    if (best === null || counts[value] > counts[best] ||
+                            (counts[value] === counts[best] && value === values[id])) {
+                        best = value;
+                    }
+                });
+                return best;
+            });
+        }
+        return {key: key, values: values, labels: labels, keyOf: keyOf, ids: ids,
+                single: single, offsets: offsets, flat: multi ? new Int32Array(flat) : null};
     }
 
     function valueList(value) {
@@ -1263,21 +1675,94 @@ var SearchCore = (function () {
         };
     }
 
-    // [{value, count, selected}] of one group: values with matches, plus the
-    // selected ones; the most frequent `limit` when the group has a limit.
-    function facetEntries(key, values, counts, ids, selected) {
+    /* The place group as a tree: the countries with matches, and under a
+       place that is chosen or holds a chosen place (open) its regions and
+       towns with matches; chosen places and the places they are in are
+       always there. In tree order, most matches first at each level, each
+       entry with {value, count, selected, level, label, open}. */
+    function placeEntries(data, counts, selected) {
         var chosen = Object.create(null);
-        var entries = [];
+        var open = Object.create(null);
         selected.forEach(function (value) {
             chosen[value] = true;
-            if (ids[value] === undefined) {
-                entries.push({value: value, count: 0, selected: true});
+            for (var parent = placeParent(value); parent; parent = placeParent(parent)) {
+                open[parent] = true;
             }
         });
-        for (var id = 0; id < values.length; id++) {
-            if (counts[id] > 0 || chosen[values[id]]) {
-                entries.push({value: values[id], count: counts[id],
-                              selected: chosen[values[id]] === true});
+        var shown = Object.create(null);
+        var children = Object.create(null);
+        var roots = [];
+        function add(value, count) {
+            if (shown[value]) {
+                return;
+            }
+            shown[value] = true;
+            var parent = placeParent(value);
+            var entry = {value: value, count: count, selected: chosen[value] === true,
+                         level: placeLevel(value), label: facetLabel("place", value),
+                         open: open[value] === true};
+            if (parent) {
+                (children[parent] || (children[parent] = [])).push(entry);
+            } else {
+                roots.push(entry);
+            }
+        }
+        var id;
+        for (id = 0; id < data.values.length; id++) {
+            var value = data.values[id];
+            var parent = placeParent(value);
+            if (chosen[value] || open[value] ||
+                    (counts[id] > 0 && (!parent || chosen[parent] || open[parent]))) {
+                add(value, counts[id]);
+            }
+        }
+        Object.keys(chosen).concat(Object.keys(open)).forEach(function (value) {
+            add(value, 0);              // (no picture has it)
+        });
+        var out = [];
+        function walk(list) {
+            list.sort(function (a, b) {
+                return b.count - a.count || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0);
+            });
+            list.forEach(function (entry) {
+                out.push(entry);
+                if (children[entry.value]) {
+                    walk(children[entry.value]);
+                }
+            });
+        }
+        walk(roots);
+        // A place whose parent is not listed (a value of an address made
+        // by hand) goes at the end.
+        Object.keys(children).forEach(function (parent) {
+            if (!shown[parent]) {
+                walk(children[parent]);
+            }
+        });
+        return out;
+    }
+
+    /* [{value, count, selected}] of one group (data: buildFacet): values
+       with matches, plus the selected ones (as they were selected); the
+       most frequent `limit` when the group has a limit. */
+    function facetEntries(key, data, counts, selected) {
+        if (key === "place") {
+            return placeEntries(data, counts, selected);
+        }
+        var chosen = [];                        // value id -> the selected value naming it
+        var entries = [];
+        selected.forEach(function (value) {
+            var id = data.ids[data.keyOf(value)];
+            if (id === undefined) {
+                entries.push({value: value, count: 0, selected: true});
+            } else if (chosen[id] === undefined) {
+                chosen[id] = value;
+            }
+        });
+        for (var id = 0; id < data.values.length; id++) {
+            if (counts[id] > 0 || chosen[id] !== undefined) {
+                entries.push({value: chosen[id] !== undefined ? chosen[id] : data.labels[id],
+                              count: counts[id], selected: chosen[id] !== undefined});
             }
         }
         var limit = FACET_LIMITS[key];
@@ -1314,6 +1799,217 @@ var SearchCore = (function () {
         return match ? dayNumber(+match[1], +match[2], +match[3]) : -1;
     }
 
+    var DATE_KEY_RE = /^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
+
+    // options.range as {from, to} (each a date key or ""), or null.
+    function dateRange(value) {
+        if (!value || typeof value !== "object") {
+            return null;
+        }
+        var from = isText(value.from) && DATE_KEY_RE.test(value.from) ? value.from : "";
+        var to = isText(value.to) && DATE_KEY_RE.test(value.to) ? value.to : "";
+        if (!from && !to) {
+            return null;
+        }
+        if (from && to && from.slice(0, to.length) > to) {
+            var swap = from;
+            from = to;
+            to = swap;
+        }
+        return {from: from, to: to};
+    }
+
+    // True when a date taken ("YYYY-MM-DD") is within a dateRange().
+    function inRange(day, range) {
+        if (!isText(day) || !/^\d{4}-\d{2}-\d{2}/.test(day)) {
+            return false;
+        }
+        return (!range.from || day.slice(0, range.from.length) >= range.from) &&
+            (!range.to || day.slice(0, range.to.length) <= range.to);
+    }
+
+    // The date of this computer, or of the today option ("YYYY-MM-DD").
+    function todayKey(value) {
+        if (isText(value) && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            return value;
+        }
+        var now = new Date();
+        return now.getFullYear() + "-" + two(now.getMonth() + 1) + "-" + two(now.getDate());
+    }
+
+    function daysInMonth(year, month) {
+        return dayNumber(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1, 1) -
+            dayNumber(year, month, 1);
+    }
+
+    /* A date key in words: "2019", "May 2019", "May 14, 2019" ("" when it
+       is not a date key). */
+    function dateLabel(key) {
+        var text = isText(key) && DATE_KEY_RE.test(key) ? key : "";
+        if (text.length < 7) {
+            return text;
+        }
+        var month = MONTH_LABELS[+text.slice(5, 7) - 1];
+        return text.length === 7 ? month + " " + text.slice(0, 4)
+            : month + " " + +text.slice(8, 10) + ", " + text.slice(0, 4);
+    }
+
+    /* A range of dates (see dateRange) in words, with en dashes: "2015 -
+       2017", "March - May 2019", "May 3 - 9, 2019", "since May 2019". */
+    function rangeLabel(from, to) {
+        var range = dateRange({from: from, to: to});
+        if (!range) {
+            return "";
+        }
+        from = range.from;
+        to = range.to;
+        if (!to) {
+            return "since " + dateLabel(from);
+        }
+        if (!from) {
+            return "until " + dateLabel(to);
+        }
+        if (from === to) {
+            return dateLabel(from);
+        }
+        var dash = " \u2013 ";
+        if (from.length === to.length && from.slice(0, 4) === to.slice(0, 4)) {
+            if (from.length === 7) {
+                return MONTH_LABELS[+from.slice(5, 7) - 1] + dash + dateLabel(to);
+            }
+            if (from.length === 10 && from.slice(0, 7) === to.slice(0, 7)) {
+                return MONTH_LABELS[+from.slice(5, 7) - 1] + " " + +from.slice(8, 10) + dash +
+                    +to.slice(8, 10) + ", " + to.slice(0, 4);
+            }
+            if (from.length === 10) {
+                return dateLabel(from).replace(/, \d{4}$/, "") + dash + dateLabel(to);
+            }
+        }
+        return dateLabel(from) + dash + dateLabel(to);
+    }
+
+    /* What choosing bar at of a timeline (its bars) does, or null when
+       nothing happens (a bar without pictures). extend: Shift was held;
+       anchor: {anchor, pending}, the bar a range starts from ("": none)
+       and whether only that end was chosen so far. The answer is the new
+       {anchor, pending}, and the dates to show {from, to} unless pending.
+       Shift on a bar when the anchor is another bar shown: the bars from
+       one to the other. Shift when the anchor is not among the bars: this
+       bar becomes the anchor, pending (nothing is chosen yet). Otherwise
+       the bar alone, which becomes the anchor. */
+    function timelineChoice(bars, at, extend, anchor) {
+        var bar = Array.isArray(bars) ? bars[at] : null;
+        if (!bar) {
+            return null;
+        }
+        var key = anchor && isText(anchor.anchor) ? anchor.anchor : "";
+        var from = -1;
+        for (var k = 0; k < bars.length && key; k++) {
+            if (bars[k].key === key) {
+                from = k;
+            }
+        }
+        if (extend && from >= 0 && from !== at) {
+            var low = Math.min(from, at);
+            var high = Math.max(from, at);
+            return {anchor: key, pending: false, from: bars[low].key, to: bars[high].key};
+        }
+        if (!bar.count) {
+            return null;
+        }
+        if (extend && from < 0) {
+            return {anchor: bar.key, pending: true};
+        }
+        return {anchor: bar.key, pending: false, from: bar.key, to: bar.key};
+    }
+
+    // The most bars a timeline of years has (the latest ones).
+    var TIMELINE_YEARS = 300;
+
+    /* The date a record was taken as one number, YYYYMMDD (0: none). A
+       date that is only the file's time (du, the server's records) is no
+       date taken: the timeline, on: and the range leave it out. */
+    function takenNumber(rec) {
+        var match = isText(rec.dk) && !rec.du ? /^(\d{4})-(\d{2})-(\d{2})/.exec(rec.dk) : null;
+        if (!match || +match[2] < 1 || +match[2] > 12 || +match[3] < 1 || +match[3] > 31) {
+            return 0;
+        }
+        return +match[1] * 10000 + +match[2] * 100 + +match[3];
+    }
+
+    /* How many of some records were taken when (see search: timeline):
+       per year from the first to the last; per month when they are all of
+       one year; per day when they are all of one month. taken: the
+       takenNumber of every record; list: the records counted. */
+    function timelineOf(taken, list) {
+        var dated = 0;
+        var first = 0;
+        var last = 0;
+        var k;
+        var value;
+        for (k = 0; k < list.length; k++) {
+            value = taken[list[k]];
+            if (value) {
+                dated += 1;
+                if (!first || value < first) {
+                    first = value;
+                }
+                if (value > last) {
+                    last = value;
+                }
+            }
+        }
+        var out = {level: null, bars: [], dated: dated, undated: list.length - dated};
+        if (!dated) {
+            return out;
+        }
+        var firstYear = Math.floor(first / 10000);
+        var lastYear = Math.floor(last / 10000);
+        var firstMonth = Math.floor(first / 100);
+        var start;
+        var size;
+        var divide;
+        var modulo;
+        if (firstYear !== lastYear) {
+            out.level = "year";
+            start = Math.max(firstYear, lastYear - TIMELINE_YEARS + 1);
+            size = lastYear - start + 1;
+            divide = 10000;
+            modulo = 0;
+        } else if (firstMonth !== Math.floor(last / 100)) {
+            out.level = "month";
+            start = 1;
+            size = 12;
+            divide = 100;
+            modulo = 100;
+        } else {
+            out.level = "day";
+            start = 1;
+            size = daysInMonth(firstYear, firstMonth % 100);
+            divide = 1;
+            modulo = 100;
+        }
+        var counts = new Int32Array(size);
+        for (k = 0; k < list.length; k++) {
+            value = taken[list[k]];
+            if (value) {
+                var at = Math.floor(value / divide);
+                at = (modulo ? at % modulo : at) - start;
+                if (at >= 0 && at < size) {
+                    counts[at] += 1;
+                }
+            }
+        }
+        var prefix = out.level === "year" ? ""
+            : out.level === "month" ? firstYear + "-"
+                : firstYear + "-" + two(firstMonth % 100) + "-";
+        for (k = 0; k < size; k++) {
+            out.bars.push({key: out.level === "year" ? String(start + k) : prefix + two(k + 1),
+                           count: counts[k]});
+        }
+        return out;
+    }
+
     function parseMinutes(text) {
         var match = isText(text) ? /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(text) : null;
         return match ? dayNumber(+match[1], +match[2], +match[3]) * 1440 + (+match[4]) * 60 +
@@ -1339,6 +2035,23 @@ var SearchCore = (function () {
 
     function compareIds(a, b) {
         return a < b ? -1 : a > b ? 1 : 0;
+    }
+
+    function shuffleSeed(seed) {
+        return typeof seed === "number" && isFinite(seed) ? seed >>> 0 : 1;
+    }
+
+    // Where a picture goes in the shuffled order of a seed: a hash of its
+    // id (FNV-1a, then mixed), the same every time for the same seed.
+    function shuffleKey(seed, id) {
+        var text = String(id);
+        var hash = (2166136261 ^ seed) >>> 0;
+        for (var k = 0; k < text.length; k++) {
+            hash = Math.imul(hash ^ text.charCodeAt(k), 16777619) >>> 0;
+        }
+        hash = Math.imul(hash ^ (hash >>> 16), 0x85ebca6b) >>> 0;
+        hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35) >>> 0;
+        return (hash ^ (hash >>> 16)) >>> 0;
     }
 
     // What dates sort by: the date and time taken (ts), else the day
@@ -1398,16 +2111,21 @@ var SearchCore = (function () {
         this.forms = [];                    // word id -> its form ids (words seen in records)
         this.position = Object.create(null);    // String(id) -> record index
         this.dates = new Array(n);
+        this.taken = new Int32Array(n);     // the date taken as YYYYMMDD, see takenNumber
         this.flags = new Uint8Array(n);
         this.scratchExact = new Int32Array(n);
         this.scratchPartial = new Int32Array(n);
         this.orders = Object.create(null);
         this.similarData = null;
         this.tagWords = null;
+        this.marks = null;
+        this.things = Object.create(null);  // word -> the THING_FIELDS it is a thing of
         this.wordStart = new Int32Array(n + 1);
-        // Only while building: per record its (form id, fields) pairs.
+        // Only while building: per record its (form id, fields) pairs; per
+        // word how often it ended an item of each of THING_FIELDS.
         this.build = {pairs: new IntBuffer(n * 64), pairStart: new Int32Array(n + 1),
-                      words: new IntBuffer(n * 64), lastRecord: [], lastPair: []};
+                      words: new IntBuffer(n * 64), lastRecord: [], lastPair: [],
+                      heads: Object.create(null)};
         for (r = 0; r < n; r++) {
             var rec = list[r];
             this.build.pairStart[r] = this.build.pairs.length >> 1;
@@ -1421,12 +2139,14 @@ var SearchCore = (function () {
             }
             this.indexRecord(r, rec);
             this.dates[r] = sortDate(rec);
+            this.taken[r] = takenNumber(rec);
             this.flags[r] = (isText(rec.o) ? 1 : 0) | (rec.gp ? 2 : 0) | (rec.p === "360" ? 4 : 0);
         }
         this.build.pairStart[n] = this.build.pairs.length >> 1;
         this.wordStart[n] = this.build.words.length;
         this.words = this.build.words.done();
         this.invert();
+        this.findThings();
         this.build = null;
         // The words seen in records, sorted, for prefix searches.
         var seen = [];
@@ -1466,6 +2186,58 @@ var SearchCore = (function () {
         return id;
     };
 
+    /* Counts the last word of an item (its words) of a THING_FIELDS field
+       of record r: per field [items, items not after a sweet], and the
+       records (records, the last record counted). */
+    Index.prototype.noteThing = function (field, parts, r) {
+        var head = foldWord(parts[parts.length - 1]);
+        var counts = this.build.heads[head] ||
+            (this.build.heads[head] = {fields: {}, records: 0, last: -1});
+        var count = counts.fields[field] || (counts.fields[field] = [0, 0]);
+        count[0] += 1;
+        if (parts.length < 2 || !EDIBLE_WORDS[parts[parts.length - 2]]) {
+            count[1] += 1;
+        }
+        if (counts.last !== r) {
+            counts.last = r;
+            counts.records += 1;
+        }
+    };
+
+    /* things: the fields each counted word is a thing of (see Ranking).
+       Run after invert(), as it counts the records with the word. */
+    Index.prototype.findThings = function () {
+        var heads = this.build.heads;
+        Object.keys(heads).forEach(function (head) {
+            var counts = heads[head];
+            var id = this.vocab[head];
+            var seen = 0;
+            if (id !== undefined) {
+                for (var p = this.postStart[id]; p < this.postStart[id + 1]; p++) {
+                    if (this.postMasks[p] & CONTENT_FIELDS) {
+                        seen += 1;
+                    }
+                }
+            }
+            if (counts.records < THING_SHARE * seen) {
+                return;
+            }
+            var fields = Object.keys(counts.fields);
+            var most = 0;
+            fields.forEach(function (field) {
+                most = Math.max(most, counts.fields[field][0]);
+            });
+            var mask = 0;
+            fields.forEach(function (field) {
+                var count = counts.fields[field];
+                if (count[0] * 3 >= most && count[1] > 0) {
+                    mask |= 1 << Number(field);
+                }
+            });
+            this.things[head] = mask;
+        }, this);
+    };
+
     // The id of a word seen in a record (its forms are worked out once).
     Index.prototype.wordId = function (word) {
         var id = this.intern(word);
@@ -1498,6 +2270,9 @@ var SearchCore = (function () {
                 if (parts.length && count) {
                     words.push(-1);
                     count += 1;
+                }
+                if (parts.length && (THING_FIELDS & bit)) {
+                    this.noteThing(field, parts, r);
                 }
                 for (var w = 0; w < parts.length; w++) {
                     var id = this.wordId(parts[w]);
@@ -1585,10 +2360,12 @@ var SearchCore = (function () {
         return r === undefined ? null : this.records[r];
     };
 
-    // All record indexes in one of the SORTS orders (worked out once).
-    Index.prototype.order = function (mode) {
-        if (this.orders[mode]) {
-            return this.orders[mode];
+    // All record indexes in one of the SORTS orders (worked out once; for
+    // "shuffle", once per seed).
+    Index.prototype.order = function (mode, seed) {
+        var key = mode === "shuffle" ? "shuffle:" + shuffleSeed(seed) : mode;
+        if (this.orders[key]) {
+            return this.orders[key];
         }
         var records = this.records;
         var dates = this.dates;
@@ -1628,6 +2405,20 @@ var SearchCore = (function () {
                 }
                 return nameCompare(names[a], names[b]) || compareIds(id(a), id(b));
             };
+        } else if (mode === "shuffle") {
+            var mix = shuffleSeed(seed);
+            var keys = all.map(function (r) {
+                return shuffleKey(mix, id(r));
+            });
+            compare = function (a, b) {
+                return keys[a] - keys[b] || compareIds(id(a), id(b));
+            };
+            // (Only the order of one seed is kept.)
+            Object.keys(this.orders).forEach(function (name) {
+                if (name.lastIndexOf("shuffle:", 0) === 0) {
+                    delete this.orders[name];
+                }
+            }, this);
         } else {                                    // quality
             var rank = this.newestRank;
             var score = all.map(function (r) {
@@ -1643,7 +2434,7 @@ var SearchCore = (function () {
             };
         }
         all.sort(compare);
-        this.orders[mode] = all;
+        this.orders[key] = all;
         return all;
     };
 
@@ -1668,7 +2459,8 @@ var SearchCore = (function () {
     };
 
     /* The records in which a word matches, limited to the fields of mask,
-       with the score of the match: {records: [index], scores: [score]}.
+       with the score of the match and the fields it matched in:
+       {records: [index], scores: [score], masks: [fields]}.
        prefix: words starting with it count too (PREFIX_FACTOR). */
     Index.prototype.wordHits = function (word, prefix, mask) {
         var exact = this.scratchExact;
@@ -1714,13 +2506,15 @@ var SearchCore = (function () {
             }
         }
         var scores = new Array(touched.length);
+        var fields = new Array(touched.length);
         for (var k = 0; k < touched.length; k++) {
             r = touched[k];
             scores[k] = maskScore(exact[r], partial[r] & ~exact[r]);
+            fields[k] = exact[r] | partial[r];
             exact[r] = 0;
             partial[r] = 0;
         }
-        return {records: touched, scores: scores};
+        return {records: touched, scores: scores, masks: fields};
     };
 
     // Tests whether a word seen in a record (by id) is a given query word.
@@ -1798,19 +2592,242 @@ var SearchCore = (function () {
         return found;
     };
 
-    // Scores of a word or phrase term per record (-1: no match).
-    Index.prototype.textScores = function (term) {
+    /* The fields of THING_FIELDS in which some of words is a thing, and
+       KIND_THING for a word of KIND_WORDS (see Ranking); 0: no thing. */
+    Index.prototype.thingFields = function (words) {
+        var mask = 0;
+        for (var w = 0; w < words.length; w++) {
+            var forms = wordForms(words[w]);
+            for (var k = 0; k < forms.length; k++) {
+                mask |= (this.things[forms[k]] || 0) | (KIND_WORDS[forms[k]] ? KIND_THING : 0);
+            }
+        }
+        return mask;
+    };
+
+    // The fields of KIND_FIELDS of the kind words among words (0: none).
+    function kindFields(words) {
+        var mask = 0;
+        for (var w = 0; w < words.length; w++) {
+            var forms = wordForms(words[w]);
+            for (var k = 0; k < forms.length; k++) {
+                mask |= KIND_FIELDS[forms[k]] || 0;
+            }
+        }
+        return mask;
+    }
+
+    // Per word id of the records: what kind of word it is for the
+    // depiction tests (MARK_* bits; worked out once).
+    Index.prototype.markKinds = function () {
+        if (!this.marks) {
+            var marks = new Uint8Array(this.terms.length);
+            for (var id = 0; id < this.terms.length; id++) {
+                var word = this.terms[id];
+                var folded = foldWord(word);
+                marks[id] = (DEPICTION_BEFORE[word] || DEPICTION_BEFORE[folded] ? MARK_BEFORE : 0) |
+                    (DEPICTION_MATERIALS[word] ? MARK_MATERIAL : 0) |
+                    (DEPICTION_AFTER[word] || DEPICTION_AFTER[folded] ? MARK_AFTER : 0) |
+                    (DEPICTION_OF[word] || DEPICTION_OF[folded] ? MARK_OF : 0) |
+                    (SMALL_WORDS[word] || STOP_WORDS[word] ? MARK_SMALL : 0) |
+                    (word === "of" ? MARK_OF_WORD : 0);
+            }
+            this.marks = marks;
+        }
+        return this.marks;
+    };
+
+    function anyMatch(matchers, id) {
+        for (var k = 0; k < matchers.length; k++) {
+            if (matchers[k].test(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /* True when the word at p (of words[from..to), one field of a record)
+       is shown as a depiction: a depiction word right before it (or two
+       before, over one word that is not a small word; a material only when
+       the word ends a phrase), right after it, or "<depiction> of" up to
+       three words before it. */
+    function depicted(words, from, to, p, marks) {
+        var before = p - 1;
+        var next = p + 1 < to ? words[p + 1] : -1;
+        var wanted = MARK_BEFORE;
+        if (next < 0 || (marks[next] & (MARK_SMALL | MARK_AFTER))) {
+            wanted |= MARK_MATERIAL;
+        }
+        if (before >= from && words[before] >= 0) {
+            if (marks[words[before]] & wanted) {
+                return true;
+            }
+            if (before - 1 >= from && words[before - 1] >= 0 &&
+                    !(marks[words[before]] & MARK_SMALL) &&
+                    (marks[words[before - 1]] & wanted)) {
+                return true;
+            }
+        }
+        if (p + 1 < to && words[p + 1] >= 0 && (marks[words[p + 1]] & MARK_AFTER)) {
+            return true;
+        }
+        for (var k = p - 1; k > from && k >= p - 3 && words[k] >= 0; k--) {
+            if (marks[words[k]] & MARK_OF_WORD) {
+                return words[k - 1] >= 0 && (marks[words[k - 1]] & MARK_OF) !== 0;
+            }
+        }
+        return false;
+    }
+
+    /* True when record r names a thing (one of matchers; null: anything)
+       as itself in one of the fields of mask: the last word of an item
+       there, with no depiction word in that item. */
+    Index.prototype.isReal = function (r, matchers, mask) {
+        var words = this.words;
+        var marks = this.markKinds();
+        var at = this.wordStart[r];
+        var end = this.wordStart[r + 1];
+        while (at < end) {
+            var bit = 1 << words[at];
+            var from = at + 2;
+            var to = from + words[at + 1];
+            at = to;
+            if (!(mask & bit)) {
+                continue;
+            }
+            var start = from;
+            for (var p = from; p <= to; p++) {
+                if (p < to && words[p] >= 0) {
+                    continue;
+                }
+                // An item: words[start..p).
+                if (p > start && (!matchers || anyMatch(matchers, words[p - 1]))) {
+                    var plain = true;
+                    for (var q = start; q < p && plain; q++) {
+                        plain = !(marks[words[q]] & (MARK_BEFORE | MARK_MATERIAL | MARK_AFTER));
+                    }
+                    if (plain) {
+                        return true;
+                    }
+                }
+                start = p + 1;
+            }
+        }
+        return false;
+    };
+
+    // True when record r shows a thing (one of matchers) as a depiction.
+    Index.prototype.depicts = function (r, matchers) {
+        var words = this.words;
+        var marks = this.markKinds();
+        var at = this.wordStart[r];
+        var end = this.wordStart[r + 1];
+        while (at < end) {
+            var bit = 1 << words[at];
+            var from = at + 2;
+            var to = from + words[at + 1];
+            at = to;
+            if (!(DEPICTION_FIELDS & bit)) {
+                continue;
+            }
+            for (var p = from; p < to; p++) {
+                if (words[p] >= 0 && anyMatch(matchers, words[p]) &&
+                        depicted(words, from, to, p, marks)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    /* Scores of a one-word term per record (-1: no match), with its
+       synonyms (SYNONYM_FACTOR) and the Ranking rules. context: oneWord
+       (the query looks for this word alone), depictions (the query asks
+       for toys, statues, ... itself). */
+    Index.prototype.wordScores = function (term, context) {
         var out = filled(this.n, -1);
+        var words = termWords(term);
+        var fields = this.scratchFields || (this.scratchFields = new Int32Array(this.n));
+        var touched = [];
+        var k;
+        var r;
+        for (var w = 0; w < words.length; w++) {
+            var hits = this.wordHits(words[w], term.prefix && w === 0,
+                                     w === 0 ? term.mask : term.mask & ~(1 << F_TEXT));
+            var factor = w === 0 ? 1 : SYNONYM_FACTOR;
+            for (k = 0; k < hits.records.length; k++) {
+                r = hits.records[k];
+                var score = hits.scores[k] * factor;
+                if (out[r] < 0) {
+                    touched.push(r);
+                }
+                if (score > out[r]) {
+                    out[r] = score;
+                }
+                fields[r] |= hits.masks[k];
+            }
+        }
+        // (Only the matches of a negated term count, not their ranking.)
+        var ranked = expands(term) && !term.neg;
+        var things = ranked ? this.thingFields(words) : 0;
+        var kinds = things ? kindFields(words) : 0;
+        var matchers = [];
+        if (things) {
+            for (k = 0; k < words.length; k++) {
+                matchers.push(new Matcher(this, words[k], false));
+            }
+        }
+        for (k = 0; k < touched.length; k++) {
+            r = touched[k];
+            var matched = fields[r];
+            fields[r] = 0;
+            if (things) {
+                var rec = this.records[r];
+                if (context.depictions) {
+                    if (DEPICTION_TYPES[rec.ty] === true || this.depicts(r, matchers)) {
+                        out[r] += REAL_BONUS;
+                    }
+                } else if (DEPICTION_TYPES[rec.ty] === true) {
+                    out[r] *= DEPICTION_FACTOR;
+                } else if (kinds) {
+                    // "animal": any real one first; stuffed animals, animal
+                    // tracks and the like after.
+                    if (!this.depicts(r, matchers) && this.isReal(r, null, kinds)) {
+                        out[r] += REAL_BONUS;
+                    } else {
+                        out[r] *= DEPICTION_FACTOR;
+                    }
+                } else if (this.isReal(r, matchers, things)) {
+                    out[r] += REAL_BONUS;
+                } else {
+                    // A thing of another field: "dog" in a hot dog.
+                    var other = this.isReal(r, matchers, THING_FIELDS & ~things);
+                    if (this.depicts(r, matchers) || (other && context.oneWord)) {
+                        out[r] *= DEPICTION_FACTOR;
+                    } else if (!other && (matched & (1 << F_TITLE))) {
+                        // In the title: the picture is about it.
+                        out[r] += REAL_BONUS;
+                    }
+                }
+            }
+            if (context.oneWord && !term.neg &&
+                    !(matched & ~(term.field === "place" ? 1 << F_TEXT : WEAK_FIELDS))) {
+                out[r] *= TEXT_ONLY_FACTOR;
+            }
+        }
+        return out;
+    };
+
+    // Scores of a word or phrase term per record (-1: no match).
+    Index.prototype.textScores = function (term, context) {
         var words = term.words;
         var count = words.length;
-        var hits = this.wordHits(words[0], term.prefix && count === 1, term.mask);
-        var k;
         if (count === 1) {
-            for (k = 0; k < hits.records.length; k++) {
-                out[hits.records[k]] = hits.scores[k];
-            }
-            return out;
+            return this.wordScores(term, context || {});
         }
+        var out = filled(this.n, -1);
+        var hits = this.wordHits(words[0], false, term.mask);
+        var k;
         var candidates = hits.records;
         var sums = hits.scores;
         for (var w = 1; w < count && candidates.length; w++) {
@@ -1928,6 +2945,21 @@ var SearchCore = (function () {
             return function (rec) {
                 return isText(rec.dk) && rec.dk > after;
             };
+        case "on":
+            // (Only dates taken: a file's time (du) says nothing about the
+            // day a picture was taken.)
+            if (filter.date) {
+                return function (rec) {
+                    return isText(rec.dk) && !rec.du && rec.dk.slice(0, 10) === filter.date;
+                };
+            }
+            // on:today: this month and day, in an earlier year.
+            var monthDay = filter.today ? context.today.slice(4, 10) : filter.key;
+            var year = filter.today ? context.today.slice(0, 4) : "";
+            return function (rec) {
+                return isText(rec.dk) && !rec.du && rec.dk.slice(4, 10) === monthDay &&
+                    (!year || rec.dk.slice(0, 4) < year);
+            };
         case "lib":
             var ids = libraryIds(filter.value, index, context.libraries);
             if (!ids.length) {
@@ -2003,6 +3035,10 @@ var SearchCore = (function () {
                 return function (rec) {
                     return Boolean(rec.v4);
                 };
+            case "edited":
+                return function (rec) {
+                    return Boolean(rec.ed);
+                };
             case "junk":
                 return isJunk;
             }
@@ -2034,7 +3070,8 @@ var SearchCore = (function () {
     };
 
     Index.prototype.termScores = function (term, context) {
-        return term.kind === "filter" ? this.filterScores(term, context) : this.textScores(term);
+        return term.kind === "filter" ? this.filterScores(term, context)
+            : this.textScores(term, context);
     };
 
     // Scores of a clause of alternatives (a negated one matches where its
@@ -2149,7 +3186,7 @@ var SearchCore = (function () {
             if (selected[key].length) {
                 var mark = new Uint8Array(data.values.length);
                 selected[key].forEach(function (value) {
-                    var id = data.ids[value];
+                    var id = data.ids[data.keyOf(value)];
                     if (id !== undefined) {
                         mark[id] = 1;
                     }
@@ -2199,8 +3236,7 @@ var SearchCore = (function () {
             facets[key] = [];
         });
         groups.forEach(function (data, index) {
-            facets[data.key] = facetEntries(data.key, data.values, counts[index], data.ids,
-                                            selected[data.key]);
+            facets[data.key] = facetEntries(data.key, data, counts[index], selected[data.key]);
         });
         facets.has = [];
         HAS_VALUES.forEach(function (value, index) {
@@ -2212,7 +3248,7 @@ var SearchCore = (function () {
         return {final: final, facets: facets};
     };
 
-    var SORTS = ["relevance", "newest", "oldest", "name", "quality"];
+    var SORTS = ["relevance", "newest", "oldest", "name", "quality", "shuffle"];
 
     /* The query as it is searched here: a word being typed that is a word
        of the records already ("car", "cat") is searched as that word only,
@@ -2258,15 +3294,53 @@ var SearchCore = (function () {
         var warnings = parsed.warnings.slice();
         var context = {
             libraries: opts.libraries,
+            today: todayKey(opts.today),
             warn: function (message) {
                 if (warnings.indexOf(message) < 0) {
                     warnings.push(message);
                 }
             }
         };
+        // For the Ranking rules: one plain word searched alone, and a query
+        // that asks for toys, statues, drawings, art, documents, ... itself.
+        var looked = parsed.terms.filter(function (term) {
+            return term.active && !term.neg && term.kind !== "filter";
+        });
+        context.oneWord = looked.length === 1 && looked[0].kind === "word";
+        context.depictions = looked.some(function (term) {
+            return term.words.some(function (word) {
+                var folded = foldWord(word);
+                return Boolean(DEPICTION_BEFORE[word] || DEPICTION_AFTER[word] ||
+                               DEPICTION_OF[word] || DEPICTION_MATERIALS[word] ||
+                               DEPICTION_TYPES[word] || ART_WORDS[word] ||
+                               DEPICTION_BEFORE[folded] || DEPICTION_AFTER[folded] ||
+                               DEPICTION_OF[folded] || DEPICTION_TYPES[folded] ||
+                               ART_WORDS[folded]);
+            });
+        });
         var alive = this.visibility(opts, parsed.wantsHidden);
         var score = new Float64Array(n);
         var r;
+        if (Array.isArray(opts.ids)) {
+            var picked = new Uint8Array(n);
+            for (var p = 0; p < opts.ids.length; p++) {
+                var at = this.position[String(opts.ids[p])];
+                if (at !== undefined) {
+                    picked[at] = 1;
+                }
+            }
+            for (r = 0; r < n; r++) {
+                alive[r] &= picked[r];
+            }
+        }
+        var range = dateRange(opts.range);
+        if (range) {
+            for (r = 0; r < n; r++) {
+                if (alive[r] && (!this.taken[r] || !inRange(records[r].dk, range))) {
+                    alive[r] = 0;
+                }
+            }
+        }
         for (var c = 0; c < parsed.clauses.length; c++) {
             var clause = parsed.clauses[c];
             var scores;
@@ -2315,7 +3389,8 @@ var SearchCore = (function () {
             for (var k = 0; k < final.length; k++) {
                 inFinal[final[k]] = 1;
             }
-            ordered = this.order(sort === "relevance" ? "newest" : sort).filter(function (index) {
+            ordered = this.order(sort === "relevance" ? "newest" : sort,
+                                 opts.seed).filter(function (index) {
                 return inFinal[index] === 1;
             });
         }
@@ -2326,6 +3401,7 @@ var SearchCore = (function () {
                 return records[index].i;
             }),
             facets: pass.facets,
+            timeline: opts.timeline === true ? timelineOf(this.taken, final) : null,
             groups: grouped ? grouped.groups : {},
             collapsed: grouped ? final.length - grouped.items.length : 0,
             sort: sort,
@@ -2805,6 +3881,13 @@ var SearchCore = (function () {
                     (fieldBit && !(term.mask & fieldBit))) {
                 return;
             }
+            if (term.words.length === 1) {
+                // One word: also its synonyms, each on its own.
+                termWords(term).forEach(function (word, index) {
+                    lists.push([new TextMatcher(word, term.prefix && index === 0)]);
+                });
+                return;
+            }
             lists.push(term.words.map(function (word, index) {
                 return new TextMatcher(word, term.prefix && index === term.words.length - 1);
             }));
@@ -2883,14 +3966,17 @@ var SearchCore = (function () {
         {example: "year:2019", meaning: "taken in a year (or year:2015-2019)"},
         {example: "before:2019-06", meaning: "taken before June 2019 (after: too; " +
             "YYYY, YYYY-MM or YYYY-MM-DD)"},
+        {example: "on:today", meaning: "taken on this day in earlier years (on:05-14: " +
+            "that day in any year)"},
+        {example: "place:hawaii", meaning: "taken in a town, region or country (pictures " +
+            "with a GPS position)"},
         {example: "has:text", meaning: "with text, a location (has:gps), people, animals, ..."},
         {example: "is:360", meaning: "360\u00b0 photos; also is:duplicate, is:undescribed, " +
-            "is:hidden"},
+            "is:edited, is:hidden"},
         {example: "lib:name", meaning: "only pictures of one library"}
     ];
 
     return {
-        VERSION: 1,
         FACETS: FACETS,
         SORTS: SORTS,
         SYNTAX: SYNTAX,
@@ -2914,7 +4000,17 @@ var SearchCore = (function () {
             return indexOf(records).suggest(query, options);
         },
         highlights: highlights,
-        facetLabel: facetLabel
+        facetLabel: facetLabel,
+        placeLabel: placeLabel,
+        placeParent: placeParent,
+        placeOf: function (rec) {
+            var values = rec && typeof rec === "object" ? placeValues(rec) : [];
+            return values.length ? values[values.length - 1] : "";
+        },
+        dateLabel: dateLabel,
+        rangeLabel: rangeLabel,
+        timelineChoice: timelineChoice,
+        PLACE_SEPARATOR: PLACE_SEPARATOR
     };
 })();
 

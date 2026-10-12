@@ -6,7 +6,13 @@
    browser by SearchCore (search-core.js); viewer.js shows the pictures.
    Everything the page shows (query, filters, sort, grouping, size, the
    open picture) is kept in the address, so a link, a reload or the Back
-   button bring the same view back, scrolled to where it was.
+   button bring the same view back, scrolled to where it was. "Show these
+   in the grid" on the map comes here with the pictures of a pin (ids=,
+   see SITE.idList) and the map's view (view=), for "Back to the map".
+
+   Above the grid, the timeline counts the results per year (month, day);
+   choosing bars there limits the search to those dates (state.from/to,
+   the "Taken" chip). "Surprise me" opens a random picture of the results.
 
    The grid is laid out in rows by this script (columns from the width and
    the size slider; a header row per month when sorted by date) and cut
@@ -45,6 +51,7 @@
     var FACETS_CLOSED_KEY = "searchImages.facetsClosed";
     var SIDEBAR_KEY = "searchImages.sidebar";
     var BANNER_KEY = "searchImages.bannerHidden";
+    var TIMELINE_KEY = "searchImages.timelineClosed";
     var NARROW = 860;
     var PHONE = 601;            // (the same as style.css's max-width: 600px)
     var REFRESH_AFTER = 30000;
@@ -63,6 +70,7 @@
     var result = null;          // the last SearchCore.search answer
     var display = [];           // [{id, stack: [ids] | null, member: bool}]
     var positions = {};         // id -> place in display
+    var coverOf = {};           // stack member id -> the id of its stack's cover
     var expanded = {};          // stack cover id -> true while opened in the grid
     var layout = null;
     var observer = null;
@@ -102,11 +110,36 @@
         }
     })();
 
+    /* The map's view (state.view, for "Back to the map") belongs to the
+       search the map showed: it is dropped once the query, the filters or
+       the library change, so the map then fits the new results. (Sorting,
+       grouping, the size and leaving out the pictures picked on the map
+       keep it: the map shows the same pictures.) */
+    function mapSearch() {
+        return SITE.searchState.params({q: state.q, lib: SHELL.library(), filters: state.filters,
+                                        hidden: state.hidden, junk: state.junk,
+                                        sensitive: state.sensitive, from: state.from,
+                                        to: state.to});
+    }
+
+    var viewSearch = "";        // mapSearch() of the search state.view belongs to
+
+    function keepView() {
+        viewSearch = mapSearch();
+    }
+
+    function dropStaleView() {
+        if (state.view && mapSearch() !== viewSearch) {
+            state.view = "";
+        }
+    }
+
     // The state as the address keeps it (defaults left out).
     function urlState() {
         return {q: state.q, lib: SHELL.library(), sort: state.sort, filters: state.filters,
                 group: state.group, size: state.size === "m" ? "" : state.size,
-                hidden: state.hidden, junk: state.junk, sensitive: state.sensitive};
+                hidden: state.hidden, junk: state.junk, sensitive: state.sensitive,
+                ids: state.ids, view: state.view, from: state.from, to: state.to};
     }
 
     // The search state for links to other pages (without the view settings).
@@ -132,6 +165,7 @@
 
     function writeUrl(options) {
         options = options || {};
+        dropStaleView();
         var query = SITE.searchState.params(urlState());
         var id = options.id !== undefined ? options.id : (VIEWER.isOpen() ? VIEWER.current() : null);
         var url = window.location.pathname + (query ? "?" + query : "") +
@@ -154,6 +188,15 @@
     function updateTitle() {
         var site = SITE.title || "Image Search";
         document.title = state.q ? state.q + " - " + site : site;
+        // The header's "On this day" is the page while it shows that search.
+        var today = SHELL.navLink ? SHELL.navLink("today") : null;
+        var search = SHELL.navLink ? SHELL.navLink("search") : null;
+        if (today && search) {
+            var isToday = state.q.replace(/^\s+|\s+$/g, "") === "on:today";
+            today.removeAttribute("aria-current");
+            search.removeAttribute("aria-current");
+            (isToday ? today : search).setAttribute("aria-current", "page");
+        }
     }
 
     function rememberScroll() {
@@ -172,7 +215,35 @@
         Object.keys(state.filters).forEach(function (key) {
             count += state.filters[key].length;
         });
-        return count + (state.junk ? 1 : 0) + (state.sensitive ? 1 : 0) + (state.hidden ? 1 : 0);
+        return count + (state.junk ? 1 : 0) + (state.sensitive ? 1 : 0) + (state.hidden ? 1 : 0) +
+            (state.ids ? 1 : 0) + (state.from || state.to ? 1 : 0);
+    }
+
+    /* The pictures picked on the map (state.ids): {ids, stale} once the
+       records are there, null for none. A list made for other records (an
+       export made again since) is dropped, with a note. */
+    var pickedCache = {text: null, records: null, value: null};
+
+    function picked() {
+        if (!state.ids || !data) {
+            return null;
+        }
+        if (pickedCache.text !== state.ids || pickedCache.records !== data.records) {
+            pickedCache = {text: state.ids, records: data.records,
+                           value: SITE.idList.decode(state.ids, data.records)};
+        }
+        return pickedCache.value;
+    }
+
+    var droppedPicks = false;
+
+    // Drops a list of picked pictures that cannot be read (before a search).
+    function checkPicked() {
+        var value = picked();
+        if (state.ids && data && (!value || value.stale)) {
+            state.ids = "";
+            droppedPicks = true;
+        }
     }
 
     /* ---------- Data ----------------------------------------------------------- */
@@ -205,6 +276,14 @@
         return data ? data.byId[id] || null : null;
     }
 
+    // Records were changed in place (the owner's edits): index them again.
+    function recordsEdited() {
+        if (data) {
+            data.index = SearchCore.prepare(data.records);
+            run({keepScroll: true});
+        }
+    }
+
     function libraryName(id) {
         if (!data || (data.libraries.length < 2 && (SITE.libraryList || []).length < 2)) {
             return "";
@@ -224,6 +303,14 @@
         options.filters = state.filters;
         options.group = state.group;
         options.typing = typing;
+        options.seed = SITE.shuffleSeed();
+        if (state.from || state.to) {
+            options.range = {from: state.from, to: state.to};
+        }
+        var chosen = picked();
+        if (chosen && !chosen.stale) {
+            options.ids = chosen.ids;
+        }
         return options;
     }
 
@@ -232,6 +319,7 @@
     function buildDisplay() {
         display = [];
         positions = {};
+        coverOf = {};
         result.items.forEach(function (id) {
             var stack = state.group ? result.groups[String(id)] : null;
             stack = stack && stack.length > 1 ? stack : null;
@@ -244,8 +332,34 @@
         });
         display.forEach(function (entry, index) {
             positions[entry.id] = index;
+            if (entry.stack) {
+                entry.stack.forEach(function (member) {
+                    if (member !== entry.id) {
+                        coverOf[member] = entry.id;
+                    }
+                });
+            }
         });
         focusPos = Math.min(focusPos, Math.max(0, display.length - 1));
+    }
+
+    /* A picture of the results folded into a stack (a stack member, not
+       its cover): its stack is opened in the grid, so the viewer steps
+       through the stack and then on through the results. True when the
+       picture is (now) in the grid. */
+    function reveal(id) {
+        if (positions[id] !== undefined) {
+            return true;
+        }
+        var cover = coverOf[id];
+        if (cover === undefined || expanded[cover]) {
+            return false;
+        }
+        expanded[cover] = true;
+        buildDisplay();
+        relayout(true);
+        renderHead();
+        return positions[id] !== undefined;
     }
 
     function run(options) {
@@ -253,7 +367,11 @@
         if (!data) {
             return;
         }
-        result = SearchCore.search(data.index, state.q, searchOptions());
+        checkPicked();
+        dropStaleView();
+        var options = searchOptions();
+        options.timeline = true;
+        result = SearchCore.search(data.index, state.q, options);
         buildDisplay();
         trimSelection();
         renderControls();
@@ -261,6 +379,7 @@
         renderChips();
         renderFacets();
         renderBanner();
+        renderTimeline();
         renderSelectionBar();
         syncBar();
         if (options.keepScroll) {
@@ -292,6 +411,7 @@
         options = options || {};
         expanded = {};
         anchor = null;
+        droppedPicks = false;
         run({top: options.top !== false});
         writeUrl({push: options.push === true});
     }
@@ -305,10 +425,38 @@
         changed();
     }
 
+    // a is a place inside place b (SearchCore's place values).
+    function placeWithin(a, b) {
+        return a.lastIndexOf(b + SearchCore.PLACE_SEPARATOR, 0) === 0;
+    }
+
+    /* Places are chosen one level at a time: choosing a place drops the
+       places it is in and the places in it (Hawaii instead of the United
+       States), and taking a town or region away goes back to the place it
+       is in, unless another place there is still chosen. */
+    function placeChoice(values, value) {
+        var at = values.indexOf(value);
+        if (at < 0) {
+            return values.filter(function (other) {
+                return !placeWithin(value, other) && !placeWithin(other, value);
+            }).concat([value]);
+        }
+        values.splice(at, 1);
+        var parent = SearchCore.placeParent(value);
+        if (parent && !values.some(function (other) {
+            return other === parent || placeWithin(other, parent);
+        })) {
+            values.push(parent);
+        }
+        return values;
+    }
+
     function toggleFilter(group, value) {
         var values = (state.filters[group] || []).slice();
         var at = values.indexOf(value);
-        if (at >= 0) {
+        if (group === "place") {
+            values = placeChoice(values, value);
+        } else if (at >= 0) {
             values.splice(at, 1);
         } else {
             values.push(value);
@@ -324,11 +472,31 @@
         changed();
     }
 
+    // Takes a value out of the filters (a chip's x: a place goes entirely).
+    function removeFilter(group, value) {
+        if (group !== "place") {
+            toggleFilter(group, value);
+            return;
+        }
+        var values = (state.filters.place || []).filter(function (other) {
+            return other !== value;
+        });
+        if (values.length) {
+            state.filters.place = values;
+        } else {
+            delete state.filters.place;
+        }
+        changed();
+    }
+
     function clearFilters() {
         state.filters = {};
+        state.from = "";
+        state.to = "";
         state.junk = false;
         state.sensitive = "";
         state.hidden = false;
+        state.ids = "";
         changed();
     }
 
@@ -341,6 +509,9 @@
                                     window.location.href);
         typing = false;
         state.filters = {};
+        state.ids = "";
+        state.from = "";
+        state.to = "";
         state.q = "";
         if (group === "q") {
             state.q = value;
@@ -351,10 +522,15 @@
         changed({push: true});
     }
 
+    // (A new search: without the map's view, see dropStaleView.)
     function chipUrl(group, value) {
         var target = linkState();
         target.q = group === "q" ? value : "";
         target.filters = {};
+        target.ids = "";
+        target.view = "";
+        target.from = "";
+        target.to = "";
         if (group !== "q") {
             target.filters[group] = [value];
         }
@@ -422,8 +598,12 @@
         });
         byId("sort").addEventListener("change", function () {
             state.sort = byId("sort").value;
+            if (state.sort === "shuffle") {
+                SITE.shuffleSeed(true);         // choosing it shuffles anew
+            }
             changed();
         });
+        byId("surprise-button").addEventListener("click", surprise);
         byId("group").addEventListener("change", function () {
             state.group = byId("group").checked;
             SHELL.storageSet(GROUP_KEY, state.group ? "" : "0");
@@ -462,10 +642,15 @@
     // SearchCore.SYNTAX, in an export without what it cannot have: other
     // libraries, hidden and undescribed pictures (never exported),
     // screenshots (left out unless chosen), and folder and file names or
-    // GPS when they were not exported.
+    // GPS when they were not exported. Others than the admin cannot find
+    // hidden or edited pictures.
     function syntaxRows() {
         if (!SITE.isStatic) {
-            return SearchCore.SYNTAX;
+            return adminOn ? SearchCore.SYNTAX : SearchCore.SYNTAX.map(function (row) {
+                return row.example.split(":")[0] !== "is" ? row : {
+                    example: row.example,
+                    meaning: "360\u00b0 photos; also is:duplicate, is:undescribed"};
+            });
         }
         var caps = SITE.capabilities || {};
         var fields = ["tag", "subject", "title", "text (the text in the picture)", "description",
@@ -479,7 +664,7 @@
         var rows = [];
         SearchCore.SYNTAX.forEach(function (row) {
             var field = row.example.split(":")[0];
-            if (field === "lib") {
+            if (field === "lib" || (field === "place" && caps.places !== true)) {
                 return;
             }
             if (field === "tag") {
@@ -731,10 +916,18 @@
 
     function facetButton(group, entry) {
         var label = facetValueLabel(group, entry.value);
+        // (A place holding the chosen one is half chosen: "mixed".)
+        var open = group === "place" && entry.open && !entry.selected;
         var button = el("button", {type: "button", className: "facet-value" +
-                                   (entry.selected ? " is-selected" : ""),
-                                   attrs: {"aria-pressed": entry.selected ? "true" : "false",
+                                   (entry.selected ? " is-selected" : "") +
+                                   (open ? " is-open" : "") +
+                                   (entry.level ? " facet-level-" + entry.level : ""),
+                                   attrs: {"aria-pressed": entry.selected ? "true"
+                                               : open ? "mixed" : "false",
                                            "data-key": "value:" + group + ":" + entry.value}});
+        if (group === "place") {
+            button.title = SearchCore.placeLabel(entry.value);
+        }
         button.appendChild(el("span", {className: "facet-check", attrs: {"aria-hidden": "true"}}));
         if (group === "colors" && cssColor(entry.value)) {
             var swatch = el("span", {className: "facet-swatch", attrs: {"aria-hidden": "true"}});
@@ -899,17 +1092,24 @@
             section.appendChild(el("h3", null, [toggle]));
             var list = el("ul", {className: "facet-values"});
             var limit = facetMore[group] ? entries.length : FACET_SHOWN;
-            entries.forEach(function (entry, index) {
-                if (index < limit || entry.selected) {
+            // (Places: the limit counts countries; the regions and towns of
+            // a chosen one are all listed under it.)
+            var counted = 0;
+            entries.forEach(function (entry) {
+                var first = !entry.level;
+                if (first) {
+                    counted += 1;
+                }
+                if (!first || counted <= limit || entry.selected || entry.open) {
                     list.appendChild(el("li", null, [facetButton(group, entry)]));
                 }
             });
             section.appendChild(list);
-            if (entries.length > FACET_SHOWN) {
+            if (counted > FACET_SHOWN) {
                 var more = el("button", {type: "button", className: "facet-more",
                                          attrs: {"data-key": "more:" + group},
                                          text: facetMore[group] ? "Show fewer"
-                                             : "Show " + (entries.length - FACET_SHOWN) + " more"});
+                                             : "Show " + (counted - FACET_SHOWN) + " more"});
                 more.addEventListener("click", function () {
                     facetMore[group] = !facetMore[group];
                     renderFacets();
@@ -935,18 +1135,69 @@
         return count;
     }
 
+    // The parse() result's on:today filter (this day in earlier years), or null.
+    function onThisDay() {
+        var terms = result && result.query ? result.query.terms : [];
+        for (var k = 0; k < terms.length; k++) {
+            var filter = terms[k].filter;
+            if (terms[k].active && !terms[k].neg && filter && filter.kind === "on" &&
+                    filter.today) {
+                return filter;
+            }
+        }
+        return null;
+    }
+
+    // "October 11": today's month and day.
+    function todayText() {
+        var now = new Date();
+        return SearchCore.dateLabel("2000-" + ("0" + (now.getMonth() + 1)).slice(-2) + "-" +
+                                    ("0" + now.getDate()).slice(-2)).replace(/, \d{4}$/, "");
+    }
+
     function renderHead() {
         byId("result-count").textContent = fmt.plural(result.total, "picture");
+        // A note is its text, or [text, a short form for narrow screens].
         var notes = [];
+        if (onThisDay() && result.total) {
+            var today = todayText();
+            notes.push(["taken on " + today + " in earlier years",
+                        today.slice(0, 3) + today.slice(today.indexOf(" "))]);
+        }
         if (result.collapsed) {
             notes.push(fmt.plural(result.collapsed, "duplicate") + " grouped");
         }
-        byId("result-notes").textContent = notes.length ? "\u00b7 " + notes.join(" \u00b7 ") : "";
+        var noteBox = byId("result-notes");
+        clear(noteBox);
+        notes.forEach(function (note) {
+            noteBox.appendChild(document.createTextNode("\u00b7 "));
+            if (typeof note === "string") {
+                noteBox.appendChild(document.createTextNode(note + " "));
+                return;
+            }
+            noteBox.appendChild(el("span", {className: "note-long", text: note[0] + " "}));
+            noteBox.appendChild(el("span", {className: "note-short", text: note[1] + " ",
+                                            title: note[0]}));
+        });
         var queryNotes = byId("query-notes");
-        queryNotes.textContent = (result.warnings || []).join(" ");
-        queryNotes.hidden = !(result.warnings || []).length;
+        var warnings = (result.warnings || []).slice();
+        if (droppedPicks) {
+            warnings.push("The pictures picked on the map could not be found any more (the " +
+                          "pictures have changed since): showing the whole search.");
+        }
+        queryNotes.textContent = warnings.join(" ");
+        queryNotes.hidden = !warnings.length;
+        byId("surprise-button").hidden = !display.length;
         var mapLink = byId("map-link");
         var mapUrl = SITE.mapUrl ? SITE.mapUrl(linkState()) : null;
+        if (mapUrl && state.ids) {
+            // Here with the pictures of a pin: back to the map, as it was.
+            mapLink.hidden = false;
+            mapLink.href = mapUrl;
+            clear(mapLink);
+            mapLink.appendChild(el("span", {text: "Back to the map"}));
+            return finishHead();
+        }
         var count = mapUrl && result.total ? located() : 0;
         mapLink.hidden = !count;
         if (count) {
@@ -961,8 +1212,62 @@
             mapLink.appendChild(el("span", {className: "narrow-only",
                                             text: fmt.number(count) + " on the map"}));
         }
+        finishHead();
+    }
+
+    function finishHead() {
         byId("facets-done").textContent = result.total
             ? "Show " + fmt.plural(result.total, "picture") : "No pictures match";
+    }
+
+    /* "Back to the map" right after coming from it goes back in the
+       history: the map is then shown as it was left (its list open). The
+       map's "Show these in the grid" leaves this page's address in
+       sessionStorage (FROM_MAP_KEY, see map.js): pages opened from disk
+       have no referrer. */
+    var FROM_MAP_KEY = "searchImages.fromMap";
+
+    function openedFromMap() {
+        try {
+            var url = window.sessionStorage.getItem(FROM_MAP_KEY);
+            if (url === null) {
+                return false;
+            }
+            window.sessionStorage.removeItem(FROM_MAP_KEY);
+            return url === window.location.href;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    var arrival = {referrer: document.referrer, fromMap: openedFromMap(), query: null};
+
+    function cameFromMap() {
+        if (arrival.fromMap) {
+            return true;
+        }
+        if (!arrival.referrer) {
+            return false;
+        }
+        try {
+            return new URL(arrival.referrer).pathname ===
+                new URL(SITE.mapUrl({}), window.location.href).pathname;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function setupMapLink() {
+        byId("map-link").addEventListener("click", function (event) {
+            if (!state.ids || event.button !== 0 || event.ctrlKey || event.metaKey ||
+                    event.shiftKey || event.altKey ||
+                    SITE.searchState.params(urlState()) !== arrival.query ||
+                    window.history.length < 2 || !cameFromMap()) {
+                return;
+            }
+            event.preventDefault();
+            window.history.back();
+        });
     }
 
     function chipButton(text, onRemove, title) {
@@ -984,11 +1289,17 @@
                 SHELL.setLibrary("");
             }));
         }
+        if (state.from || state.to) {
+            chips.push(chipButton("Taken: " + SearchCore.rangeLabel(state.from, state.to),
+                                  function () {
+                                      setRange("", "");
+                                  }, "Show every date again"));
+        }
         SearchCore.FACETS.forEach(function (facet) {
             (state.filters[facet.key] || []).forEach(function (value) {
-                chips.push(chipButton(facet.label + ": " + facetValueLabel(facet.key, value),
+                chips.push(chipButton(facet.label + ": " + filterLabel(facet.key, value),
                                       function () {
-                                          toggleFilter(facet.key, value);
+                                          removeFilter(facet.key, value);
                                       }));
             });
         });
@@ -1014,6 +1325,24 @@
                 state.hidden = false;
                 changed();
             }));
+        }
+        var chosen = picked();
+        if (chosen && !chosen.stale) {
+            // (The pictures that are still there and shown, as the grid
+            // shows them: one removed since the link was made, hidden
+            // while hidden pictures are not shown, or in another library
+            // than the one picked is not counted.)
+            var shown = visibility();
+            var pickedCount = chosen.ids.filter(function (id) {
+                var rec = record(id);
+                return rec !== null && !(rec.h && !shown.hidden) &&
+                    !(shown.library && rec.l !== shown.library);
+            }).length;
+            chips.push(chipButton("Picked on the map: " + fmt.plural(pickedCount, "picture"),
+                                  function () {
+                                      state.ids = "";
+                                      changed();
+                                  }, "Show the whole search again"));
         }
         chips.forEach(function (chip) {
             box.appendChild(chip);
@@ -1105,6 +1434,406 @@
         banner.hidden = false;
     }
 
+    /* ---------- Timeline ---------------------------------------------------------- */
+
+    /* How many of the results were taken each year, or each month of the
+       one year (each day of the one month) they are in (SearchCore's
+       timeline). Each bar is a button: choosing one shows only its year
+       (month, day) -- state.from/to, the "Taken" chip -- and the timeline
+       then shows its months (days). Dragging across bars chooses them all;
+       so does Shift with a click or Enter on two bars: the first marks
+       where the range starts (Esc forgets it), the second chooses the bars
+       from there (after a choice, from the bar last chosen when it is
+       still shown). "Zoom out" widens the dates again; Back goes back.
+       The arrow keys, Home and End move between the bars that have
+       pictures. */
+    var timelineAnchor = "";        // the bar a Shift choice starts from
+    var anchorScope = "";           // the search it was chosen in (searchScope)
+    var anchorPending = false;      // true: no range from it was chosen yet
+    var timelineFocus = "";         // the bar the Tab key reaches
+    var timelineDrag = null;        // {pointer, start, end, shift, x} while dragging
+    var timelineWidth = -1;         // the width the labels were laid out for
+
+    // What the results depend on but their dates: an anchor chosen in
+    // another search is forgotten.
+    function searchScope() {
+        return JSON.stringify([state.q, SHELL.library() || "", state.filters, state.ids || "",
+                               state.hidden, state.junk, state.sensitive]);
+    }
+
+    function setAnchor(key, pending) {
+        timelineAnchor = key || "";
+        anchorScope = searchScope();
+        anchorPending = Boolean(key) && pending === true;
+    }
+
+    // The anchor of this search ("" when there is none).
+    function currentAnchor() {
+        return timelineAnchor && anchorScope === searchScope() ? timelineAnchor : "";
+    }
+
+    function timelineClosed() {
+        return SHELL.storageGet(TIMELINE_KEY) === "1";
+    }
+
+    // The dates chosen in words ("in May 2019", "since 2019").
+    function rangeText() {
+        var text = SearchCore.rangeLabel(state.from, state.to);
+        return /^(since|until) /.test(text) ? text : "in " + text;
+    }
+
+    // A bar's name: "2019", "May 2019", "May 14, 2019".
+    function barName(key) {
+        return SearchCore.dateLabel(key);
+    }
+
+    // What is written under a bar: "2019", "May", "14".
+    function barText(level, key) {
+        if (level === "year") {
+            return key;
+        }
+        if (level === "month") {
+            return SearchCore.dateLabel(key).slice(0, 3);
+        }
+        return String(Number(key.slice(8, 10)));
+    }
+
+    function timelineSummary(line) {
+        var bars = line.bars;
+        var text = line.level === "year"
+            ? "By year, " + bars[0].key + " to " + bars[bars.length - 1].key
+            : line.level === "month" ? "By month, " + bars[0].key.slice(0, 4)
+                : "By day, " + SearchCore.dateLabel(bars[0].key.slice(0, 7));
+        if (line.undated) {
+            text += " \u00b7 " + fmt.number(line.undated) + " without a date";
+        }
+        return text;
+    }
+
+    // The chosen dates one step wider: days -> their months, months ->
+    // their years, years -> every date (null).
+    function widerRange(from, to) {
+        var length = Math.max((from || "").length, (to || "").length);
+        if (!from || !to || length <= 4) {
+            return null;
+        }
+        var cut = length === 10 ? 7 : 4;
+        return {from: from.slice(0, cut), to: to.slice(0, cut)};
+    }
+
+    function setRange(from, to) {
+        from = from || "";
+        to = to || "";
+        anchorPending = false;
+        if (!from && !to) {
+            setAnchor("");
+        }
+        if (from === state.from && to === state.to) {
+            // (The same dates: no history entry that Back would only repeat.)
+            renderTimeline();
+            return;
+        }
+        state.from = from;
+        state.to = to;
+        // A new history entry: Back shows the dates before.
+        changed({push: true});
+    }
+
+    // Choose bar at of the timeline; extend: Shift (see SearchCore.timelineChoice).
+    function chooseBar(at, extend) {
+        var bars = result.timeline.bars;
+        var choice = SearchCore.timelineChoice(bars, at, extend,
+                                               {anchor: currentAnchor(), pending: anchorPending});
+        if (!choice) {
+            return;
+        }
+        timelineFocus = bars[at].key;
+        setAnchor(choice.anchor, choice.pending);
+        if (choice.pending) {
+            renderTimeline();
+        } else {
+            setRange(choice.from, choice.to);
+        }
+    }
+
+    // The place of the bar under a point (x on the screen) in the bars.
+    // finger: a finger is wider than a day's bar on a phone, so a touch on
+    // a bar without pictures takes the nearest one with pictures that the
+    // finger also touched (within FINGER pixels).
+    var FINGER = 12;
+    function barAt(box, x, finger) {
+        var nodes = box.children;
+        var at = -1;
+        var k;
+        for (k = 0; k < nodes.length; k++) {
+            if (x < nodes[k].getBoundingClientRect().right || k === nodes.length - 1) {
+                at = k;
+                break;
+            }
+        }
+        if (at < 0 || !finger || nodes[at].getAttribute("aria-disabled") !== "true") {
+            return at;
+        }
+        var best = at;
+        var gap = FINGER + 1;
+        for (k = Math.max(0, at - 3); k <= Math.min(nodes.length - 1, at + 3); k++) {
+            if (nodes[k].getAttribute("aria-disabled") !== "true") {
+                var rect = nodes[k].getBoundingClientRect();
+                var away = x < rect.left ? rect.left - x : x > rect.right ? x - rect.right : 0;
+                if (away < gap) {
+                    gap = away;
+                    best = k;
+                }
+            }
+        }
+        return best;
+    }
+
+    function markDrag(box) {
+        var drag = timelineDrag;
+        Array.prototype.forEach.call(box.children, function (node, at) {
+            node.classList.toggle("is-dragged", Boolean(drag) &&
+                                  at >= Math.min(drag.start, drag.end) &&
+                                  at <= Math.max(drag.start, drag.end));
+        });
+    }
+
+    function moveBarFocus(box, from, step) {
+        var nodes = box.children;
+        for (var at = from + step; at >= 0 && at < nodes.length; at += step) {
+            if (nodes[at].getAttribute("aria-disabled") !== "true") {
+                Array.prototype.forEach.call(nodes, function (node) {
+                    node.tabIndex = -1;
+                });
+                nodes[at].tabIndex = 0;
+                nodes[at].focus();
+                timelineFocus = nodes[at].getAttribute("data-key");
+                return;
+            }
+        }
+    }
+
+    function timelineBars(line) {
+        var max = 1;
+        line.bars.forEach(function (bar) {
+            max = Math.max(max, bar.count);
+        });
+        var chosen = state.from || state.to ? {from: state.from, to: state.to} : null;
+        var start = anchorPending ? currentAnchor() : "";
+        var box = el("div", {id: "timeline-bars", className: "timeline-bars level-" + line.level,
+                             attrs: {role: "group",
+                                     "aria-label": "Pictures per " + line.level + ". Choose a " +
+                                         line.level + " to show only its pictures. To choose " +
+                                         "several, drag across them, or hold Shift and choose " +
+                                         "the first, then the last."}});
+        // Where the Tab key lands: the bar last moved to, else the newest
+        // one with pictures.
+        var keys = line.bars.filter(function (bar) {
+            return bar.count > 0;
+        }).map(function (bar) {
+            return bar.key;
+        });
+        var focusKey = keys.indexOf(timelineFocus) >= 0 ? timelineFocus
+            : keys[keys.length - 1] || "";
+        // Labels under the bars: as many as there is room for (laid out
+        // again when the width changes, see the resize handler).
+        timelineWidth = byId("results").clientWidth;
+        var room = Math.max(1, (timelineWidth || 600) - 24);
+        var wide = line.level === "year" ? 40 : line.level === "month" ? 30 : 22;
+        var every = Math.max(1, Math.ceil(line.bars.length / Math.max(1, Math.floor(room / wide))));
+        if (line.level === "day" && every > 1) {
+            every = every <= 2 ? 2 : every <= 5 ? 5 : 10;
+        }
+        // (Bars are marked as chosen when the dates were chosen at their
+        // level: a month chosen among the months, not the year of them all.)
+        var level = line.bars.length ? line.bars[0].key.length : 0;
+        if (chosen && (chosen.from || chosen.to).length !== level) {
+            chosen = null;
+        }
+        line.bars.forEach(function (bar, index) {
+            var inside = chosen !== null && (!chosen.from || bar.key >= chosen.from) &&
+                (!chosen.to || bar.key <= chosen.to);
+            var name = barName(bar.key) + ": " + fmt.plural(bar.count, "picture");
+            var first = bar.key === start;
+            var node = el("button", {type: "button", className: "timeline-bar" +
+                                     (bar.count ? "" : " is-empty") + (inside ? " is-chosen" : "") +
+                                     (first ? " is-anchor" : ""),
+                                     title: name, tabIndex: bar.key === focusKey ? 0 : -1,
+                                     attrs: {"data-key": bar.key,
+                                             "aria-label": first ? name + ". The range starts " +
+                                                 "here: hold Shift and choose where it ends."
+                                                 : name,
+                                             "aria-current": inside ? "true" : null,
+                                             "aria-disabled": bar.count ? null : "true"}});
+            var fill = el("span", {className: "timeline-fill"});
+            fill.style.height = bar.count ? Math.max(8, Math.round(100 * bar.count / max)) + "%"
+                : "0";
+            node.appendChild(el("span", {className: "timeline-track",
+                                         attrs: {"aria-hidden": "true"}}, [fill]));
+            var number = line.level === "day" ? index + 1 : index;
+            node.appendChild(el("span", {className: "timeline-label", attrs: {"aria-hidden": "true"},
+                                         text: (line.level === "day" ? number === 1 ||
+                                                number % every === 0 : index % every === 0)
+                                             ? barText(line.level, bar.key) : ""}));
+            box.appendChild(node);
+        });
+        box.addEventListener("click", function (event) {
+            var node = event.target.closest ? event.target.closest(".timeline-bar") : null;
+            // (Pointers choose on pointerup; this is Enter or Space.)
+            if (node && event.detail === 0) {
+                chooseBar(Array.prototype.indexOf.call(box.children, node), event.shiftKey);
+            }
+        });
+        box.addEventListener("keydown", function (event) {
+            var node = event.target.closest ? event.target.closest(".timeline-bar") : null;
+            if (!node) {
+                return;
+            }
+            var at = Array.prototype.indexOf.call(box.children, node);
+            var moves = {ArrowLeft: [at, -1], ArrowRight: [at, 1], Home: [-1, 1],
+                         End: [box.children.length, -1]};
+            if (moves[event.key]) {
+                event.preventDefault();
+                moveBarFocus(box, moves[event.key][0], moves[event.key][1]);
+            } else if (event.key === "Enter" && event.shiftKey) {
+                // (Shift+Enter does not click a button.)
+                event.preventDefault();
+                chooseBar(at, true);
+            } else if (event.key === "Escape" && anchorPending) {
+                // Forget where a range was to start.
+                event.preventDefault();
+                event.stopPropagation();
+                setAnchor("");
+                renderTimeline();
+            }
+        });
+        box.addEventListener("pointerdown", function (event) {
+            if (event.button !== 0 || !event.isPrimary) {
+                return;
+            }
+            var at = barAt(box, event.clientX, event.pointerType === "touch");
+            if (at < 0) {
+                return;
+            }
+            timelineDrag = {pointer: event.pointerId, start: at, end: at, shift: event.shiftKey,
+                            x: event.clientX};
+            try {
+                box.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // The drag still works while the pointer stays over the bars.
+            }
+            markDrag(box);
+        });
+        box.addEventListener("pointermove", function (event) {
+            // (A finger that only trembles is no drag.)
+            if (timelineDrag && event.pointerId === timelineDrag.pointer &&
+                    Math.abs(event.clientX - timelineDrag.x) >= FINGER / 2) {
+                var at = barAt(box, event.clientX);
+                if (at >= 0 && at !== timelineDrag.end) {
+                    timelineDrag.end = at;
+                    markDrag(box);
+                }
+            }
+        });
+        box.addEventListener("pointerup", function (event) {
+            var drag = timelineDrag;
+            if (!drag || event.pointerId !== drag.pointer) {
+                return;
+            }
+            timelineDrag = null;
+            markDrag(box);
+            if (drag.start === drag.end) {
+                chooseBar(drag.start, drag.shift || event.shiftKey);
+            } else {
+                var low = Math.min(drag.start, drag.end);
+                var high = Math.max(drag.start, drag.end);
+                timelineFocus = line.bars[drag.end].key;
+                setAnchor(line.bars[drag.start].key);
+                setRange(line.bars[low].key, line.bars[high].key);
+            }
+        });
+        box.addEventListener("pointercancel", function () {
+            timelineDrag = null;
+            markDrag(box);
+        });
+        return box;
+    }
+
+    function renderTimeline() {
+        var box = byId("timeline");
+        var line = result && result.timeline;
+        // (Drawn again after a choice: the keyboard focus stays in it.)
+        var focused = box.contains(document.activeElement)
+            ? document.activeElement.className : "";
+        clear(box);
+        if (!line || !line.level || !result.total) {
+            box.hidden = true;
+            return;
+        }
+        box.hidden = false;
+        var closed = timelineClosed();
+        box.classList.toggle("is-closed", closed);
+        var head = el("div", {className: "timeline-head"});
+        var toggle = el("button", {type: "button", className: "timeline-toggle",
+                                   attrs: {"aria-expanded": closed ? "false" : "true",
+                                           "aria-controls": closed ? null : "timeline-bars"}},
+                        [el("span", {text: "Timeline"})]);
+        toggle.addEventListener("click", function () {
+            SHELL.storageSet(TIMELINE_KEY, timelineClosed() ? "" : "1");
+            renderTimeline();
+            relayout(true);
+        });
+        head.appendChild(toggle);
+        head.appendChild(el("span", {className: "timeline-summary", text: timelineSummary(line)}));
+        var start = anchorPending && !closed ? currentAnchor() : "";
+        if (start) {
+            head.appendChild(el("span", {className: "timeline-hint",
+                                         text: "From " + barName(start) + ": Shift-choose where " +
+                                             "it ends (Esc: cancel)"}));
+        }
+        if (state.from || state.to) {
+            var wider = el("button", {type: "button", className: "button subtle small timeline-out",
+                                      text: "Zoom out", title: "Show a longer stretch of time"});
+            wider.addEventListener("click", function () {
+                var range = widerRange(state.from, state.to);
+                setRange(range ? range.from : "", range ? range.to : "");
+            });
+            head.appendChild(wider);
+        }
+        box.appendChild(head);
+        if (!closed) {
+            box.appendChild(timelineBars(line));
+        }
+        if (focused) {
+            var again = /timeline-bar/.test(focused)
+                ? box.querySelector(".timeline-bar[tabindex='0']")
+                : box.querySelector(/timeline-out/.test(focused) ? ".timeline-out"
+                    : ".timeline-toggle");
+            (again || toggle).focus({preventScroll: true});
+        }
+    }
+
+    /* ---------- Surprise me -------------------------------------------------------- */
+
+    // Opens a picture of the results (a stack counts once) chosen at random.
+    function surprise() {
+        if (!display.length) {
+            return;
+        }
+        var covers = [];
+        display.forEach(function (entry, position) {
+            if (!entry.member) {
+                covers.push(position);
+            }
+        });
+        var position = covers[Math.floor(Math.random() * covers.length)];
+        if (VIEWER.isOpen()) {
+            VIEWER.show(display[position].id);
+            return;
+        }
+        openViewer(position, true);
+    }
+
     /* ---------- Empty states ----------------------------------------------------- */
 
     function emptyBox(title, lines, actions) {
@@ -1176,6 +1905,18 @@
         }
         var lines = [];
         var actions = [];
+        // (When no filter or option is what leaves nothing, nothing was
+        // taken on this day: say so, not "check the spelling".)
+        if (onThisDay() && state.q.replace(/^\s+|\s+$/g, "") === "on:today" &&
+                !(activeFilterCount() && emptyReasons().length)) {
+            emptyBox("Nothing from this day",
+                     ["No picture " + (SHELL.library() ? "in this library " : "") + "was " +
+                      "taken on " + todayText() + " in an earlier year."],
+                     [actionButton("Show all the pictures", function () {
+                         setQuery("");
+                     }, true)]);
+            return;
+        }
         // First say what took the matches away (filters, options, the
         // library); only when nothing matches anywhere suggest spelling.
         var reasons = emptyReasons();
@@ -1210,12 +1951,17 @@
                  "these filters", lines, actions);
     }
 
+    // A chosen value in words: a place with the places it is in.
+    function filterLabel(group, value) {
+        return group === "place" ? SearchCore.placeLabel(value) : facetValueLabel(group, value);
+    }
+
     // "Year: 2023, Type: Receipts" for the facet selections.
     function filterText() {
         var parts = [];
         SearchCore.FACETS.forEach(function (facet) {
             (state.filters[facet.key] || []).forEach(function (value) {
-                parts.push(facet.label + ": " + facetValueLabel(facet.key, value));
+                parts.push(facet.label + ": " + filterLabel(facet.key, value));
             });
         });
         return parts.join(", ");
@@ -1240,6 +1986,33 @@
             var verb = count === 1 ? " matches" : " match";
             return fmt.plural(count, extra ? extra + " picture" : "picture") +
                 (state.q ? verb + " \u201c" + state.q + "\u201d" : verb + " the search");
+        }
+        if (state.ids) {
+            var everywhere = found(function (options) {
+                delete options.ids;
+            });
+            if (everywhere) {
+                reasons.push({text: matching(everywhere) + " but " + isAre(everywhere) +
+                                    " not among the pictures picked on the map.",
+                              label: "Show all of them",
+                              run: function () {
+                                  state.ids = "";
+                                  changed();
+                              }});
+            }
+        }
+        if (state.from || state.to) {
+            var anyDate = found(function (options) {
+                delete options.range;
+            });
+            if (anyDate) {
+                reasons.push({text: matching(anyDate) + " but none was taken " +
+                                    rangeText() + ".",
+                              label: "Show every date",
+                              run: function () {
+                                  setRange("", "");
+                              }});
+            }
         }
         var hasFilters = Object.keys(state.filters).some(function (key) {
             return state.filters[key].length;
@@ -1354,12 +2127,21 @@
         return rec && /^\d{4}-\d{2}/.test(rec.dk || "") ? rec.dk.slice(0, 7) : "";
     }
 
+    // "May 2019"; on this day (one month and day of every year): "2019 -
+    // 7 years ago".
     function groupLabel(key) {
+        if (key && onThisDay()) {
+            var ago = new Date().getFullYear() - Number(key.slice(0, 4));
+            return key.slice(0, 4) + " \u00b7 " + (ago === 1 ? "a year ago" : ago + " years ago");
+        }
         return key ? VIEWER.format.monthLabel(key + "-01") : "No date";
     }
 
     // "Jun 2019": for labels above one or two small pictures.
     function shortGroupLabel(key) {
+        if (key && onThisDay()) {
+            return key.slice(0, 4);
+        }
         var long = groupLabel(key);
         return key ? long.slice(0, 3) + " " + key.slice(0, 4) : long;
     }
@@ -1381,7 +2163,12 @@
         }
         var cols = Math.max(1, Math.floor((width + gap) / (minimum + gap)));
         var tile = Math.floor((width - gap * (cols - 1)) / cols);
-        var dated = result.sort === "newest" || result.sort === "oldest";
+        // Month headers when sorted by date -- unless no picture has a date
+        // (then a lone "No date" header would say nothing).
+        var dated = (result.sort === "newest" || result.sort === "oldest") &&
+            display.some(function (entry) {
+                return monthKey(record(entry.id)) !== "";
+            });
         var counts = {};            // month -> pictures (a stack counts all of its own)
         var runs = {};              // display index where a month starts -> its tiles
         if (dated) {
@@ -1638,6 +2425,13 @@
         });
     }
 
+    // The Duplicates page showing the stack that holds picture id (admin).
+    function reviewUrl(id) {
+        var library = SHELL.library();
+        return "/duplicates?stack=" + encodeURIComponent(id) +
+            (library ? "&lib=" + encodeURIComponent(library) : "");
+    }
+
     function idsAt(position) {
         var entry = display[position];
         if (!entry) {
@@ -1718,6 +2512,14 @@
                                                           " similar pictures"}});
             stackButton.tabIndex = -1;
             node.appendChild(stackButton);
+            if (open && adminOn) {
+                // The stack on the Duplicates page, to keep the best of it.
+                var review = el("a", {className: "tile-review", href: reviewUrl(entry.id),
+                                      text: "Review",
+                                      title: "Compare these pictures on the Duplicates page"});
+                review.tabIndex = -1;
+                node.appendChild(review);
+            }
         }
         return node;
     }
@@ -2041,6 +2843,171 @@
         });
     }
 
+    // The tags of the selected pictures, most common first (at most limit):
+    // [{tag, count}].
+    function selectedTags(ids, limit) {
+        var counts = Object.create(null);
+        ids.forEach(function (id) {
+            var rec = record(id);
+            (rec && Array.isArray(rec.g) ? rec.g : []).forEach(function (tag) {
+                counts[tag] = (counts[tag] || 0) + 1;
+            });
+        });
+        return Object.keys(counts).sort(function (a, b) {
+            return counts[b] - counts[a] || (a < b ? -1 : a > b ? 1 : 0);
+        }).slice(0, limit).map(function (tag) {
+            return {tag: tag, count: counts[tag]};
+        });
+    }
+
+    /* "Add tag..." / "Remove tag...": ask for tags, then change them on
+       every selected picture (as the owner's edits, which stay when the
+       pictures are described again). */
+    function tagSelected(adding, button) {
+        var ids = selectedIds();
+        if (!ids.length) {
+            return;
+        }
+        var count = fmt.plural(ids.length, "selected picture");
+        var box = SHELL.modal({title: adding ? "Add tags to " + count
+            : "Remove tags from " + count});
+        var input = el("input", {type: "text", className: "input", autocomplete: "off",
+                                 spellcheck: false, maxLength: 1000,
+                                 placeholder: adding ? "for example: rex, grandma's garden"
+                                     : "for example: blurry, document"});
+        var field = SHELL.field("Tags (separate them with commas)", input);
+        box.body.appendChild(field.node);
+        var showError = function (message) {
+            field.error.textContent = message;
+            field.error.hidden = !message;
+        };
+        if (!adding) {
+            var common = selectedTags(ids, 15);
+            if (common.length) {
+                var picks = el("div", {className: "info-chips tag-picks"});
+                var pickButtons = [];
+                // A pick is pressed while its tag is in the box.
+                var markPicks = function () {
+                    var have = VIEWER.format.splitTags(input.value);
+                    pickButtons.forEach(function (pick) {
+                        pick.button.setAttribute("aria-pressed",
+                                                 String(have.indexOf(pick.tag) >= 0));
+                    });
+                };
+                common.forEach(function (item) {
+                    var pick = el("button", {
+                        type: "button", className: "info-chip",
+                        text: item.tag + " \u00b7 " + item.count,
+                        title: "Add " + item.tag + " to the tags to remove (" +
+                            fmt.plural(item.count, "selected picture") + " " +
+                            (item.count === 1 ? "has" : "have") + " it); click again to " +
+                            "take it out",
+                        attrs: {"aria-pressed": "false"}
+                    });
+                    pick.addEventListener("click", function () {
+                        var have = VIEWER.format.splitTags(input.value);
+                        var at = have.indexOf(item.tag);
+                        if (at < 0) {
+                            have.push(item.tag);
+                        } else {
+                            have.splice(at, 1);
+                        }
+                        input.value = have.join(", ");
+                        markPicks();
+                        showError("");
+                        input.focus();
+                    });
+                    pickButtons.push({tag: item.tag, button: pick});
+                    picks.appendChild(pick);
+                });
+                input.addEventListener("input", markPicks);
+                box.body.appendChild(el("p", {className: "field-hint",
+                                              text: "Their most common tags:"}));
+                box.body.appendChild(picks);
+            }
+        }
+        box.body.appendChild(el("p", {className: "field-hint", text: adding
+            ? "Tags you add are searched like the model's (a pet's name, a place, an event) " +
+              "and stay when the pictures are described again."
+            : "A tag the model gave stays removed when the pictures are described again."}));
+        box.button("Cancel", "", function () {
+            box.close();
+        });
+        var ok = box.button(adding ? "Add" : "Remove", "primary", go);
+        box.submitOnEnter(go);
+        input.addEventListener("input", function () {
+            showError("");
+        });
+        function go() {
+            if (ok.disabled) {
+                return;
+            }
+            var tags = VIEWER.format.splitTags(input.value);
+            var problem = !tags.length ? "Type at least one tag." :
+                VIEWER.format.tagProblem(tags);
+            showError(problem);
+            if (problem) {
+                input.focus();
+                return;
+            }
+            ok.disabled = true;
+            // The dialog stays open (with what was typed) until it worked.
+            sendTags(ids, adding ? tags : [], adding ? [] : tags, button).then(function (done) {
+                if (done) {
+                    box.close();
+                } else {
+                    ok.disabled = false;
+                }
+            });
+        }
+    }
+
+    // Change the tags of ids; resolves to true when every part was changed.
+    function sendTags(ids, add, remove, button) {
+        button.disabled = true;
+        var changedCount = 0;
+        var chain = Promise.resolve();
+        chunks(ids, 10000).forEach(function (part) {
+            chain = chain.then(function () {
+                return SHELL.admin("/images/tags", {ids: part, add: add, remove: remove})
+                    .then(function (reply) {
+                        changedCount += reply.changed || 0;
+                        Object.keys(reply.tags || {}).forEach(function (key) {
+                            var rec = record(/^\d+$/.test(key) ? Number(key) : key);
+                            if (!rec) {
+                                return;
+                            }
+                            if (reply.tags[key].length) {
+                                rec.g = reply.tags[key];
+                            } else {
+                                delete rec.g;
+                            }
+                            if (reply.edited && reply.edited[key]) {
+                                rec.ed = 1;
+                            } else {
+                                delete rec.ed;
+                            }
+                        });
+                    });
+            });
+        });
+        return chain.then(function () {
+            var words = (add.length ? add : remove).join(", ");
+            SHELL.toast(changedCount
+                ? (add.length ? "Added " + words + " to " : "Removed " + words + " from ") +
+                  fmt.plural(changedCount, "picture") + "."
+                : "Nothing to change: the pictures " + (add.length ? "already have " +
+                  words + "." : "do not have " + words + "."), "ok");
+            return true;
+        }, function () {
+            return false;
+        }).then(function (done) {
+            button.disabled = false;
+            recordsEdited();
+            return done;
+        });
+    }
+
     function copyPaths(button) {
         var ids = selectedIds();
         if (!ids.length) {
@@ -2112,6 +3079,18 @@
         unhide.addEventListener("click", function () {
             hideSelected(false, unhide);
         });
+        var addTag = el("button", {type: "button", className: "button small", text: "Add tag\u2026",
+                                   disabled: !selectedCount,
+                                   title: "Add tags to the selected pictures"});
+        addTag.addEventListener("click", function () {
+            tagSelected(true, addTag);
+        });
+        var removeTag = el("button", {type: "button", className: "button small",
+                                      text: "Remove tag\u2026", disabled: !selectedCount,
+                                      title: "Remove tags from the selected pictures"});
+        removeTag.addEventListener("click", function () {
+            tagSelected(false, removeTag);
+        });
         var copy = el("button", {type: "button", className: "button small", text: "Copy file paths",
                                  disabled: !selectedCount});
         copy.addEventListener("click", function () {
@@ -2123,6 +3102,8 @@
         });
         bar.appendChild(hide);
         bar.appendChild(unhide);
+        bar.appendChild(addTag);
+        bar.appendChild(removeTag);
         bar.appendChild(copy);
         bar.appendChild(done);
         bar.hidden = false;
@@ -2196,6 +3177,7 @@
             onExpandStack: function (other) {
                 toggleStack(other);
             },
+            reviewUrl: adminOn ? reviewUrl : null,
             onShow: function (shown, at) {
                 if (at >= 0) {
                     setFocusPos(at);
@@ -2218,7 +3200,8 @@
             },
             onHidden: function () {
                 run({keepScroll: true});
-            }
+            },
+            onEdited: recordsEdited
         });
         return opened;
     }
@@ -2235,6 +3218,9 @@
         if (!record(id)) {
             writeUrl({id: null});
             return;
+        }
+        if (reveal(id) && VIEWER.isOpen()) {
+            VIEWER.update(viewerIds());
         }
         if (VIEWER.isOpen()) {
             VIEWER.show(id);
@@ -2331,7 +3317,10 @@
         if ("scrollRestoration" in window.history) {
             window.history.scrollRestoration = "manual";
         }
+        keepView();
         setupControls();
+        setupMapLink();
+        arrival.query = SITE.searchState.params(urlState());
         renderControls();
         grid.addEventListener("click", gridClick);
         grid.addEventListener("keydown", gridKeydown);
@@ -2360,6 +3349,9 @@
             window.clearTimeout(resizeTimer);
             resizeTimer = window.setTimeout(function () {
                 syncBar();
+                if (result && !timelineClosed() && byId("results").clientWidth !== timelineWidth) {
+                    renderTimeline();
+                }
                 if (layout && Math.abs(grid.clientWidth - layout.width) > 1) {
                     relayout(true);
                 } else if (window.innerWidth !== lastWidth) {
@@ -2377,6 +3369,7 @@
             var sameSearch = SITE.searchState.params(wanted) === SITE.searchState.params(urlState());
             if (!sameSearch) {
                 state = wanted;
+                keepView();
                 if (!state.size) {
                     state.size = "m";
                 }
