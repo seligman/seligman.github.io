@@ -14,6 +14,39 @@
    choosing bars there limits the search to those dates (state.from/to,
    the "Taken" chip). "Surprise me" opens a random picture of the results.
 
+   Search by meaning (when the pictures have meaning vectors and queries
+   can be embedded: by the server, or in an export that ships its query
+   model): the meaning of what is typed (SearchCore.meaningText) is asked
+   for (SITE.queryVector) a moment after typing stops, and the search runs
+   again with it. Until it arrives (or when the embedding model is
+   starting, loading or unavailable, or an export's model does not work
+   in this browser: then the switch goes) the words alone are searched,
+   with a quiet note; a query that failed is not asked again until
+   another one is. The "Words / Words + meaning / Meaning" switch (state.by)
+   chooses (only "Words" is remembered for later visits); tiles found by
+   meaning alone carry a small badge. "More like this" in the viewer (M)
+   searches similar:<id>, which needs no model. Query vectors are kept for
+   the tab (sessionStorage, by model), so a reload shows the same results
+   at once; the scroll position of a reload waits for them
+   (restoreWhenSettled). An export loads nothing for it before the first
+   search that needs meaning: the switch shows at once (choosing Words
+   never loads the model), then the vectors load, then the model, with
+   its progress in the note; with Save-Data on, a "Search by meaning"
+   button starts the download instead (the choice is kept for the site).
+
+   Looks (when the pictures have look vectors, SITE.loadLooks): "Looks like
+   this" in the viewer (L) searches look:<id>, the pictures that look most
+   like that one, and the viewer shows a strip of them. On the server the
+   admin can also drop a picture on the page, paste one, or choose one with
+   the picture button in the search box: the server's image model makes its
+   look vector (SITE.lookQuery; the picture is never kept) and the results
+   are the pictures that look like it (SearchCore's lookVector option),
+   with a "Looks like: [picture]" chip that takes it away again. Until the
+   server has compared a new picture the search stays as it was, with a
+   "Comparing: [picture]" chip (a picture that cannot be compared leaves it
+   so, with a message); then the words typed before go (the filters stay).
+   The example is kept in the page only (not in the address).
+
    The grid is laid out in rows by this script (columns from the width and
    the size slider; a header row per month when sorted by date) and cut
    into blocks of about 60 pictures. Only the blocks near the screen hold
@@ -52,6 +85,25 @@
     var SIDEBAR_KEY = "searchImages.sidebar";
     var BANNER_KEY = "searchImages.bannerHidden";
     var TIMELINE_KEY = "searchImages.timelineClosed";
+    var BY_KEY = "searchImages.by";
+    var QUERY_VECTORS_KEY = "searchImages.queryVectors";
+    // Milliseconds after typing stops before the meaning of the query is
+    // asked for; between tries while the embedding model starts (at most
+    // MEANING_TRIES of them).
+    var MEANING_DELAY = 350;
+    var MEANING_RETRY = 3000;
+    var MEANING_TRIES = 60;
+    var MEANING_CACHE = 100;
+    // Query vectors kept for the tab (sessionStorage), and how long a
+    // reload waits for meaning before it restores the scroll position.
+    var MEANING_KEPT = 40;
+    // Search by an example picture: the largest picture sent, and while the
+    // image model starts, the milliseconds between tries (at most
+    // EXAMPLE_TRIES of them).
+    var EXAMPLE_MAX_BYTES = 20 * 1024 * 1024;
+    var EXAMPLE_RETRY = 3000;
+    var EXAMPLE_TRIES = 60;
+    var RESTORE_WAIT = 4000;
     var NARROW = 860;
     var PHONE = 601;            // (the same as style.css's max-width: 600px)
     var REFRESH_AFTER = 30000;
@@ -93,6 +145,39 @@
     // What the history entry held when the page loaded (scroll position,
     // and whether it is the entry the viewer added).
     var initialHistory = window.history.state || {};
+    var vectors = null;         // the meaning vectors (SITE.loadVectors), once loaded
+    var queryVectors = {};      // meaning text -> its vector (Int8Array)
+    var queryOrder = [];
+    var queryWanted = "";       // the meaning text whose vector is wanted now
+    var meaningTimer = 0;
+    var meaningAsking = false;
+    var askingText = "";        // the meaning text asked for last
+    var meaningTries = 0;
+    // "" (fine), "starting" (the model is loading), "loading" (an export
+    // downloads its model: meaningProgress), "ask" (an export waits for the
+    // visitor to agree to the download: Save-Data), "unavailable", "off"
+    // or "broken" (an export's model does not work in this browser: the
+    // switch goes, a note says so).
+    var meaningState = "";
+    var meaningProgress = {loaded: 0, total: 0};
+    var vectorsWaiting = [];    // called once the vectors have settled
+    var meaningOnly = {};       // id -> true: found by meaning alone (the last search)
+    var vectorsSettled = false; // SITE.loadVectors has answered (vectors or none)
+    var vectorsAsked = false;
+    var restoreTimer = 0;
+    var looks = null;           // the look vectors (SITE.loadLooks), once loaded
+    var looksWaiting = [];      // called once the look vectors have settled
+    var looksSettled = false;
+    var looksAsked = false;
+    // Search by an example picture: the picture searched by, {vec (Int8Array),
+    // url (the small picture the server made of it, else a blob: URL), blob};
+    // and a new one while the server compares it, {file, url (blob:), starting,
+    // tries}: until its vector comes, the search stays that of the one before.
+    var example = null;
+    var pendingExample = null;
+    var exampleButton = null;
+    var exampleInput = null;
+    var dropZone = null;
 
     /* ---------- Preferences and state ----------------------------------------- */
 
@@ -104,6 +189,11 @@
         }
         if (!params.has("group")) {
             state.group = SHELL.storageGet(GROUP_KEY) !== "0";
+        }
+        if (!params.has("by")) {
+            // (Only "Words" is remembered: meaning alone would hide word
+            // matches on every later visit without saying so.)
+            state.by = SHELL.storageGet(BY_KEY) === "words" ? "words" : "";
         }
         if (!adminOn) {
             state.hidden = false;
@@ -139,7 +229,8 @@
         return {q: state.q, lib: SHELL.library(), sort: state.sort, filters: state.filters,
                 group: state.group, size: state.size === "m" ? "" : state.size,
                 hidden: state.hidden, junk: state.junk, sensitive: state.sensitive,
-                ids: state.ids, view: state.view, from: state.from, to: state.to};
+                ids: state.ids, view: state.view, from: state.from, to: state.to,
+                by: state.by};
     }
 
     // The search state for links to other pages (without the view settings).
@@ -269,6 +360,12 @@
             byId: lookup,
             index: SearchCore.prepare(loaded.records)
         };
+        if (vectors) {
+            data.index.setVectors(vectors);
+        }
+        if (looks) {
+            data.index.setLooks(looks);
+        }
         loadedAt = Date.now();
     }
 
@@ -280,6 +377,12 @@
     function recordsEdited() {
         if (data) {
             data.index = SearchCore.prepare(data.records);
+            if (vectors) {
+                data.index.setVectors(vectors);
+            }
+            if (looks) {
+                data.index.setLooks(looks);
+            }
             run({keepScroll: true});
         }
     }
@@ -311,7 +414,726 @@
         if (chosen && !chosen.stale) {
             options.ids = chosen.ids;
         }
+        options.meaning = state.by || "hybrid";
+        options.vector = meaningVector();
+        if (example && example.vec) {
+            options.lookVector = example.vec;
+        }
         return options;
+    }
+
+    /* ---------- Search by meaning ------------------------------------------------- */
+
+    // Queries can be searched by meaning here (the switch shows): the server
+    // embeds them, or an export ships its model (shown before it loads).
+    function meaningOn() {
+        if (meaningState === "off" || meaningState === "broken") {
+            return false;
+        }
+        return serverMode ? Boolean(vectors && vectors.query)
+            : Boolean(SITE.meaningInBrowser && SITE.meaningInBrowser());
+    }
+
+    // The text of the query that search by meaning looks for ("" for none;
+    // also while an example picture is searched by: then its looks rank the
+    // pictures, and the words only choose among them).
+    function queryText() {
+        return example && example.vec ? "" : SearchCore.meaningText(state.q);
+    }
+
+    // The query's meaning vector when there is one now, else null; when it
+    // is not there yet it is asked for, and the search runs again once it
+    // has come.
+    function meaningVector() {
+        if (!meaningOn() || state.by === "words") {
+            return null;
+        }
+        var text = queryText();
+        if (!text) {
+            return null;
+        }
+        if (queryVectors[text]) {
+            return queryVectors[text];
+        }
+        var kept = keptVector(text);
+        if (kept) {
+            queryVectors[text] = kept;
+            queryOrder.push(text);
+            return kept;
+        }
+        if (meaningState !== "ask") {
+            askMeaning(text);       // (Save-Data: until the visitor chooses to download)
+        }
+        return null;
+    }
+
+    // The tab's kept query vectors: {text: {model, dims, vec (base64)}}.
+    function keptVectors() {
+        try {
+            var kept = JSON.parse(window.sessionStorage.getItem(QUERY_VECTORS_KEY) || "{}");
+            return kept && typeof kept === "object" && !Array.isArray(kept) ? kept : {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    // (Kept by model and text: another model, or another export's, never
+    // gives its vectors for these pictures.)
+    function keptVector(text) {
+        var entry = vectors ? keptVectors()[vectors.model + "\n" + text] : null;
+        if (!entry || entry.model !== vectors.model || entry.dims !== vectors.dims) {
+            return null;
+        }
+        return SearchCore.queryVector(entry.vec, vectors.dims);
+    }
+
+    function keepVector(text, answer) {
+        var kept = keptVectors();
+        var key = answer.model + "\n" + text;
+        delete kept[key];
+        kept[key] = {model: answer.model, dims: answer.dims, vec: answer.vec};
+        var texts = Object.keys(kept);
+        texts.slice(0, Math.max(0, texts.length - MEANING_KEPT)).forEach(function (old) {
+            delete kept[old];
+        });
+        try {
+            window.sessionStorage.setItem(QUERY_VECTORS_KEY, JSON.stringify(kept));
+        } catch (error) {
+            // Not kept: a reload asks the server again.
+        }
+    }
+
+    // True while the meaning vector of the query searched now is on its way
+    // (the pictures it finds are still to come).
+    function meaningPending() {
+        if (!meaningOn() || state.by === "words") {
+            return false;
+        }
+        var text = queryText();
+        return Boolean(text) && !queryVectors[text] && text === queryWanted &&
+            Boolean(meaningTimer || meaningAsking);
+    }
+
+    function askMeaning(text) {
+        // (Not again for the query that just failed: the page renders it again
+        // and again, and would ask in a loop; word matches until the next one.)
+        if (text === queryWanted && (meaningTimer || meaningAsking ||
+                                     meaningState === "unavailable")) {
+            return;
+        }
+        queryWanted = text;
+        meaningTries = 0;
+        window.clearTimeout(meaningTimer);
+        meaningTimer = window.setTimeout(function () {
+            meaningTimer = 0;
+            fetchMeaning(text);
+        }, typing ? MEANING_DELAY : 0);
+    }
+
+    function rememberVector(text, vector) {
+        queryVectors[text] = vector;
+        queryOrder.push(text);
+        while (queryOrder.length > MEANING_CACHE) {
+            delete queryVectors[queryOrder.shift()];
+        }
+    }
+
+    function setMeaningState(value, again) {
+        if (meaningState !== value || again) {
+            meaningState = value;
+            if (result) {
+                renderControls();
+                renderHead();
+                renderEmpty();
+            }
+        }
+    }
+
+    function fetchMeaning(text) {
+        meaningAsking = true;
+        askingText = text;
+        if (!serverMode && !vectorsSettled) {
+            // An export: the vectors first (a reload may then find the
+            // query's vector kept for the tab), then its model.
+            wantVectors(function () {
+                if (askingText === text) {
+                    meaningAsking = false;
+                    if (text === queryWanted) {
+                        fetchMeaning(text);
+                    }
+                }
+            });
+            return;
+        }
+        if (!serverMode && !vectors) {
+            // (The export's vectors did not load: its model would find nothing.)
+            meaningAsking = false;
+            setMeaningState("unavailable");
+            restoreWhenSettled();
+            return;
+        }
+        if (!serverMode) {
+            var kept = keptVector(text);
+            if (kept) {
+                meaningAsking = false;
+                rememberVector(text, kept);
+                if (data && queryText() === text && state.by !== "words") {
+                    run({keepScroll: !restored});
+                }
+                restoreWhenSettled();
+                return;
+            }
+        }
+        SITE.queryVector(text, function (answer) {
+            if (askingText === text) {
+                meaningAsking = false;
+            }
+            answer = answer || {state: "unavailable"};
+            if (answer.state === "skipped") {
+                return;             // (another query is wanted now)
+            }
+            if (!vectors) {
+                if (meaningState === "loading") {
+                    setMeaningState("unavailable");
+                }
+                return;
+            }
+            if (answer.state === "ready") {
+                var vector = SearchCore.queryVector(answer.vec, vectors.dims);
+                if (!vector || answer.model !== vectors.model || answer.dims !== vectors.dims) {
+                    // Another model than the pictures' vectors were made
+                    // with: they must be made again first (Manage page;
+                    // an export with a model of its own is damaged).
+                    setMeaningState(serverMode ? "off" : "broken");
+                    restoreWhenSettled();
+                    return;
+                }
+                // (Kept also when another query is wanted by now.)
+                rememberVector(text, vector);
+                keepVector(text, answer);
+                if (text !== queryWanted) {
+                    return;
+                }
+                setMeaningState("");
+                if (data && queryText() === text && state.by !== "words") {
+                    run({keepScroll: !restored});
+                }
+                restoreWhenSettled();
+                return;
+            }
+            if (text !== queryWanted) {
+                return;             // another query since
+            }
+            if (answer.state === "ask") {
+                // Save-Data: the download waits for the visitor (renderHead).
+                meaningProgress = {loaded: 0, total: answer.bytes || 0};
+                setMeaningState("ask");
+                restoreWhenSettled();
+                return;
+            }
+            if (serverMode && (answer.state === "starting" || answer.state === "busy") &&
+                    meaningTries < MEANING_TRIES) {
+                meaningTries += 1;
+                if (answer.state === "starting") {
+                    setMeaningState("starting");
+                }
+                meaningTimer = window.setTimeout(function () {
+                    meaningTimer = 0;
+                    if (text === queryWanted) {
+                        fetchMeaning(text);
+                    }
+                }, MEANING_RETRY);
+                return;
+            }
+            // "off": the server cannot embed queries (not set up), or an
+            // export's model does not work in this browser; the switch
+            // goes. Otherwise word matches until the next query.
+            setMeaningState(answer.state !== "off" ? "unavailable" : serverMode ? "off"
+                : "broken");
+            if (result) {
+                renderEmpty();      // (no longer looking: see meaningPending)
+            }
+            restoreWhenSettled();
+        }, function (progress) {
+            // An export downloading its model (bytes of the download).
+            var before = Math.round(meaningProgress.loaded / 1048576);
+            meaningProgress = progress;
+            if (meaningState !== "loading" || Math.round(progress.loaded / 1048576) !== before) {
+                setMeaningState("loading", true);
+            }
+        });
+    }
+
+    // The visitor agreed to download an export's model (Save-Data was on).
+    function downloadMeaning() {
+        SITE.allowMeaningDownload();
+        meaningState = "";
+        queryWanted = "";
+        if (data) {
+            run({keepScroll: true});
+        }
+    }
+
+    // The meaning vectors, once loaded (and again when they change).
+    function useVectors(loaded) {
+        vectors = loaded || null;
+        if (data) {
+            data.index.setVectors(vectors);
+        }
+        if (vectors && meaningState === "off" && vectors.query) {
+            meaningState = "";
+        }
+        if (data) {
+            run({keepScroll: true});
+            // The viewer's "More like this" pictures go by the vectors now
+            // (it may have opened before they arrived: #id= in the address).
+            VIEWER.refreshInfo();
+        }
+    }
+
+    // A query that meaning can change: words to embed, or a similar: term.
+    function meaningMatters() {
+        return Boolean(queryText()) ||
+            /(^|\s)(similar|like):/i.test(state.q);
+    }
+
+    /* Load the meaning vectors (once; then callback, if given). An export
+       loads them only when a search or the viewer needs them (similar:,
+       "More like this", or a typed search by meaning): they are large. */
+    function wantVectors(callback) {
+        if (callback) {
+            if (vectorsSettled) {
+                callback();
+                return;
+            }
+            vectorsWaiting.push(callback);
+        }
+        if (vectorsAsked) {
+            return;
+        }
+        vectorsAsked = true;
+        SITE.loadVectors(function (loaded) {
+            vectorsSettled = true;
+            if (loaded) {
+                useVectors(loaded);
+            } else {
+                renderControls();
+            }
+            restoreWhenSettled();
+            var waiting = vectorsWaiting;
+            vectorsWaiting = [];
+            waiting.forEach(function (fn) {
+                fn();
+            });
+        });
+    }
+
+    /* The scroll position of a reload is restored once the results are
+       what they will be: the vectors have loaded and the query's vector
+       has come (or failed); at the latest after RESTORE_WAIT. */
+    function restoreWhenSettled() {
+        if (restored) {
+            return;
+        }
+        var waiting = meaningMatters() && ((vectorsAsked && !vectorsSettled) ||
+                                           Boolean(meaningTimer) || meaningAsking);
+        if (!waiting) {
+            window.clearTimeout(restoreTimer);
+            restoreScroll();
+        } else if (!restoreTimer) {
+            restoreTimer = window.setTimeout(restoreScroll, RESTORE_WAIT);
+        }
+    }
+
+    /* ---------- Looks ------------------------------------------------------------ */
+
+    // The look vectors, once loaded (and again when they change).
+    function useLooks(loaded) {
+        looks = loaded || null;
+        if (data) {
+            data.index.setLooks(looks);
+            run({keepScroll: true});
+            // The viewer's "Looks like this" goes by them now.
+            VIEWER.refreshInfo();
+        }
+        renderExampleButton();
+    }
+
+    /* Load the look vectors (once; then callback, if given). Only the
+       server's admin has them loaded at once (the example picture button
+       needs to know whether they can be searched by one); every other page
+       loads them when a search (look:) or the viewer needs them. */
+    function wantLooks(callback) {
+        if (callback) {
+            if (looksSettled) {
+                callback();
+                return;
+            }
+            looksWaiting.push(callback);
+        }
+        if (looksAsked) {
+            return;
+        }
+        looksAsked = true;
+        SITE.loadLooks(function (loaded) {
+            looksSettled = true;
+            if (loaded) {
+                useLooks(loaded);
+            } else if (data && lookQuery()) {
+                run({keepScroll: true});    // (look: then says why it finds no others)
+            }
+            var waiting = looksWaiting;
+            looksWaiting = [];
+            waiting.forEach(function (fn) {
+                fn();
+            });
+        });
+    }
+
+    // A query with a look: term.
+    function lookQuery() {
+        return /(^|\s)looks?:/i.test(state.q);
+    }
+
+    // The admin may search by an example picture here (the server can make its vector).
+    function exampleAllowed() {
+        return adminOn && serverMode && Boolean(looks && looks.query) &&
+            typeof window.URL !== "undefined" && typeof URL.createObjectURL === "function";
+    }
+
+    function renderExampleButton() {
+        if (exampleButton) {
+            exampleButton.hidden = !exampleAllowed();
+            byId("search-box").classList.toggle("has-example", !exampleButton.hidden);
+        }
+    }
+
+    // A small picture symbol (an inline SVG, made with DOM calls).
+    function pictureIcon() {
+        var ns = "http://www.w3.org/2000/svg";
+        var svg = document.createElementNS(ns, "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("width", "18");
+        svg.setAttribute("height", "18");
+        svg.setAttribute("aria-hidden", "true");
+        [["rect", {x: "3", y: "5", width: "18", height: "14", rx: "2", fill: "none",
+                   stroke: "currentColor", "stroke-width": "2"}],
+         ["circle", {cx: "9", cy: "10", r: "1.8", fill: "currentColor"}],
+         ["path", {d: "M4 18l5-5 3 3 3-4 5 6", fill: "none", stroke: "currentColor",
+                   "stroke-width": "2", "stroke-linejoin": "round"}]].forEach(function (part) {
+            var node = document.createElementNS(ns, part[0]);
+            Object.keys(part[1]).forEach(function (name) {
+                node.setAttribute(name, part[1][name]);
+            });
+            svg.appendChild(node);
+        });
+        return svg;
+    }
+
+    // The first picture among files (a FileList), or null.
+    function firstPicture(files) {
+        for (var k = 0; files && k < files.length; k++) {
+            var file = files[k];
+            if (/^image\//.test(file.type || "") ||
+                    /\.(jpe?g|png|webp|gif|bmp|tiff?|heic|heif|hif|avif)$/i.test(file.name || "")) {
+                return file;
+            }
+        }
+        return null;
+    }
+
+    function draggingFiles(event) {
+        var types = event.dataTransfer && event.dataTransfer.types;
+        return Boolean(types) && Array.prototype.indexOf.call(types, "Files") >= 0;
+    }
+
+    /* The picture button in the search box, a picture dropped anywhere on the
+       page, and a picture pasted: a search by that example picture. */
+    function setupExample() {
+        if (!adminOn || !serverMode) {
+            return;
+        }
+        var box = byId("search-box");
+        exampleInput = el("input", {type: "file", className: "example-input",
+                                    attrs: {accept: "image/*", tabindex: "-1",
+                                            "aria-hidden": "true"}});
+        exampleInput.hidden = true;
+        exampleInput.addEventListener("change", function () {
+            var file = exampleInput.files && exampleInput.files[0];
+            exampleInput.value = "";
+            if (file) {
+                useExample(file);
+            }
+        });
+        exampleButton = el("button", {type: "button", className: "icon-button example-button",
+                                      title: "Find pictures that look like a picture of yours " +
+                                          "(you can also drop or paste one here)",
+                                      attrs: {"aria-label": "Find pictures that look like..."}});
+        exampleButton.hidden = true;
+        exampleButton.appendChild(pictureIcon());
+        exampleButton.addEventListener("click", function () {
+            exampleInput.click();
+        });
+        box.insertBefore(exampleButton, byId("syntax-button"));
+        box.appendChild(exampleInput);
+        dropZone = el("div", {className: "drop-zone", attrs: {"aria-hidden": "true"}}, [
+            el("p", {text: "Drop a picture to find the pictures that look like it"})]);
+        dropZone.hidden = true;
+        document.body.appendChild(dropZone);
+        var depth = 0;
+        document.addEventListener("dragenter", function (event) {
+            if (exampleAllowed() && draggingFiles(event)) {
+                depth += 1;
+                dropZone.hidden = false;
+            }
+        });
+        document.addEventListener("dragover", function (event) {
+            if (exampleAllowed() && draggingFiles(event)) {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+            }
+        });
+        document.addEventListener("dragleave", function (event) {
+            if (draggingFiles(event)) {
+                depth = Math.max(0, depth - 1);
+                if (!depth) {
+                    dropZone.hidden = true;
+                }
+            }
+        });
+        document.addEventListener("drop", function (event) {
+            depth = 0;
+            dropZone.hidden = true;
+            if (!exampleAllowed() || !draggingFiles(event)) {
+                return;
+            }
+            event.preventDefault();
+            var file = firstPicture(event.dataTransfer.files);
+            if (file) {
+                useExample(file);
+            } else {
+                SHELL.toast("Drop a picture (JPEG, PNG, WebP, HEIC...).", "warn", 4);
+            }
+        });
+        document.addEventListener("paste", function (event) {
+            var file = exampleAllowed() && event.clipboardData && pasteForExample(event)
+                ? firstPicture(event.clipboardData.files) : null;
+            if (file) {
+                event.preventDefault();
+                useExample(file);
+            }
+        });
+    }
+
+    /* A paste may be an example picture: not into a text field (into the search
+       box only when the clipboard holds no text: apps put a picture of copied
+       text next to it), nor while the viewer is open (its Edit form). */
+    function pasteForExample(event) {
+        if (VIEWER.isOpen()) {
+            return false;
+        }
+        var target = event.target;
+        if (target && target.nodeType === 1) {
+            var tag = target.tagName;
+            if (target.isContentEditable || tag === "TEXTAREA" || tag === "SELECT" ||
+                    (tag === "INPUT" && target !== input)) {
+                return false;
+            }
+            if (target === input && Array.prototype.indexOf.call(
+                    event.clipboardData.types || [], "text/plain") >= 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Search by this picture (a File or Blob). Until the server has compared it,
+    // the search (and its chip) stay as they are, with a "Comparing" chip.
+    function useExample(file) {
+        if (file.size > EXAMPLE_MAX_BYTES) {
+            SHELL.toast("This picture is larger than 20 MB.", "warn", 5);
+            return;
+        }
+        cancelPending();
+        pendingExample = {file: file, url: URL.createObjectURL(file), starting: false, tries: 0};
+        askExample();
+        showExampleState();
+    }
+
+    function showExampleState() {
+        if (result) {
+            renderChips();
+            renderHead();
+        }
+    }
+
+    // Ask the server for the new picture's look vector (again while its model starts).
+    function askExample() {
+        var current = pendingExample;
+        if (!current) {
+            return;
+        }
+        SITE.lookQuery(current.file, function (answer) {
+            if (pendingExample !== current) {
+                return;         // (taken away, or another picture came meanwhile)
+            }
+            if (answer.state === "starting" && current.tries < EXAMPLE_TRIES) {
+                current.tries += 1;
+                current.starting = true;
+                showExampleState();
+                window.setTimeout(function () {
+                    if (pendingExample === current) {
+                        askExample();
+                    }
+                }, EXAMPLE_RETRY);
+                return;
+            }
+            pendingExample = null;
+            var vector = answer.state === "ready" && looks
+                ? SearchCore.queryVector(answer.vec, looks.dims) : null;
+            if (vector && answer.model === looks.model) {
+                releaseExample();
+                // (The server's small picture of it: the browser may not show the
+                // file itself, a HEIC say.)
+                example = {vec: vector, url: answer.thumb || current.url,
+                           blob: answer.thumb ? null : current.url};
+                if (answer.thumb) {
+                    URL.revokeObjectURL(current.url);
+                }
+                // A new picture is a new search: the words typed before go (the
+                // filters stay), and the closest pictures come first.
+                state.sort = "";
+                setQuery("");
+                return;
+            }
+            URL.revokeObjectURL(current.url);
+            SHELL.toast("Your picture could not be compared: " + (answer.state === "ready"
+                ? "the looks were made with other settings; rebuild them on the Manage page."
+                : answer.error || "the server did not say why."), "warn", 8);
+            showExampleState();
+        });
+    }
+
+    // Stop comparing the new picture.
+    function cancelPending() {
+        if (pendingExample) {
+            URL.revokeObjectURL(pendingExample.url);
+            pendingExample = null;
+        }
+    }
+
+    // Forget the example picture searched by (not one being compared).
+    function releaseExample() {
+        if (example && example.blob) {
+            URL.revokeObjectURL(example.blob);
+        }
+        example = null;
+    }
+
+    // Take the example pictures away (and search again, unless quiet).
+    function dropExample(quiet) {
+        var had = Boolean(example);
+        cancelPending();
+        releaseExample();
+        if (had && !quiet) {
+            changed();
+        }
+    }
+
+    // The picture in a chip; one the browser cannot show becomes a symbol.
+    function exampleImage(url, alt) {
+        var image = el("img", {src: url, alt: alt});
+        image.addEventListener("error", function () {
+            var icon = pictureIcon();
+            icon.setAttribute("class", "example-icon");
+            if (image.parentNode) {
+                image.parentNode.replaceChild(icon, image);
+            }
+        });
+        return image;
+    }
+
+    // The chip of the example picture: "Looks like: [picture]".
+    function exampleChip() {
+        var chip = el("button", {type: "button", className: "filter-chip example-chip",
+                                 title: "Search without this picture"}, [
+            el("span", {text: "Looks like:"}),
+            exampleImage(example.url, "your picture"),
+            el("span", {className: "filter-chip-x", text: "\u00d7", attrs: {"aria-hidden": "true"}})
+        ]);
+        chip.setAttribute("aria-label", "Looks like your picture: remove");
+        chip.addEventListener("click", function () {
+            dropExample(false);
+        });
+        return chip;
+    }
+
+    // The chip of a picture being compared: "Comparing: [picture]" (removing it stops).
+    function pendingChip() {
+        var chip = el("button", {type: "button", className: "filter-chip example-chip " +
+                                 "example-pending", title: "Do not search by this picture"}, [
+            el("span", {text: pendingExample.starting ? "Starting the image model for:"
+                : "Comparing:"}),
+            exampleImage(pendingExample.url, "your new picture"),
+            el("span", {className: "filter-chip-x", text: "\u00d7", attrs: {"aria-hidden": "true"}})
+        ]);
+        chip.setAttribute("aria-label", "Comparing your new picture: stop");
+        chip.addEventListener("click", function () {
+            cancelPending();
+            showExampleState();
+        });
+        return chip;
+    }
+
+    // Words, words and meaning (""), or meaning; remembered only when it is
+    // "words" chosen on the switch (see initialPreferences).
+    function setSearchBy(value, chosen) {
+        state.by = value;
+        if (chosen) {
+            SHELL.storageSet(BY_KEY, value === "words" ? "words" : "");
+        }
+        changed({top: false});
+    }
+
+    // Megabytes, for the download of an export's model.
+    function megabytes(value) {
+        return String(Math.round((value || 0) / 1048576));
+    }
+
+    // A note about search by meaning for the results head, or "".
+    function meaningNote() {
+        if (meaningState === "broken" && state.by !== "words" &&
+                queryText()) {
+            return "word matches only: search by meaning does not work in this browser";
+        }
+        if (!meaningOn() || state.by === "words" || !queryText()) {
+            return "";
+        }
+        if (meaningState === "starting") {
+            return "word matches for now: search by meaning is starting";
+        }
+        if (meaningState === "loading") {
+            return "word matches for now: loading search by meaning (" +
+                megabytes(meaningProgress.loaded) + " of " + megabytes(meaningProgress.total) +
+                " MB)";
+        }
+        if (meaningState === "unavailable") {
+            return serverMode ? "word matches only: search by meaning is unavailable"
+                : "word matches only: search by meaning could not load";
+        }
+        return "";
+    }
+
+    // The button that downloads an export's model when Save-Data is on.
+    function downloadButton(className) {
+        var button = el("button", {type: "button", className: className,
+                                   text: "Search by meaning (" + megabytes(meaningProgress.total) +
+                                       " MB)",
+                                   title: "Your browser asks to save data, so search by " +
+                                       "meaning is not downloaded by itself: this downloads it " +
+                                       "once (" + fmt.bytes(meaningProgress.total) + ")"});
+        button.addEventListener("click", downloadMeaning);
+        return button;
     }
 
     /* ---------- Searching -------------------------------------------------------- */
@@ -369,9 +1191,21 @@
         }
         checkPicked();
         dropStaleView();
-        var options = searchOptions();
-        options.timeline = true;
-        result = SearchCore.search(data.index, state.q, options);
+        if (!SITE.isStatic || /(^|\s)(similar|like):/i.test(state.q)) {
+            wantVectors();
+        }
+        if ((adminOn && serverMode) || lookQuery()) {
+            // (The server's admin at once, for the example picture button;
+            // everyone else when a search or the viewer needs them.)
+            wantLooks();
+        }
+        var search = searchOptions();
+        search.timeline = true;
+        result = SearchCore.search(data.index, state.q, search);
+        meaningOnly = {};
+        (result.byMeaning || []).forEach(function (id) {
+            meaningOnly[id] = true;
+        });
         buildDisplay();
         trimSelection();
         renderControls();
@@ -490,6 +1324,7 @@
     }
 
     function clearFilters() {
+        dropExample(true);
         state.filters = {};
         state.from = "";
         state.to = "";
@@ -508,6 +1343,7 @@
         window.history.replaceState({scrollY: window.scrollY, viewer: Boolean(saved.viewer)}, "",
                                     window.location.href);
         typing = false;
+        dropExample(true);
         state.filters = {};
         state.ids = "";
         state.from = "";
@@ -551,6 +1387,21 @@
         var badge = byId("facets-count");
         badge.textContent = String(count);
         badge.hidden = !count;
+        var by = byId("meaning-switch");
+        if (by) {
+            by.hidden = !meaningOn();
+            // (Shown but not used for a query without words: filters only,
+            // quoted phrases, similar:.)
+            var idle = !queryText();
+            by.title = idle && state.q ? "Search by meaning needs words to look for; filters, " +
+                "quoted phrases and similar: go by themselves" : "";
+            Array.prototype.forEach.call(by.querySelectorAll("button"), function (button) {
+                button.setAttribute("aria-pressed",
+                                    button.getAttribute("data-by") === (state.by || "")
+                                        ? "true" : "false");
+                button.disabled = idle;
+            });
+        }
         var select = byId("select-button");
         select.hidden = !adminOn || !data || !data.records.length;
         select.setAttribute("aria-pressed", selecting ? "true" : "false");
@@ -604,6 +1455,18 @@
             changed();
         });
         byId("surprise-button").addEventListener("click", surprise);
+        var by = byId("meaning-switch");
+        if (by) {
+            Array.prototype.forEach.call(by.querySelectorAll("button"), function (button) {
+                button.addEventListener("click", function () {
+                    var value = button.getAttribute("data-by") || "";
+                    if (value === (state.by || "")) {
+                        return;
+                    }
+                    setSearchBy(value, true);
+                });
+            });
+        }
         byId("group").addEventListener("change", function () {
             state.group = byId("group").checked;
             SHELL.storageSet(GROUP_KEY, state.group ? "" : "0");
@@ -1164,6 +2027,54 @@
             notes.push(["taken on " + today + " in earlier years",
                         today.slice(0, 3) + today.slice(today.indexOf(" "))]);
         }
+        if (result.meaning && result.meaning.mode === "similar") {
+            var origin = record(SearchCore.parse(state.q).terms.filter(function (term) {
+                return term.filter && term.filter.kind === "similar";
+            }).map(function (term) {
+                return term.filter.value;
+            })[0]);
+            if (origin) {
+                notes.push(["like \u201c" + (origin.t || origin.n || "this picture") + "\u201d",
+                            "like this picture"]);
+            }
+        }
+        if (result.meaning && result.meaning.mode === "look") {
+            var lookOrigin = record(SearchCore.parse(state.q).terms.filter(function (term) {
+                return term.filter && term.filter.kind === "look";
+            }).map(function (term) {
+                return term.filter.value;
+            })[0]);
+            if (lookOrigin) {
+                notes.push(["looking like \u201c" + (lookOrigin.t || lookOrigin.n ||
+                            "this picture") + "\u201d", "looking like this picture"]);
+            } else if (example && example.vec) {
+                // (Words typed after the picture choose among the pictures.)
+                notes.push([state.q ? "looking like your picture, among those matching " +
+                            "\u201c" + state.q + "\u201d" : "looking like your picture",
+                            "like your picture"]);
+            }
+        }
+        if (pendingExample) {
+            notes.push(pendingExample.starting
+                ? ["the image model is starting: your new picture is compared in a moment",
+                   "starting the image model"]
+                : ["comparing your new picture with the others...", "comparing..."]);
+        }
+        var found = (result.byMeaning || []).length;
+        if (found) {
+            // (Short on phones, where the line is shared: the badge is
+            // explained by the long form's title and the line below.)
+            notes.push([fmt.number(found) + " found by meaning (\u2248)",
+                        "\u2248 " + fmt.number(found)]);
+        }
+        var aside = meaningNote();
+        if (aside) {
+            notes.push([aside, meaningState === "loading" ? "loading meaning (" +
+                        megabytes(meaningProgress.loaded) + " of " +
+                        megabytes(meaningProgress.total) + " MB)"
+                        : meaningState === "broken" ? "words only" : "words only for now"]);
+        }
+        renderMeaningNotes();
         if (result.collapsed) {
             notes.push(fmt.plural(result.collapsed, "duplicate") + " grouped");
         }
@@ -1179,11 +2090,22 @@
             noteBox.appendChild(el("span", {className: "note-short", text: note[1] + " ",
                                             title: note[0]}));
         });
+        if (meaningState === "ask" && meaningOn() && state.by !== "words" &&
+                queryText()) {
+            noteBox.appendChild(downloadButton("button subtle small meaning-download"));
+        }
         var queryNotes = byId("query-notes");
         var warnings = (result.warnings || []).slice();
         if (droppedPicks) {
             warnings.push("The pictures picked on the map could not be found any more (the " +
                           "pictures have changed since): showing the whole search.");
+        }
+        if (looksSettled && !looks && result.meaning && result.meaning.mode === "look") {
+            // (look: with no look vectors here: only the picture itself is found.)
+            warnings.push("Looks like this needs the pictures' look vectors, and " +
+                          (SITE.isStatic ? "this site has none (an export has them with its " +
+                           "Looks option)." : adminOn ? "there are none yet (Update looks " +
+                           "on the Manage page makes them)." : "there are none here yet."));
         }
         queryNotes.textContent = warnings.join(" ");
         queryNotes.hidden = !warnings.length;
@@ -1213,6 +2135,54 @@
                                             text: fmt.number(count) + " on the map"}));
         }
         finishHead();
+    }
+
+    /* Under the results head: what search by meaning did when it matters,
+       with what to do about it (#meaning-notes). */
+    function renderMeaningNotes() {
+        var box = byId("meaning-notes");
+        if (!box) {
+            return;
+        }
+        clear(box);
+        var mode = result.meaning ? result.meaning.mode : "";
+        if (mode === "hybrid" && result.total && state.q &&
+                (result.byMeaning || []).length === result.total) {
+            // No picture has the words (a typo, say): the list is what
+            // meaning found, and a spelling that has matches is offered.
+            box.appendChild(document.createTextNode("No picture has these words; these are " +
+                                                    "the closest in meaning (\u2248)."));
+            var suggestion = SearchCore.suggest(data.index, state.q, searchOptions());
+            if (suggestion && suggestion.text && suggestion.text !== state.q) {
+                var tryLink = el("a", {href: chipUrl("q", suggestion.text),
+                                       text: suggestion.text});
+                tryLink.addEventListener("click", function (event) {
+                    event.preventDefault();
+                    setQuery(suggestion.text);
+                });
+                box.appendChild(el("span", {className: "did-you-mean"},
+                                   [" Did you mean ", tryLink, "?"]));
+            }
+        } else if (mode === "meaning") {
+            var options = searchOptions();
+            options.meaning = "words";
+            var words = SearchCore.search(data.index, state.q, options).total;
+            box.appendChild(document.createTextNode("By meaning only" + (words
+                ? ": " + fmt.plural(words, "picture") + " " + (words === 1 ? "has" : "have") +
+                  " these words. "
+                : ".")));
+            if (words) {
+                var target = linkState();
+                target.by = "";
+                var show = el("a", {href: SITE.searchUrl(target), text: "Show them first"});
+                show.addEventListener("click", function (event) {
+                    event.preventDefault();
+                    setSearchBy("", false);
+                });
+                box.appendChild(show);
+            }
+        }
+        box.hidden = !box.childNodes.length;
     }
 
     function finishHead() {
@@ -1283,6 +2253,12 @@
         var box = byId("active-filters");
         clear(box);
         var chips = [];
+        if (example) {
+            chips.push(exampleChip());
+        }
+        if (pendingExample) {
+            chips.push(pendingChip());
+        }
         var library = SHELL.library();
         if (library && data.names[library] && (SITE.libraryList || []).length > 1) {
             chips.push(chipButton("Library: " + data.names[library], function () {
@@ -1905,6 +2881,7 @@
         }
         var lines = [];
         var actions = [];
+        var looking = false;
         // (When no filter or option is what leaves nothing, nothing was
         // taken on this day: say so, not "check the spelling".)
         if (onThisDay() && state.q.replace(/^\s+|\s+$/g, "") === "on:today" &&
@@ -1924,9 +2901,37 @@
             lines.push(reason.text);
             actions.push(actionButton(reason.label, reason.run, index === 0));
         });
-        if (!reasons.length) {
-            var suggestion = state.q ? SearchCore.suggest(data.index, state.q, searchOptions())
-                : null;
+        // look: or an example picture: nothing looks close enough (no spelling advice).
+        var byLook = result.meaning && result.meaning.mode === "look";
+        var yours = byLook && !lookTermOnly() && Boolean(example && example.vec);
+        if (!reasons.length && byLook) {
+            var bare = lookTermOnly();
+            if (state.q.replace(/^\s+|\s+$/g, "") !== bare) {
+                lines.push("The words typed with " + (yours ? "your picture" : "it") +
+                           " (\u201c" + state.q + "\u201d) choose among the pictures " +
+                           "that look like it.");
+                actions.push(actionButton("Remove the words", function () {
+                    setQuery(bare);
+                }, true));
+            } else {
+                lines.push("Only pictures that look much like " + (yours ? "yours" : "it") +
+                           " are shown.");
+            }
+            var have = looks ? looks.ids.length : 0;
+            if (have < data.records.length) {
+                lines.push(fmt.number(have) + " of " + fmt.plural(data.records.length,
+                           "picture") + " have looks so far; the others cannot be found by " +
+                           "their looks yet.");
+            }
+        } else if (!reasons.length) {
+            var waiting = meaningNote() ? meaningState : "";
+            // (While the query's meaning is on its way, pictures may come in
+            // a moment: no spelling advice yet. The model may be busy, with
+            // an embed job say.)
+            looking = !(result.meaning && result.meaning.mode === "meaning") &&
+                waiting !== "starting" && waiting !== "loading" && meaningPending();
+            var suggestion = state.q && !looking
+                ? SearchCore.suggest(data.index, state.q, searchOptions()) : null;
             if (suggestion && suggestion.text && suggestion.text !== state.q) {
                 var tryLink = el("a", {href: chipUrl("q", suggestion.text), text: suggestion.text});
                 tryLink.addEventListener("click", function (event) {
@@ -1935,7 +2940,38 @@
                 });
                 lines.push(el("p", {className: "did-you-mean"}, ["Did you mean ", tryLink, "?"]));
             }
-            if (state.q) {
+            if (result.meaning && result.meaning.mode === "meaning") {
+                lines.push("Nothing is close enough in meaning.");
+                actions.push(actionButton("Search by words", function () {
+                    setSearchBy("words", false);
+                }, true));
+            } else if (waiting === "starting" || waiting === "loading") {
+                // (Not "check the spelling": pictures may come in a moment.)
+                lines.push("Search by meaning is " + (waiting === "loading" ? "loading" :
+                           "starting") + "; the pictures it finds appear here once its model " +
+                           "has loaded.");
+            } else if (meaningState === "ask" && meaningOn() && state.by !== "words" &&
+                       queryText()) {
+                lines.push("No picture has the words of \u201c" + state.q + "\u201d. Search by " +
+                           "meaning finds pictures that mean much the same; it downloads " +
+                           fmt.bytes(meaningProgress.total) + " once.");
+                actions.push(downloadButton("button primary"));
+            } else if (looking) {
+                lines.push("No picture has the words of \u201c" + state.q + "\u201d; the " +
+                           "pictures that mean much the same appear here in a moment.");
+            } else if (waiting === "unavailable") {
+                lines.push(serverMode ? "Search by meaning is unavailable right now, so only " +
+                           "the words were looked for. Try other words, or again later."
+                    : "Search by meaning could not load, so only the words were looked for. " +
+                      "Try other words.");
+            } else if (waiting === "broken") {
+                lines.push("Search by meaning does not work in this browser, so only the words " +
+                           "were looked for. Try other words.");
+            } else if (state.q && result.meaning && result.meaning.mode === "hybrid") {
+                // (Search by meaning ran too: no picture is close enough.)
+                lines.push("No picture has these words, and none is close enough in " +
+                           "meaning. Check the spelling, or describe it another way.");
+            } else if (state.q) {
                 lines.push("Check the spelling, or try fewer or more general words.");
             }
             if (activeFilterCount()) {
@@ -1947,8 +2983,21 @@
                        " not described yet; they can only be found by file name and date for " +
                        "now.");
         }
-        emptyBox(state.q ? "No pictures match \u201c" + state.q + "\u201d" : "No pictures match " +
-                 "these filters", lines, actions);
+        emptyBox(byLook && !reasons.length ? "No picture looks close enough to " +
+                     (yours ? "yours" : "this one")
+                 : looking ? "Looking for pictures by meaning\u2026"
+                 : state.q ? "No pictures match \u201c" + state.q + "\u201d"
+                     : yours ? "No pictures match these filters and look like yours"
+                     : "No pictures match these filters", lines, actions);
+    }
+
+    // The look: term of the query alone ("look:12"; "" when it has none).
+    function lookTermOnly() {
+        var term = SearchCore.parse(state.q).terms.filter(function (item) {
+            return item.kind === "filter" && !item.neg && item.filter &&
+                item.filter.kind === "look";
+        })[0];
+        return term ? "look:" + term.filter.value : "";
     }
 
     // A chosen value in words: a place with the places it is in.
@@ -2442,6 +3491,10 @@
 
     function tileLabel(rec, entry) {
         var parts = [VIEWER.altText(rec)];
+        if (rec.mv) {
+            var length = VIEWER.format.durationText(rec.dr);
+            parts.push(length ? "video, " + length : "video");
+        }
         var date = VIEWER.format.shortDate(rec.dk);
         if (date) {
             parts.push(date);
@@ -2451,6 +3504,9 @@
         }
         if (rec.h) {
             parts.push("hidden");
+        }
+        if (meaningOnly[entry.id]) {
+            parts.push("found by meaning");
         }
         return parts.join(", ");
     }
@@ -2491,8 +3547,18 @@
         if (rec.p === "360") {
             badges.appendChild(el("span", {className: "tile-badge", text: "360\u00b0"}));
         }
+        if (rec.mv) {
+            // A play sign and the length ("0:24").
+            var length = VIEWER.format.durationText(rec.dr);
+            badges.appendChild(el("span", {className: "tile-badge badge-video",
+                                           text: "\u25b6" + (length ? " " + length : "")}));
+        }
         if (rec.h) {
             badges.appendChild(el("span", {className: "tile-badge badge-hidden", text: "Hidden"}));
+        }
+        if (meaningOnly[entry.id]) {
+            badges.appendChild(el("span", {className: "tile-badge badge-meaning", text: "\u2248",
+                                           title: "Found by meaning"}));
         }
         if (badges.childNodes.length) {
             link.appendChild(badges);
@@ -3159,7 +4225,31 @@
             query: result && result.query ? result.query : state.q,
             libraryName: libraryName,
             similar: function (other) {
+                wantVectors();      // (an export loads them when first wanted)
                 return SearchCore.similar(data.index, other, 8, visibility());
+            },
+            moreLikeThis: function (other) {
+                whenSettled(function () {
+                    // (Best match: the closest pictures first, whatever the
+                    // sort of the search before.)
+                    state.sort = "";
+                    applyChip("q", "similar:" + other);
+                });
+            },
+            hasLook: function (other) {
+                wantLooks();        // (an export loads them when first wanted)
+                return data.index.hasLook(other);
+            },
+            looksLike: function (other) {
+                var options = visibility();
+                options.by = "look";
+                return SearchCore.similar(data.index, other, 8, options);
+            },
+            onLooksLike: function (other) {
+                whenSettled(function () {
+                    state.sort = "";
+                    applyChip("q", "look:" + other);
+                });
             },
             chipUrl: chipUrl,
             onChip: function (group, value) {
@@ -3295,7 +4385,7 @@
             run();
             openFromHash();
             writeUrl({id: hashId()});
-            restoreScroll();
+            restoreWhenSettled();
         });
     }
 
@@ -3310,6 +4400,20 @@
                 setData(loaded);
                 run({keepScroll: true});
             }
+            if (vectorsSettled) {
+                SITE.refreshVectors(function (changed) {
+                    if (changed && !VIEWER.isOpen()) {
+                        useVectors(changed.vectors);
+                    }
+                });
+            }
+            if (looksSettled) {
+                SITE.refreshLooks(function (changed) {
+                    if (changed && !VIEWER.isOpen()) {
+                        useLooks(changed.looks);
+                    }
+                });
+            }
         });
     }
 
@@ -3319,6 +4423,7 @@
         }
         keepView();
         setupControls();
+        setupExample();
         setupMapLink();
         arrival.query = SITE.searchState.params(urlState());
         renderControls();

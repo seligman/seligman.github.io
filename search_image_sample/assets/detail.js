@@ -70,22 +70,25 @@
             scrollPage: true,
             onState: function (state) {
                 reset.hidden = !state.pano && !state.zoomed;
+                // (A video does not zoom.)
+                zoomOut.hidden = zoomIn.hidden = Boolean(state.video);
             }
         });
         var tools = byId("detail-tools");
-        tools.appendChild(toolButton("viewer-zoom-out", "Zoom out (-)", "\u2212", function () {
+        var zoomOut = toolButton("viewer-zoom-out", "Zoom out (-)", "\u2212", function () {
             stage.zoomBy(1 / 1.5);
-        }));
-        tools.appendChild(toolButton("viewer-zoom-in", "Zoom in (+)", "+", function () {
+        });
+        var zoomIn = toolButton("viewer-zoom-in", "Zoom in (+)", "+", function () {
             stage.zoomBy(1.5);
-        }));
+        });
+        tools.appendChild(zoomOut);
+        tools.appendChild(zoomIn);
         var reset = toolButton("viewer-reset", "Reset the view (0)", "\u27f2", function () {
             stage.reset();
         });
         reset.hidden = true;
         tools.appendChild(reset);
-        stage.show(rec, {thumb: SITE.thumbUrl(rec), preview: SITE.previewUrl(rec),
-                         pano: SITE.panoUrl(rec)});
+        stage.show(rec, VIEWER.stageUrls(rec, detail));
 
         var visibility = {library: search.lib || "", hidden: adminOn && search.hidden,
                           sensitive: search.sensitive || undefined, junk: search.junk};
@@ -114,6 +117,26 @@
             similarUrl: function (id) {
                 return SITE.detailUrl(id, search);
             },
+            moreLikeThisUrl: function (id) {
+                return SITE.searchUrl({q: "similar:" + id, lib: search.lib,
+                                       sensitive: search.sensitive, junk: search.junk,
+                                       hidden: search.hidden});
+            },
+            hasLook: index ? function (id) {
+                return index.hasLook(id);
+            } : null,
+            looksLike: index ? function (id) {
+                var options = {by: "look"};
+                Object.keys(visibility).forEach(function (key) {
+                    options[key] = visibility[key];
+                });
+                return SearchCore.similar(index, id, 8, options);
+            } : null,
+            looksLikeUrl: function (id) {
+                return SITE.searchUrl({q: "look:" + id, lib: search.lib,
+                                       sensitive: search.sensitive, junk: search.junk,
+                                       hidden: search.hidden});
+            },
             get: function (id) {
                 return lookup[id] || null;
             },
@@ -126,6 +149,8 @@
                 if (data && data.records) {
                     data.index = SearchCore.prepare(data.records);
                     index = data.index;
+                    SITE.attachVectors(index);
+                    SITE.attachLooks(index);
                 }
                 document.title = (rec.t || rec.n || "Picture") + " - " +
                     (SITE.title || "Image Search");
@@ -136,6 +161,20 @@
             VIEWER.renderInfo(byId("detail-info"), rec, detail, context);
         }
         render();
+        if (index) {
+            // "More like this" by meaning, once the vectors are there.
+            SITE.attachVectors(index, function (vectors) {
+                if (vectors) {
+                    render();
+                }
+            });
+            // "Looks like this" too, once the look vectors are there.
+            SITE.attachLooks(index, function (looks) {
+                if (looks) {
+                    render();
+                }
+            });
+        }
         document.title = (rec.t || rec.n || "Picture") + " - " + (SITE.title || "Image Search");
         document.addEventListener("keydown", function (event) {
             var tag = event.target && event.target.tagName;
@@ -149,6 +188,14 @@
                     event.preventDefault();
                     edit.click();
                 }
+            } else if ((event.key === "m" || event.key === "M") &&
+                       byId("detail-info").querySelector(".info-like")) {
+                event.preventDefault();
+                byId("detail-info").querySelector(".info-like").click();
+            } else if ((event.key === "l" || event.key === "L") &&
+                       byId("detail-info").querySelector(".info-look")) {
+                event.preventDefault();
+                byId("detail-info").querySelector(".info-look").click();
             } else if (event.key === "+" || event.key === "=") {
                 stage.zoomBy(1.5);
             } else if (event.key === "-" || event.key === "_") {

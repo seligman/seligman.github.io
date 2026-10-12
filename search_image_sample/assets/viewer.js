@@ -8,6 +8,15 @@
        query      what was searched for (its words are highlighted)
        libraryName(id), similar(id) -> [ids], chipUrl(group, value),
        onChip(group, value)      a chip was clicked (in-page search)
+       moreLikeThis(id)          "More like this" (or M): search similar:<id>
+                                 in the page (without it, the button is a
+                                 link to the search page)
+       hasLook(id), looksLike(id) -> [ids], onLooksLike(id)  "Looks like
+                                 this" (or L): the button shows for a
+                                 picture with a look vector and searches
+                                 look:<id> (in the page with onLooksLike),
+                                 and a strip of the pictures that look most
+                                 like it
        onShow(id, position)      a picture is shown (the page keeps #id=)
        onClose(id)               the lightbox closed on picture id
        onHidden(ids, hidden)     pictures were hidden or shown again (admin)
@@ -16,7 +25,9 @@
                                  and opening it in the grid
        reviewUrl(id)             the Duplicates page for that stack (admin)
    VIEWER.close(), VIEWER.isOpen(), VIEWER.update(ids) (the result list
-   changed while open), VIEWER.current() (the id shown).
+   changed while open), VIEWER.refreshInfo() (draw the information pane
+   again: what similar(id) gives has changed), VIEWER.current() (the id
+   shown).
 
    VIEWER.Stage(box, options)  a zoomable picture (wheel, pinch,
        double-click, drag) or, for 360-degree photos, an interactive
@@ -28,9 +39,17 @@
        the large panorama of a 360-degree photo (SITE.panoUrl); the view
        starts with the preview, then loads the panorama and swaps it in
        once it has arrived (the preview stays if it cannot be loaded).
+       A video (rec.mv) plays in a <video> with its poster (the preview)
+       when VIEWER.stageUrls gives a video address and the browser can
+       play it (format.canPlayVideo; HEVC often not): otherwise the poster
+       stays with a note, and stage.videoDetail(detail) starts the player
+       when the full record says there is a playable copy.
+   VIEWER.stageUrls(rec, detail) the addresses stage.show wants.
    VIEWER.renderInfo(box, record, detail, context)  the information pane:
        title, date, place, camera, description and text with the search words
-       marked, clickable chips, quality, admin actions, "More like this".
+       marked, clickable chips, quality, admin actions, "More like this" (a
+       button that searches similar:<id>, M, and a strip of the closest
+       pictures) and "Looks like this" (look:<id>, L, and its strip).
        The admin can edit the title, description and tags there ("Edit",
        or E; Ctrl+Enter saves, Esc cancels): the record is changed in
        place and context.onEdited(id, detail) is told.
@@ -153,6 +172,88 @@ var VIEWER = (function () {
             unit += 1;
         }
         return (unit === 0 ? String(bytes) : bytes.toFixed(bytes < 10 ? 1 : 0)) + " " + units[unit];
+    }
+
+    // The length of a video: "0:24", "12:05", "1:02:03" ("" when unknown):
+    // whole seconds rounded down, as players show it, but at least "0:01".
+    function durationText(seconds) {
+        seconds = number(seconds);
+        if (seconds === null || seconds < 0) {
+            return "";
+        }
+        var total = Math.floor(seconds);
+        if (seconds > 0 && total < 1) {
+            total = 1;
+        }
+        var hours = Math.floor(total / 3600);
+        var minutes = Math.floor((total % 3600) / 60);
+        var rest = total % 60;
+        return (hours ? hours + ":" + two(minutes) : String(minutes)) + ":" + two(rest);
+    }
+
+    // Codec names as people know them.
+    var CODEC_NAMES = {h264: "H.264", hevc: "HEVC", h265: "HEVC", vp8: "VP8", vp9: "VP9",
+                       av1: "AV1", mpeg4: "MPEG-4", mpeg2video: "MPEG-2", mjpeg: "Motion JPEG",
+                       wmv3: "WMV", vc1: "VC-1", aac: "AAC", mp3: "MP3", opus: "Opus",
+                       pcm_s16le: "PCM", ac3: "AC-3"};
+
+    function codecName(codec) {
+        codec = String(codec || "");
+        return CODEC_NAMES[codec] || codec.toUpperCase();
+    }
+
+    /* Can this browser play a video record (rec.mv)? probe(type) is
+       HTMLMediaElement.canPlayType. H.264 (and an unknown codec: the
+       player says when it cannot) is tried; HEVC only when the browser
+       says it can decode it; VP8, VP9 and AV1 as WebM; other codecs
+       (MPEG-4 Part 2, WMV, ...) not. */
+    function canPlayVideo(rec, probe) {
+        var codec = rec && rec.vc ? String(rec.vc) : "";
+        var ask = function (type) {
+            try {
+                return Boolean(probe && probe(type));
+            } catch (error) {
+                return false;
+            }
+        };
+        if (!codec || codec === "h264") {
+            return true;
+        }
+        if (codec === "hevc" || codec === "h265") {
+            return ask("video/mp4; codecs=\"hvc1.1.6.L93.B0\"") ||
+                ask("video/mp4; codecs=\"hev1.1.6.L93.B0\"");
+        }
+        if (codec === "vp8" || codec === "vp9" || codec === "av1") {
+            return ask("video/webm; codecs=\"" + codec + "\"") ||
+                (codec === "av1" && ask("video/mp4; codecs=\"av01.0.05M.08\""));
+        }
+        return false;
+    }
+
+    // "0:24, HEVC, 30 fps, AAC sound" (joined by middle dots) for the information pane.
+    function videoFacts(rec, detail) {
+        var facts = detail && detail.video && typeof detail.video === "object" ? detail.video
+            : {};
+        var parts = [];
+        var length = durationText(detail && typeof detail.duration === "number" ? detail.duration
+            : rec && rec.dr);
+        if (length) {
+            parts.push(length);
+        }
+        var codec = facts.codec || (rec && rec.vc);
+        if (codec) {
+            parts.push(codecName(codec) + (facts.hdr ? " HDR" : ""));
+        }
+        var fps = number(facts.fps);
+        if (fps !== null && fps > 0) {
+            parts.push((Math.round(fps * 100) / 100) + " fps");
+        }
+        if (facts.audio_codec) {
+            parts.push(codecName(facts.audio_codec) + " sound");
+        } else if (detail && detail.video) {
+            parts.push("no sound");
+        }
+        return parts.join(" \u00b7 ");
     }
 
     /* Split text at highlight ranges ([[start, end], ...], sorted, not
@@ -337,6 +438,10 @@ var VIEWER = (function () {
         longDate: longDate,
         exposureParts: exposureParts,
         fileSize: fileSize,
+        durationText: durationText,
+        codecName: codecName,
+        canPlayVideo: canPlayVideo,
+        videoFacts: videoFacts,
         segments: segments,
         panoDrag: panoDrag,
         panoZoom: panoZoom,
@@ -700,6 +805,8 @@ var VIEWER = (function () {
         });
         this.canvas = null;
         this.pano = null;
+        this.video = null;                  // the <video> of a video record
+        this.pendingVideo = null;           // urls of a video waiting for a playable copy
         this.note = el("div", {className: "stage-note", hidden: true});
         this.busy = el("div", {className: "stage-busy", hidden: true, attrs: {"aria-hidden": "true"}});
         box.appendChild(this.img);
@@ -708,7 +815,7 @@ var VIEWER = (function () {
         this.rec = null;
         this.token = 0;
         this.cancelSharp = null;            // stops loading the large panorama (sharpen)
-        this.mode = "image";                // "image" or "pano"
+        this.mode = "image";                // "image", "pano" or "video"
         this.view = {yaw: 0, pitch: 0, fov: DEFAULT_FOV};
         this.zoom = 1;
         this.tx = 0;
@@ -759,7 +866,144 @@ var VIEWER = (function () {
         window.removeEventListener("resize", this.handlers.resize);
         this.dropSharp();
         this.dropPano();
+        this.dropVideo();
         this.token += 1;
+    };
+
+    // Stop a video and take its player away (its download stops too).
+    Stage.prototype.dropVideo = function () {
+        var video = this.video;
+        this.video = null;
+        this.pendingVideo = null;
+        this.box.classList.remove("is-video");
+        if (!video) {
+            return;
+        }
+        try {
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+        } catch (error) {
+            // (Already gone.)
+        }
+        if (video.parentNode) {
+            video.parentNode.removeChild(video);
+        }
+    };
+
+    // Seek a video by seconds (the arrow keys while the player has the
+    // focus); false when no video is shown.
+    Stage.prototype.seekBy = function (seconds) {
+        var video = this.video;
+        if (!video) {
+            return false;
+        }
+        var end = isFinite(video.duration) ? video.duration : Infinity;
+        try {
+            video.currentTime = Math.max(0, Math.min(end, (video.currentTime || 0) + seconds));
+        } catch (error) {
+            // (Not seekable yet.)
+        }
+        return true;
+    };
+
+    // Is a video playing (for Space)? Toggles play and pause; false when no video.
+    Stage.prototype.togglePlay = function () {
+        var video = this.video;
+        if (!video) {
+            return false;
+        }
+        if (video.paused || video.ended) {
+            var playing = video.play();
+            if (playing && typeof playing.catch === "function") {
+                playing.catch(function () {});
+            }
+        } else {
+            video.pause();
+        }
+        return true;
+    };
+
+    /* A video record (rec.mv): the poster (the preview) at once, then the
+       player when there is something this browser can play (urls.video,
+       format.canPlayVideo, or urls.playableCopy: the server sends an H.264
+       copy). Otherwise the poster stays with a note saying why; urls.original
+       (the admin's download of the original) is offered there. */
+    Stage.prototype.showVideo = function (rec, urls) {
+        this.mode = "video";
+        this.box.classList.add("is-video");
+        this.natural = {w: rec.w || 0, h: rec.hgt || 0};
+        this.img.hidden = false;
+        this.img.alt = altText(rec);
+        this.img.src = urls.preview || urls.thumb || "";
+        this.layout();
+        this.busy.hidden = true;
+        var probe = function (type) {
+            return document.createElement("video").canPlayType(type);
+        };
+        if (!urls.video) {
+            this.setNote(urls.videoNote || "Only a still frame of this video is shown here.");
+        } else if (urls.playableCopy || canPlayVideo(rec, probe)) {
+            this.startVideo(rec, urls);
+        } else {
+            this.pendingVideo = urls;
+            this.cannotPlay(rec, urls);
+        }
+        this.state();
+    };
+
+    Stage.prototype.cannotPlay = function (rec, urls) {
+        var codec = rec && rec.vc ? " (" + codecName(rec.vc) + ")" : "";
+        // (A download: a tab that cannot decode it would play only its sound.)
+        this.setNote("This browser can't play this video" + codec + ".", urls.original ? {
+            href: urls.original, text: "Download the original", download: true} : null);
+    };
+
+    Stage.prototype.startVideo = function (rec, urls) {
+        var self = this;
+        var token = this.token;
+        this.pendingVideo = null;
+        var video = el("video", {className: "stage-video",
+                                 attrs: {"aria-label": "Video: " + altText(rec)}});
+        video.controls = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        if (urls.preview || urls.thumb) {
+            video.poster = urls.preview || urls.thumb;
+        }
+        function failed() {
+            if (token !== self.token || self.video !== video) {
+                return;
+            }
+            self.dropVideo();
+            self.mode = "video";
+            self.box.classList.add("is-video");
+            self.img.hidden = false;
+            self.cannotPlay(rec, urls);
+        }
+        video.addEventListener("error", failed);
+        // A browser without the video's decoder may still "play" its sound,
+        // with no picture and no error.
+        video.addEventListener("loadedmetadata", function () {
+            if (!video.videoWidth) {
+                failed();
+            }
+        });
+        video.src = urls.video;
+        this.box.insertBefore(video, this.note);
+        this.video = video;
+        this.img.hidden = true;
+        this.setNote("");
+    };
+
+    // The full record of the video shown has arrived: a playable copy may
+    // now let it play.
+    Stage.prototype.videoDetail = function (detail) {
+        var urls = this.pendingVideo;
+        if (urls && detail && detail.playable_copy && this.rec && detail.id === this.rec.i) {
+            this.startVideo(this.rec, urls);
+        }
     };
 
     Stage.prototype.dropPano = function () {
@@ -773,15 +1017,23 @@ var VIEWER = (function () {
         this.canvas = null;
     };
 
-    Stage.prototype.setNote = function (text) {
+    // A note over the picture; link ({href, text, download}) adds a link after it.
+    Stage.prototype.setNote = function (text, link) {
         this.note.textContent = text || "";
+        this.note.classList.toggle("has-link", Boolean(link));
+        if (link) {
+            this.note.appendChild(document.createTextNode(" "));
+            this.note.appendChild(el("a", {href: link.href, text: link.text,
+                                           attrs: link.download ? {download: ""}
+                                               : {target: "_blank", rel: "noopener"}}));
+        }
         this.note.hidden = !text;
     };
 
     Stage.prototype.state = function () {
         if (this.options.onState) {
             this.options.onState({zoomed: this.zoom > 1.01, pano: this.mode === "pano",
-                                  zoom: this.zoom});
+                                  zoom: this.zoom, video: this.mode === "video"});
         }
     };
 
@@ -791,13 +1043,15 @@ var VIEWER = (function () {
        panorama (urls.pano) loaded, to be swapped in when it has arrived
        (see sharpen): so it does not slow the preview down, and a browser
        that cannot show the view (or nothing wider than the preview) never
-       asks for it. */
+       asks for it. A video record plays (see showVideo): urls.video,
+       urls.playableCopy, urls.original, urls.videoNote (VIEWER.stageUrls). */
     Stage.prototype.show = function (rec, urls) {
         var self = this;
         var token = ++this.token;
         this.rec = rec;
         this.dropSharp();
         this.dropPano();
+        this.dropVideo();
         if (!rec) {
             this.img.removeAttribute("src");
             this.busy.hidden = true;
@@ -811,6 +1065,10 @@ var VIEWER = (function () {
         this.box.classList.remove("is-pano");
         this.box.removeAttribute("data-texture-width");
         this.setNote("");
+        if (rec.mv) {
+            this.showVideo(rec, urls || {});
+            return;
+        }
         this.natural = {w: rec && rec.w ? rec.w : 0, h: rec && rec.hgt ? rec.hgt : 0};
         this.img.alt = altText(rec);
         this.img.src = urls.thumb || urls.preview || "";
@@ -1039,7 +1297,7 @@ var VIEWER = (function () {
 
     // Zoom to `zoom` keeping the stage point (x, y) where it is.
     Stage.prototype.zoomTo = function (zoom, x, y) {
-        if (this.mode === "pano") {
+        if (this.mode === "pano" || this.mode === "video") {
             return;
         }
         var size = this.size();
@@ -1088,7 +1346,8 @@ var VIEWER = (function () {
         if (event.button !== undefined && event.button !== 0 && event.pointerType === "mouse") {
             return;
         }
-        if (event.target.closest && event.target.closest("button, a")) {
+        // (A video's player takes its own clicks and drags.)
+        if (event.target.closest && event.target.closest("button, a, video")) {
             return;
         }
         try {
@@ -1192,7 +1451,8 @@ var VIEWER = (function () {
         var p = this.point(event);
         var dx = p.x - g.startX;
         var dy = p.y - g.startY;
-        if (g.touch && this.mode === "image" && this.zoom <= 1.01) {
+        if (g.touch && (this.mode === "image" || (this.mode === "video" && !this.video)) &&
+                this.zoom <= 1.01) {
             this.place();
             if (g.moved && Math.abs(dx) > SWIPE_DISTANCE && Math.abs(dx) > 1.5 * Math.abs(dy) &&
                     this.options.onSwipe) {
@@ -1227,7 +1487,8 @@ var VIEWER = (function () {
     };
 
     Stage.prototype.doubleClick = function (event) {
-        if (event.target.closest && event.target.closest("button, a")) {
+        if (this.mode === "video" ||
+                (event.target.closest && event.target.closest("button, a"))) {
             return;
         }
         if (this.tappedTwice && Date.now() - this.tappedTwice < 800) {
@@ -1241,8 +1502,10 @@ var VIEWER = (function () {
 
     Stage.prototype.wheel = function (event) {
         // A stage in a page: the wheel scrolls the page, unless Ctrl is
-        // held (a touchpad pinch too) or the picture is zoomed in.
-        if (this.options.scrollPage && !event.ctrlKey && !this.isZoomed()) {
+        // held (a touchpad pinch too) or the picture is zoomed in. A video
+        // does not zoom.
+        if ((this.options.scrollPage && !event.ctrlKey && !this.isZoomed()) ||
+                this.mode === "video") {
             return;
         }
         event.preventDefault();
@@ -1291,7 +1554,27 @@ var VIEWER = (function () {
     var SENSITIVE = {suggestive: "Suggestive", explicit: "Explicit", graphic: "Graphic"};
     var FLAGS = {blurry: "Blurry", dark: "Dark", overexposed: "Overexposed",
                  accidental: "Accidental", screen_photo: "Photo of a screen"};
-    var SOURCES = {filename: "from the file name", mtime: "the file's date; no capture date"};
+    var SOURCES = {filename: "from the file name", mtime: "the file's date; no capture date",
+                   video: "from the video"};
+
+    /* The addresses Stage.show wants for a record (detail: its full record,
+       when it is known): thumb, preview, pano, and for a video video (the
+       player's source, or null), playableCopy (the server sends an H.264
+       copy), original (the admin's download of the original) and videoNote
+       (why only the poster shows). */
+    function stageUrls(rec, detail) {
+        var urls = {thumb: SITE.thumbUrl(rec), preview: SITE.previewUrl(rec),
+                    pano: SITE.panoUrl(rec)};
+        if (rec && rec.mv) {
+            urls.video = SITE.videoUrl ? SITE.videoUrl(rec) : null;
+            urls.playableCopy = Boolean(detail && detail.playable_copy);
+            urls.original = admin() ? SITE.imageUrl(rec) : null;
+            if (!urls.video) {
+                urls.videoNote = "Only a still frame of this video is published here.";
+            }
+        }
+        return urls;
+    }
 
     function section(title, body, className) {
         return el("section", {className: "info-section" + (className ? " " + className : "")}, [
@@ -1856,8 +2139,10 @@ var VIEWER = (function () {
     /* Fill box with the information about rec (a compact record); detail
        is the full record when it has arrived (server: /api/image), else
        null. context: query, libraryName(id), chipUrl, onChip, similar(id),
-       similarUrl(id), onSimilar(id), onHidden, detailUrl(id), inPage
-       (true in the lightbox), expandedText. */
+       similarUrl(id), onSimilar(id), moreLikeThisUrl(id), onMoreLikeThis(id),
+       hasLook(id), looksLike(id), looksLikeUrl(id), onLooksLike(id), onLook(id) (a
+       picture of the Looks like this strip opens),
+       onHidden, detailUrl(id), inPage (true in the lightbox), expandedText. */
     function renderInfo(box, rec, detail, context) {
         context = context || {};
         if (isEditing(box)) {
@@ -1880,6 +2165,10 @@ var VIEWER = (function () {
         var badges = el("div", {className: "info-badges"});
         if (rec.p === "360") {
             badges.appendChild(badge("360\u00b0 photo", "is-360"));
+        }
+        if (rec.mv) {
+            var length = durationText(rec.dr);
+            badges.appendChild(badge("Video" + (length ? " \u00b7 " + length : ""), "is-video"));
         }
         if (rec.h) {
             badges.appendChild(badge("Hidden", "is-hidden"));
@@ -1916,6 +2205,7 @@ var VIEWER = (function () {
             ["Place", placeFact(rec, context)],
             ["Camera", rec.cm ? chip(rec.cm, "camera", rec.cm, context, "More from this camera") : ""],
             ["Settings", exposure + (lens ? (exposure ? " \u00b7 " : "") + lens : "")],
+            ["Video", rec.mv ? videoFacts(rec, detail) : ""],
             ["Library", libraryName],
             ["File", fileName],
             ["Folder", folder],
@@ -1933,10 +2223,11 @@ var VIEWER = (function () {
             // Not described: what can be searched is the file name, date and
             // camera -- and the owner's words, when there are some.
             var own = rec.t || rec.d || (rec.g && rec.g.length);
+            var what = rec.mv ? "video" : "picture";
             box.appendChild(el("p", {className: "info-note", text: !own
-                ? "This picture has not been described yet, so only its file name, date " +
-                  "and camera can be searched."
-                : "The AI model has not described this picture yet; " +
+                ? "This " + what + " has not been described yet, so only its file name, " +
+                  "date and camera can be searched."
+                : "The AI model has not described this " + what + " yet; " +
                   (admin() ? "your" : "its") + " title, description and tags are searched " +
                   "with its file name, date and camera."}));
         }
@@ -2050,7 +2341,13 @@ var VIEWER = (function () {
 
         var actions = el("div", {className: "info-actions"});
         var original = window.SITE ? SITE.imageUrl(rec) : null;
-        if (original) {
+        if (original && rec.mv && !SITE.isStatic) {
+            // A video's original is a download (the server sends it as one):
+            // a tab that cannot decode it would play only its sound.
+            actions.appendChild(el("a", {className: "button small", href: original,
+                                         text: "Download the original",
+                                         attrs: {download: ""}}));
+        } else if (original) {
             actions.appendChild(el("a", {className: "button small", href: original, target: "_blank",
                                          rel: "noopener",
                                          text: SITE.originalLabel || "Open the original"}));
@@ -2058,6 +2355,38 @@ var VIEWER = (function () {
         if (context.inPage && context.detailUrl) {
             actions.appendChild(el("a", {className: "button small", href: context.detailUrl(rec.i),
                                          text: "Details page"}));
+        }
+        var likeUrl = context.moreLikeThisUrl && (rec.ds || rec.t)
+            ? context.moreLikeThisUrl(rec.i) : null;
+        if (likeUrl) {
+            var like = el("a", {className: "button small info-like", href: likeUrl,
+                                text: "More like this",
+                                title: "Search for pictures like this one (M)"});
+            like.addEventListener("click", function (event) {
+                if (!context.onMoreLikeThis || event.button !== 0 || event.ctrlKey ||
+                        event.metaKey || event.shiftKey) {
+                    return;
+                }
+                event.preventDefault();
+                context.onMoreLikeThis(rec.i);
+            });
+            actions.appendChild(like);
+        }
+        var lookUrl = context.looksLikeUrl && context.hasLook && context.hasLook(rec.i)
+            ? context.looksLikeUrl(rec.i) : null;
+        if (lookUrl) {
+            var look = el("a", {className: "button small info-look", href: lookUrl,
+                                text: "Looks like this",
+                                title: "Search for pictures that look like this one (L)"});
+            look.addEventListener("click", function (event) {
+                if (!context.onLooksLike || event.button !== 0 || event.ctrlKey ||
+                        event.metaKey || event.shiftKey) {
+                    return;
+                }
+                event.preventDefault();
+                context.onLooksLike(rec.i);
+            });
+            actions.appendChild(look);
         }
         if (actions.childNodes.length) {
             box.appendChild(actions);
@@ -2093,6 +2422,35 @@ var VIEWER = (function () {
             });
             box.appendChild(section("More like this", strip, "info-similar-section"));
         }
+        var alike = context.looksLike ? context.looksLike(rec.i) : [];
+        if (alike && alike.length) {
+            box.appendChild(section("Looks like this", lookStrip(alike, context),
+                                    "info-similar-section info-looks-section"));
+        }
+    }
+
+    // The "Looks like this" strip: thumbnails of pictures (ids) that open in the viewer
+    // (context.onLook; without it, the links go to their pages).
+    function lookStrip(ids, context) {
+        var strip = el("div", {className: "info-similar"});
+        ids.forEach(function (id) {
+            var other = context.get ? context.get(id) : null;
+            var link = el("a", {className: "similar-item",
+                                href: context.similarUrl ? context.similarUrl(id) : "#",
+                                title: other ? altText(other) : ""});
+            link.appendChild(el("img", {src: SITE.thumbUrl(other || id),
+                                        alt: other ? altText(other) : "", loading: "lazy"}));
+            link.addEventListener("click", function (event) {
+                if (!context.onLook || event.button !== 0 || event.ctrlKey ||
+                        event.metaKey || event.shiftKey) {
+                    return;
+                }
+                event.preventDefault();
+                context.onLook(id);
+            });
+            strip.appendChild(link);
+        });
+        return strip;
     }
 
     /* ---------- Lightbox ----------------------------------------------------- */
@@ -2175,6 +2533,8 @@ var VIEWER = (function () {
             onState: function (state) {
                 root.classList.toggle("is-pano", state.pano);
                 reset.hidden = !state.pano && !state.zoomed;
+                // (A video does not zoom.)
+                zoomIn.hidden = zoomOut.hidden = Boolean(state.video);
             }
         });
         close.addEventListener("click", function () {
@@ -2223,6 +2583,20 @@ var VIEWER = (function () {
             (target && target.isContentEditable);
     }
 
+    /* Does Space play and pause the video shown, with the focus on target?
+       On the viewer itself and its own buttons (close, zoom, information,
+       previous, next: the viewer opens with the focus on Close); not on
+       the buttons and links of the information pane, which Space presses. */
+    function viewerSpace(target) {
+        if (!target || target === lightbox.root || target === document.body) {
+            return true;
+        }
+        var own = [lightbox.close, lightbox.zoomIn, lightbox.zoomOut, lightbox.reset,
+                   lightbox.info, lightbox.prev, lightbox.next];
+        return own.indexOf(target) >= 0 ||
+            !/^(BUTTON|A|SUMMARY)$/.test(target.tagName || "");
+    }
+
     function keydown(event) {
         if (!lightbox || lightbox.root.hidden || event.ctrlKey || event.metaKey || event.altKey) {
             return;
@@ -2242,6 +2616,19 @@ var VIEWER = (function () {
             // (While the edit form is open the keys work in it: an arrow on
             // its Save button never leaves the picture.)
             return;
+        } else if (event.target && event.target.tagName === "VIDEO" &&
+                   (key === "ArrowLeft" || key === "ArrowRight")) {
+            // The player has the keyboard focus: the arrows seek (5 s).
+            event.preventDefault();
+            lightbox.stage.seekBy(key === "ArrowLeft" ? -5 : 5);
+        } else if (event.target && event.target.tagName === "VIDEO" &&
+                   !/^[iIeEmMlL]$/.test(key)) {
+            // (Space, Home, End and the rest: the player's own; I, E, M and L
+            // are the viewer's, as the players use none of them.)
+            return;
+        } else if (key === " " && lightbox.stage.video && viewerSpace(event.target)) {
+            event.preventDefault();
+            lightbox.stage.togglePlay();
         } else if (key === "ArrowLeft" || key === "ArrowRight") {
             event.preventDefault();
             step(key === "ArrowLeft" ? -1 : 1);
@@ -2257,6 +2644,12 @@ var VIEWER = (function () {
             if (edit) {
                 edit.click();
             }
+        } else if ((key === "m" || key === "M") && lightbox.pane.querySelector(".info-like")) {
+            event.preventDefault();
+            lightbox.pane.querySelector(".info-like").click();
+        } else if ((key === "l" || key === "L") && lightbox.pane.querySelector(".info-look")) {
+            event.preventDefault();
+            lightbox.pane.querySelector(".info-look").click();
         } else if (key === "+" || key === "=") {
             lightbox.stage.zoomBy(1.5);
         } else if (key === "-" || key === "_") {
@@ -2341,6 +2734,25 @@ var VIEWER = (function () {
             onSimilar: function (id) {
                 show(id, "More like this");
             },
+            onLook: function (id) {
+                show(id, "Looks like this");
+            },
+            moreLikeThisUrl: function (id) {
+                return window.SITE ? SITE.searchUrl({q: "similar:" + id}) : null;
+            },
+            onMoreLikeThis: options.moreLikeThis ? function (id) {
+                closeLightbox();
+                options.moreLikeThis(id);
+            } : null,
+            hasLook: options.hasLook,
+            looksLike: options.looksLike,
+            looksLikeUrl: function (id) {
+                return window.SITE ? SITE.searchUrl({q: "look:" + id}) : null;
+            },
+            onLooksLike: options.onLooksLike ? function (id) {
+                closeLightbox();
+                options.onLooksLike(id);
+            } : null,
             onHidden: function (ids, hidden) {
                 if (options.onHidden) {
                     options.onHidden(ids, hidden);
@@ -2418,8 +2830,7 @@ var VIEWER = (function () {
         lightbox.title.textContent = rec.t || rec.n || "";
         lightbox.prev.disabled = inList ? lightbox.index <= 0 : false;
         lightbox.next.disabled = inList ? lightbox.index >= lightbox.ids.length - 1 : false;
-        lightbox.stage.show(rec, {thumb: SITE.thumbUrl(rec), preview: SITE.previewUrl(rec),
-                                  pano: SITE.panoUrl(rec)});
+        lightbox.stage.show(rec, stageUrls(rec, null));
         renderPane(rec, null);
         showStackNote(rec);
         var token = ++lightbox.detailToken;
@@ -2427,6 +2838,8 @@ var VIEWER = (function () {
             SITE.loadRecord(id, function (detail) {
                 if (lightbox && token === lightbox.detailToken && detail) {
                     renderPane(rec, detail);
+                    // (A video may have a playable copy.)
+                    lightbox.stage.videoDetail(detail);
                 }
             });
         }
@@ -2560,14 +2973,28 @@ var VIEWER = (function () {
         keepFocus();
     }
 
+    // The information pane of the picture shown, drawn again (not while
+    // an edit is open in it).
+    function refreshInfo() {
+        if (!lightbox || lightbox.root.hidden || isEditing(lightbox.pane)) {
+            return;
+        }
+        var rec = record(lightbox.id);
+        if (rec) {
+            renderPane(rec, lightbox.detail);
+        }
+    }
+
     return {
         format: format,
         Stage: Stage,
+        stageUrls: stageUrls,
         renderInfo: renderInfo,
         altText: altText,
         open: open,
         close: closeLightbox,
         update: update,
+        refreshInfo: refreshInfo,
         isOpen: function () {
             return Boolean(lightbox && !lightbox.root.hidden);
         },

@@ -20,6 +20,49 @@
                                    compact record first and add this.
      SITE.loadLocations(callback)  [{id, lat, lon}] or null.
      SITE.compactRecord(detail)    a full record as a compact search record.
+     SITE.loadVectors(callback)    the meaning vectors of the pictures, as
+                                   SearchCore.decodeVectors makes them
+                                   ({model, dims, query, ids, data}), or
+                                   null when there are none (server:
+                                   /api/vectors; an export: the files that
+                                   manifest.vectors lists, made with its
+                                   "similar" option). Loaded once per page;
+                                   SITE.refreshVectors(callback) asks the
+                                   server again: callback({vectors}) when
+                                   they changed, callback(null) when not.
+     SITE.queryVector(text, callback, progress)  the meaning vector of
+                                   what was typed: callback({state: "ready",
+                                   model, dims, vec (base64)}) or callback({
+                                   state: "starting" (ask again soon) | "off"
+                                   | "unavailable" | "busy", error}). The
+                                   server asks /api/embed. An export with the
+                                   query model (manifest.meaning, see below)
+                                   runs it in the page; without one it says
+                                   "off".
+     SITE.meaningInBrowser()       true when an export ships its query model
+     SITE.loadLooks(callback)      the look vectors of the pictures ("Looks
+                                   like this", see looks.py), decoded like
+                                   loadVectors' ({model, dims, query, ids,
+                                   data}), or null when there are none
+                                   (server: /api/looks; an export: the files
+                                   manifest.looks lists, made with its
+                                   "looks" option). query: the admin can
+                                   search by an example picture with them.
+                                   SITE.refreshLooks(callback) asks the
+                                   server again, as refreshVectors does;
+                                   SITE.attachLooks(index, callback) sets
+                                   them on a SearchCore index (setLooks).
+     SITE.lookQuery(blob, callback)  the look vector of an example picture
+                                   (a File or Blob), made by the server's
+                                   image model (admin only, POST
+                                   /api/looks/query; the picture is never
+                                   kept): callback({state: "ready", model,
+                                   dims, vec (base64), matches, thumb (a
+                                   data: URL of a small JPEG of it, or
+                                   null)}) or
+                                   callback({state: "starting" (ask again
+                                   soon) | "off" | "unavailable" | "error",
+                                   error}). An export says "off".
 
    Addresses (state: a search state, see below; may be left out)
      SITE.searchUrl(state, id)     the search page (with the viewer open on id)
@@ -32,17 +75,45 @@
                                    photo for the 360 view, or null (not a 360
                                    photo, or an export without panoramas)
      SITE.imageUrl(record)         the original (or what an export ships), or null
+     SITE.videoUrl(record)         a video (rec.mv) to play: /video/<id> (its
+                                   playable copy when there is one, else the
+                                   original), or an export's videos/<id>.mp4
+                                   (rec.vf); null for pictures and for videos
+                                   an export holds only the poster of
      SITE.tileUrl(z, x, y), SITE.tilesMax(), SITE.tileSize()   map tiles
 
    SITE.shuffleSeed(renew) is the seed of the "shuffle" sort: one per
    browser tab (a new one with renew).
+   SITE.attachVectors(index, callback) sets the meaning vectors on a
+   SearchCore index (index.setVectors) once they are loaded, then calls
+   callback(vectors or null).
+
+   Search by meaning in an export (its "meaning" option: manifest.meaning
+   {id, dims, model, parts, bytes, gzip, license, credit, assets}): nothing
+   of it loads until queryVector is first called. Then assets/embed-kernel.js
+   (if it fails, the engine runs in plain JavaScript) and embed-engine.js are
+   added, and the engine (EMBED.load) adds the model files one at a time,
+   reporting progress({loaded, total}) in bytes of the download
+   (manifest.meaning.gzip). Once it has loaded, it checks itself: it embeds
+   the probe texts the server embedded and compares (a cosine of at least
+   MEANING_SAME); a browser that makes other vectors, or lacks what the
+   engine needs, searches by words only ("off" from then on, with one
+   console warning; the page says so). A query asked for while it loads
+   is the one embedded when it is ready (an earlier one hears "skipped").
+   With Save-Data on (navigator.connection.saveData) nothing is downloaded
+   until the visitor agrees: queryVector answers {state: "ask", bytes}, and
+   SITE.allowMeaningDownload() records the choice for the site (local
+   storage) and asks again. The vectors of an export with the model carry
+   its id (vectors.model) and query is true, like the server's when it can
+   embed queries.
 
    SITE.title is the name of the site ("Image Search", or an export's
    title); SITE.originalLabel the words of the link to SITE.imageUrl.
 
    Search state in the address (SITE.searchState)
      read(search)  -> {q, lib, sort, filters: {group: [values]}, group,
-                       size, hidden, junk, sensitive, ids, view, from, to}
+                       size, hidden, junk, sensitive, ids, view, from, to,
+                       by}
                        from a query string (default: the page's)
      params(state) -> the query string for a state ("" when all default)
      The facet selections use the group names of SearchCore.FACETS as
@@ -52,7 +123,9 @@
      ("lat,lon,zoom"), so the search page can lead back to the same place.
      The map itself never takes ids (mapUrl leaves them out). from and to
      are the timeline's choice of dates (SearchCore's range option:
-     "YYYY", "YYYY-MM" or "YYYY-MM-DD").
+     "YYYY", "YYYY-MM" or "YYYY-MM-DD"). by is how words are looked for:
+     "words", "meaning", or "" (words and meaning, SearchCore's meaning
+     option).
 
    SITE.idList.encode(ids, records) -> the ids value for a list of picture
      ids; SITE.idList.decode(text, records) -> {ids: [...], stale} (stale:
@@ -63,13 +136,18 @@
    A static export (export.py) writes data/manifest.js
    (window.SEARCH_DATA_MANIFEST = {shards: [...], details: [...],
    libraries, locations, ...}), index shards (SEARCH_DATA.push([...records]))
-   and detail shards (SEARCH_DATA.detail({id: details})), and with the map
-   data/locations.js (SEARCH_DATA.locations([{id, lat, lon}])). They are
+   and detail shards (SEARCH_DATA.detail({id: details})), with the map
+   data/locations.js (SEARCH_DATA.locations([{id, lat, lon}])) and with the
+   "similar" option vector files (SEARCH_VECTORS.push({dims, ids, data}),
+   listed in manifest.vectors, loaded only when a page wants them) and with
+   the "looks" option look vector files (SEARCH_LOOKS.push({dims, ids,
+   data, model}), manifest.looks, loaded the same way). They are
    loaded with <script> tags (never fetch), so the pages also work when
    opened from disk. The details of a picture are in the detail shard
    detailShard() names, which is loaded when they are first wanted. An
    exported picture is images/<id>.jpg, or images/<id>.<rec.ix>; one with
-   rec.pn has a large panorama in panos/<id>.jpg. The data files are asked
+   rec.pn has a large panorama in panos/<id>.jpg, one with rec.vf a video in
+   videos/<id>.mp4. The data files are asked
    for with the hash of their contents (manifest.versions, and the page's
    dataVersion for manifest.js), so a browser never mixes files of two
    exports from its cache. When a data file cannot be loaded, the next
@@ -110,6 +188,7 @@ var SITE = (function () {
     var SORTS = ["relevance", "newest", "oldest", "name", "quality", "shuffle"];
     var SIZES = ["s", "m", "l"];
     var SENSITIVE = ["show", "strict"];
+    var BY = ["words", "meaning"];
     // At most this many values per facet group are taken from an address.
     var MAX_VALUES = 50;
 
@@ -123,7 +202,8 @@ var SITE = (function () {
 
     function emptyState() {
         return {q: "", lib: "", sort: "", filters: {}, group: true, size: "",
-                hidden: false, junk: false, sensitive: "", ids: "", view: "", from: "", to: ""};
+                hidden: false, junk: false, sensitive: "", ids: "", view: "", from: "", to: "",
+                by: ""};
     }
 
     // A map view from an address: "lat,lon,zoom" with the latitude within
@@ -175,6 +255,8 @@ var SITE = (function () {
             var value = params.get(key) || "";
             state[key] = DATE_KEY_RE.test(value) ? value : "";
         });
+        var by = params.get("by");
+        state.by = BY.indexOf(by) >= 0 ? by : "";
         return state;
     }
 
@@ -225,6 +307,9 @@ var SITE = (function () {
                 params.set(key, state[key]);
             }
         });
+        if (state.by && BY.indexOf(state.by) >= 0) {
+            params.set("by", state.by);
+        }
         return params.toString();
     }
 
@@ -450,7 +535,8 @@ var SITE = (function () {
     var staticPrefix = {
         thumbs: cfg.thumbs || "thumbs/",
         images: cfg.images || "images/",
-        panos: cfg.panos || "panos/"
+        panos: cfg.panos || "panos/",
+        videos: cfg.videos || "videos/"
     };
 
     function thumbUrl(rec) {
@@ -512,6 +598,19 @@ var SITE = (function () {
             return staticPrefix.panos + encodeURIComponent(recordId(rec)) + ".jpg";
         }
         return "/pano/" + encodeURIComponent(recordId(rec));
+    }
+
+    // A video to play (rec.mv): the server's /video/<id>, or an export's
+    // videos/<id>.mp4 when it holds the video itself (rec.vf); else null.
+    function videoUrl(rec) {
+        if (!rec || typeof rec !== "object" || !rec.mv) {
+            return null;
+        }
+        if (isStatic) {
+            return rec.vf === 1 ? staticPrefix.videos + encodeURIComponent(recordId(rec)) +
+                ".mp4" : null;
+        }
+        return "/video/" + encodeURIComponent(recordId(rec));
     }
 
     /* ---------- Compact records from full ones ------------------------------- */
@@ -667,6 +766,18 @@ var SITE = (function () {
         }
         if (detail.projection === "equirectangular" || detail.projection === "dual_fisheye") {
             rec.p = "360";
+        }
+        if (detail.media === "video") {
+            // (search_index.add_video)
+            rec.mv = 1;
+            rec.ty = "video";
+            if (typeof detail.duration === "number" && detail.duration > 0) {
+                // (Rounded down, at least 0.1, as search_index does.)
+                rec.dr = Math.max(0.1, Math.floor(detail.duration * 10) / 10);
+            }
+            if (detail.video && text(detail.video.codec)) {
+                rec.vc = text(detail.video.codec);
+            }
         }
         if (detail.hidden) {
             rec.h = 1;
@@ -973,6 +1084,463 @@ var SITE = (function () {
         });
     }
 
+    /* ---------- Meaning vectors ---------------------------------------------- */
+
+    var vectorsPromise = null;    // the vectors (decoded and joined), or null
+    var lastVectorsTag = null;
+    var staticVectors = [];       // what an export's vector files pushed
+
+    // [answer] from /api/vectors, or UNCHANGED for skipTag (see loadServerIndex).
+    function loadServerVectors(skipTag) {
+        return fetch(cfg.api + "/vectors", {credentials: "same-origin"}).then(function (response) {
+            if (!response.ok) {
+                throw new Error("HTTP " + response.status);
+            }
+            var tag = sameRecords(response.headers.get("ETag"));
+            if (skipTag && tag && tag === skipTag) {
+                if (response.body && response.body.cancel) {
+                    response.body.cancel().catch(function () {});
+                }
+                return UNCHANGED;
+            }
+            return response.json().then(function (payload) {
+                payload.etag = tag;
+                return [payload];
+            });
+        });
+    }
+
+    // The parts an export's vector files push (none without the option).
+    function loadStaticVectors() {
+        return loadStaticIndex().then(function (data) {
+            var manifest = data && data.manifest;
+            var names = manifest && Array.isArray(manifest.vectors) ? manifest.vectors : [];
+            if (!names.length) {
+                return [];
+            }
+            staticVectors = [];
+            root.SEARCH_VECTORS = {
+                push: function (part) {
+                    if (part && typeof part === "object") {
+                        staticVectors.push(part);
+                    }
+                }
+            };
+            return Promise.all(names.map(loadDataScript)).then(function () {
+                return staticVectors.slice();
+            });
+        });
+    }
+
+    function decodeParts(parts) {
+        /* global SearchCore */
+        var core = root.SearchCore || (typeof SearchCore !== "undefined" ? SearchCore : null);
+        if (!core || !Array.isArray(parts) || !parts.length) {
+            return null;
+        }
+        var joined = core.joinVectors(parts.map(core.decodeVectors));
+        if (joined) {
+            // (Queries can be embedded: by the server, or by an export's own model.)
+            joined.query = isStatic ? meaningInBrowser() : parts[0].query === true;
+            joined.etag = parts[0].etag || null;
+        }
+        return joined;
+    }
+
+    function loadVectors(callback) {
+        if (!vectorsPromise) {
+            vectorsPromise = (isStatic ? loadStaticVectors() : loadServerVectors(null))
+                .then(function (parts) {
+                    var joined = decodeParts(parts);
+                    lastVectorsTag = joined ? joined.etag : null;
+                    return joined;
+                }).catch(function (error) {
+                    vectorsPromise = null;
+                    throw error;
+                });
+        }
+        settle(vectorsPromise, callback);
+    }
+
+    function refreshVectors(callback) {
+        if (isStatic) {
+            callback(null);
+            return;
+        }
+        settle(loadServerVectors(lastVectorsTag).then(function (parts) {
+            if (parts === UNCHANGED) {
+                return null;
+            }
+            var joined = decodeParts(parts);
+            lastVectorsTag = joined ? joined.etag : null;
+            vectorsPromise = Promise.resolve(joined);
+            return {vectors: joined};
+        }), callback);
+    }
+
+    function attachVectors(index, callback) {
+        loadVectors(function (vectors) {
+            if (vectors && index && index.setVectors) {
+                index.setVectors(vectors);
+            }
+            if (callback) {
+                callback(vectors);
+            }
+        });
+    }
+
+    /* ---------- Look vectors ("Looks like this") ------------------------------ */
+
+    var looksPromise = null;      // the look vectors (decoded and joined), or null
+    var lastLooksTag = null;
+    var staticLooks = [];         // what an export's looks files pushed
+
+    // [answer] from /api/looks, or UNCHANGED for skipTag (see loadServerIndex).
+    function loadServerLooks(skipTag) {
+        return fetch(cfg.api + "/looks", {credentials: "same-origin"}).then(function (response) {
+            if (!response.ok) {
+                throw new Error("HTTP " + response.status);
+            }
+            var tag = sameRecords(response.headers.get("ETag"));
+            if (skipTag && tag && tag === skipTag) {
+                if (response.body && response.body.cancel) {
+                    response.body.cancel().catch(function () {});
+                }
+                return UNCHANGED;
+            }
+            return response.json().then(function (payload) {
+                payload.etag = tag;
+                return [payload];
+            });
+        });
+    }
+
+    // The parts an export's looks files push (none without the option).
+    function loadStaticLooks() {
+        return loadStaticIndex().then(function (data) {
+            var manifest = data && data.manifest;
+            var names = manifest && Array.isArray(manifest.looks) ? manifest.looks : [];
+            if (!names.length) {
+                return [];
+            }
+            staticLooks = [];
+            root.SEARCH_LOOKS = {
+                push: function (part) {
+                    if (part && typeof part === "object") {
+                        staticLooks.push(part);
+                    }
+                }
+            };
+            return Promise.all(names.map(loadDataScript)).then(function () {
+                return staticLooks.slice();
+            });
+        });
+    }
+
+    function decodeLooks(parts) {
+        var core = root.SearchCore || (typeof SearchCore !== "undefined" ? SearchCore : null);
+        if (!core || !Array.isArray(parts) || !parts.length) {
+            return null;
+        }
+        var joined = core.joinVectors(parts.map(core.decodeVectors));
+        if (joined) {
+            // (Only the server's admin can search by an example picture.)
+            joined.query = !isStatic && parts[0].query === true;
+            joined.etag = parts[0].etag || null;
+        }
+        return joined;
+    }
+
+    function loadLooks(callback) {
+        if (!looksPromise) {
+            looksPromise = (isStatic ? loadStaticLooks() : loadServerLooks(null))
+                .then(function (parts) {
+                    var joined = decodeLooks(parts);
+                    lastLooksTag = joined ? joined.etag : null;
+                    return joined;
+                }).catch(function (error) {
+                    looksPromise = null;
+                    throw error;
+                });
+        }
+        settle(looksPromise, callback);
+    }
+
+    function refreshLooks(callback) {
+        if (isStatic) {
+            callback(null);
+            return;
+        }
+        settle(loadServerLooks(lastLooksTag).then(function (parts) {
+            if (parts === UNCHANGED) {
+                return null;
+            }
+            var joined = decodeLooks(parts);
+            lastLooksTag = joined ? joined.etag : null;
+            looksPromise = Promise.resolve(joined);
+            return {looks: joined};
+        }), callback);
+    }
+
+    function attachLooks(index, callback) {
+        loadLooks(function (looks) {
+            if (looks && index && index.setLooks) {
+                index.setLooks(looks);
+            }
+            if (callback) {
+                callback(looks);
+            }
+        });
+    }
+
+    // Search by an example picture (see the notes at the top).
+    function lookQuery(blob, callback) {
+        if (isStatic || !capabilities.admin || typeof fetch !== "function") {
+            callback({state: "off", error: "Search by an example picture only works on the " +
+                      "server, on this computer."});
+            return;
+        }
+        var answer = fetch(cfg.api + "/looks/query", {
+            method: "POST", body: blob, credentials: "same-origin",
+            headers: {"X-Search-Images": "1",
+                      "Content-Type": (blob && blob.type) || "application/octet-stream"}
+        }).then(function (response) {
+            return response.json().catch(function () {
+                return {};
+            }).then(function (payload) {
+                if (response.ok && typeof payload.vec === "string") {
+                    var thumb = typeof payload.thumb === "string" &&
+                        /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(payload.thumb)
+                        ? payload.thumb : null;
+                    return {state: "ready", model: payload.model, dims: payload.dims,
+                            vec: payload.vec, matches: payload.matches !== false,
+                            thumb: thumb};
+                }
+                var state = payload && typeof payload.state === "string" ? payload.state
+                    : "error";
+                return {state: state, error: (payload && payload.error) ||
+                        "The picture could not be compared (HTTP " + response.status + ")."};
+            });
+        }, function () {
+            return {state: "error", error: "The server could not be reached."};
+        });
+        settle(answer, callback);
+    }
+
+    /* ---------- Search by meaning in an export (see the notes at the top) ---- */
+
+    // The cosine the probe texts need with the server's vectors of them.
+    var MEANING_SAME = 0.99;
+    var MEANING_CONSENT_KEY = "searchImages.meaningDownload";
+    // "idle", "loading", "ready", "failed" (word search until the page
+    // loads again) or "off" (this browser cannot, or makes other vectors).
+    var browserMeaning = {state: "idle", engine: null, waiting: null, progress: null,
+                          warned: false};
+    // The folder of the page's scripts (where site.js came from).
+    var assetPrefix = (function () {
+        var script = hasDocument ? document.currentScript : null;
+        var src = script && script.getAttribute ? script.getAttribute("src") || "" : "";
+        var at = src.search(/site\.js(\?|$)/);
+        return at > 0 ? src.slice(0, at) : "assets/";
+    })();
+
+    function exportMeaning() {
+        var meaning = staticManifest && staticManifest.meaning;
+        return isStatic && meaning && typeof meaning === "object" &&
+            typeof meaning.id === "string" && typeof meaning.model === "string" &&
+            Array.isArray(meaning.parts) && meaning.parts.length ? meaning : null;
+    }
+
+    function meaningInBrowser() {
+        return Boolean(exportMeaning()) && browserMeaning.state !== "off";
+    }
+
+    function saveData() {
+        var connection = root.navigator && root.navigator.connection;
+        return Boolean(connection && connection.saveData);
+    }
+
+    function storage() {
+        try {
+            return root.localStorage || null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function downloadAllowed() {
+        try {
+            return storage() ? storage().getItem(MEANING_CONSENT_KEY) === "1" : false;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function allowMeaningDownload() {
+        try {
+            if (storage()) {
+                storage().setItem(MEANING_CONSENT_KEY, "1");
+            }
+        } catch (error) {
+            // Not remembered: this page still loads it.
+        }
+        browserMeaning.allowed = true;
+    }
+
+    function base64(vector) {
+        var bytes = new Uint8Array(vector.buffer, vector.byteOffset, vector.length);
+        var text = "";
+        for (var k = 0; k < bytes.length; k++) {
+            text += String.fromCharCode(bytes[k]);
+        }
+        /* global Buffer */
+        return typeof root.btoa === "function" ? root.btoa(text)
+            : typeof btoa === "function" ? btoa(text) : Buffer.from(bytes).toString("base64");
+    }
+
+    function embedNow(meaning, text, callback) {
+        var answer;
+        try {
+            var vector = browserMeaning.engine.query(text);
+            answer = {state: "ready", model: meaning.id, dims: vector.length, vec: base64(vector)};
+        } catch (error) {
+            answer = {state: "unavailable", error: "Search by meaning could not run."};
+        }
+        callback(answer);
+    }
+
+    function meaningFailed(state, message) {
+        browserMeaning.state = state;
+        var waiting = browserMeaning.waiting;
+        browserMeaning.waiting = null;
+        if (state === "off" && !browserMeaning.warned && root.console) {
+            browserMeaning.warned = true;
+            root.console.warn("Search by meaning is off in this browser: " + message);
+        }
+        if (waiting) {
+            waiting.callback({state: state === "off" ? "off" : "unavailable", error: message});
+        }
+    }
+
+    function loadEngine(meaning) {
+        var assets = meaning.assets && typeof meaning.assets === "object" ? meaning.assets : {};
+        function asset(name) {
+            return versioned(assetPrefix + name, assets[name]);
+        }
+        var gzip = meaning.gzip > 0 ? meaning.gzip : meaning.bytes || 0;
+        function report(loaded, total) {
+            var share = total > 0 ? loaded / total : 0;
+            if (browserMeaning.progress) {
+                browserMeaning.progress({loaded: Math.round(share * gzip), total: gzip});
+            }
+        }
+        report(0, 1);
+        // (Without its WebAssembly kernel the engine runs in plain JavaScript:
+        // the same vectors, only slower.)
+        return loadScript(asset("embed-kernel.js")).catch(function () {
+            return null;
+        }).then(function () {
+            return loadScript(asset("embed-engine.js"));
+        }).then(function () {
+            var engineApi = root.EMBED || (typeof EMBED !== "undefined" ? EMBED : null);
+            if (!engineApi) {
+                throw new Error("the engine did not load");
+            }
+            var missing = engineApi.unsupported();
+            if (missing) {
+                var error = new Error(missing);
+                error.off = true;
+                throw error;
+            }
+            return engineApi.load(meaning, {url: dataUrl, load: loadScript, progress: report});
+        });
+    }
+
+    function staticQueryVector(text, callback, progress) {
+        var meaning = exportMeaning();
+        var state = browserMeaning.state;
+        if (!meaning || state === "off" || state === "failed") {
+            setTimeout(function () {
+                callback(!meaning || state === "off" ? {state: "off", error: ""}
+                    : {state: "unavailable", error: "Search by meaning could not load."});
+            }, 0);
+            return;
+        }
+        if (state === "ready") {
+            setTimeout(function () {
+                embedNow(meaning, text, callback);
+            }, 0);
+            return;
+        }
+        if (state === "idle" && saveData() && !downloadAllowed() && !browserMeaning.allowed) {
+            setTimeout(function () {
+                callback({state: "ask", bytes: meaning.gzip || meaning.bytes || 0});
+            }, 0);
+            return;
+        }
+        var earlier = browserMeaning.waiting;
+        browserMeaning.waiting = {text: text, callback: callback};
+        browserMeaning.progress = progress || null;
+        if (earlier) {
+            earlier.callback({state: "skipped"});
+        }
+        if (state !== "idle") {
+            return;
+        }
+        browserMeaning.state = "loading";
+        loadEngine(meaning).then(function (engine) {
+            var lowest = engine.check();
+            if (!(lowest >= MEANING_SAME)) {
+                // (Its memory goes: nothing uses it.)
+                meaningFailed("off", "its vectors differ from the site's (self-check " +
+                              lowest.toFixed(3) + ")");
+                return;
+            }
+            browserMeaning.engine = engine;
+            browserMeaning.state = "ready";
+            var waiting = browserMeaning.waiting;
+            browserMeaning.waiting = null;
+            if (waiting) {
+                embedNow(meaning, waiting.text, waiting.callback);
+            }
+        }).catch(function (error) {
+            meaningFailed(error && error.off ? "off" : "failed",
+                          String(error && error.message || error));
+        });
+    }
+
+    function queryVector(text, callback, progress) {
+        if (isStatic) {
+            staticQueryVector(text, callback, progress);
+            return;
+        }
+        if (!cfg.api) {
+            setTimeout(function () {
+                callback({state: "off", error: ""});
+            }, 0);
+            return;
+        }
+        fetch(cfg.api + "/embed?q=" + encodeURIComponent(text), {credentials: "same-origin"})
+            .then(function (response) {
+                return response.json().catch(function () {
+                    return {};
+                }).then(function (body) {
+                    body = body && typeof body === "object" ? body : {};
+                    if (response.ok) {
+                        body.state = "ready";
+                        return body;
+                    }
+                    if (response.status === 429) {
+                        return {state: "busy", error: body.error || ""};
+                    }
+                    return {state: typeof body.state === "string" ? body.state : "unavailable",
+                            error: typeof body.error === "string" ? body.error : ""};
+                });
+            }).then(callback, function () {
+                callback({state: "unavailable", error: "The server did not answer."});
+            });
+    }
+
     return {
         page: cfg.page || "",
         // [{id, name}] of the libraries the page may show.
@@ -1024,6 +1592,7 @@ var SITE = (function () {
         imageUrl: imageUrl,
         previewUrl: previewUrl,
         panoUrl: panoUrl,
+        videoUrl: videoUrl,
         tileUrl: function (zoom, x, y) {
             var prefix = cfg.tiles;
             if (!prefix) {
@@ -1044,6 +1613,16 @@ var SITE = (function () {
         refreshIndex: refreshIndex,
         loadRecord: loadRecord,
         loadLocations: loadLocations,
+        loadVectors: loadVectors,
+        refreshVectors: refreshVectors,
+        attachVectors: attachVectors,
+        loadLooks: loadLooks,
+        refreshLooks: refreshLooks,
+        attachLooks: attachLooks,
+        lookQuery: lookQuery,
+        queryVector: queryVector,
+        meaningInBrowser: meaningInBrowser,
+        allowMeaningDownload: allowMeaningDownload,
         compactRecord: compactRecord,
         shuffleSeed: shuffleSeed
     };

@@ -323,11 +323,14 @@ var SHELL = (function () {
         scan: "Scan",
         describe: "Describe",
         refine: "Refine documents",
+        embed: "Update meaning search",
+        image_embed: "Update looks",
         process: "Scan + describe",
         previews: "Build previews",
         delete_library: "Delete indexed data",
         export: "Export",
-        places: "Add place names"
+        places: "Add place names",
+        proxies: "Make playable copies"
     };
     var STATE_LABELS = {
         queued: "Waiting",
@@ -344,21 +347,26 @@ var SHELL = (function () {
         previews: "Building previews",
         describe: "Describing pictures",
         refine: "Describing documents and screenshots again",
+        embed: "Updating search by meaning",
         delete: "Deleting indexed data",
         export: "Exporting pictures",
         zip: "Writing the zip file",
         download: "Downloading place names",
         "build places": "Building the place index",
-        places: "Adding place names"
+        places: "Adding place names",
+        proxies: "Making playable copies of videos",
+        looks: "Making the looks of pictures"
     };
     var STAGE_VERBS = {
         scan: "Scanning",
         previews: "Building previews for",
         describe: "Describing",
         refine: "Refining the documents of",
+        embed: "Updating search by meaning for",
         delete: "Deleting the data of",
         export: "Exporting",
-        zip: "Zipping the export of"
+        zip: "Zipping the export of",
+        looks: "Making the looks of"
     };
     var WAITING_STAGE = "waiting for another scan to finish";
 
@@ -372,6 +380,9 @@ var SHELL = (function () {
         }
         if (job.kind === "describe" && params.redescribe_stale) {
             return "Re-describe out of date";
+        }
+        if (job.kind === "image_embed" && params.rebuild) {
+            return "Rebuild looks";
         }
         if (job.kind === "process" && !job.library_id) {
             return "Process all libraries";
@@ -453,6 +464,7 @@ var SHELL = (function () {
             add(totals, "missing", item.missing);
             add(totals, "failed_read", item.failed);
             add(totals, "files", item.files);
+            add(totals, "videos_skipped", item.videos_skipped);
             if (item.previews) {
                 add(totals, "previews", item.previews.filled);
             }
@@ -478,6 +490,9 @@ var SHELL = (function () {
         if (totals.failed_read) {
             parts.push(plural(totals.failed_read, "unreadable file"));
         }
+        if (totals.videos_skipped) {
+            parts.push(plural(totals.videos_skipped, "video") + " not read (no ffmpeg)");
+        }
         if (totals.previews) {
             parts.push(plural(totals.previews, "preview") + " built");
         }
@@ -496,6 +511,33 @@ var SHELL = (function () {
                 parts.push("about $" + described.cost.toFixed(described.cost < 1 ? 4 : 2));
             }
         }
+        var embedded = job.kind === "embed" ? summary : summary.embed ||
+            (described && described.embed);
+        if (embedded && typeof embedded.embedded === "number" &&
+                (embedded.embedded || embedded.failed || job.kind === "embed")) {
+            parts.push(plural(embedded.embedded, "picture") + " updated for search by meaning");
+            if (embedded.failed) {
+                parts.push(number(embedded.failed) + " could not be");
+            }
+            if (embedded.cut) {
+                // (Texts too long for the model, embedded in part.)
+                parts.push(number(embedded.cut) + " cut to fit the model");
+            }
+        }
+        if (job.kind === "image_embed" && typeof summary.embedded === "number") {
+            // (looks.update: embedded, failed, offline, rebuilt.)
+            parts.push(plural(summary.embedded, "picture") + " given looks");
+            if (summary.failed) {
+                parts.push(number(summary.failed) + " could not be");
+            }
+            if (summary.offline) {
+                parts.push(number(summary.offline) + " wait for their folder");
+            }
+        }
+        if ((job.kind === "scan" || job.kind === "process") && summary.looks_pending) {
+            // (Looks are made by the Update looks job only: it needs the image model.)
+            parts.push(plural(summary.looks_pending, "picture") + " without looks yet");
+        }
         if (totals.deleted !== undefined) {
             parts.push(plural(totals.deleted, "picture") + " deleted");
         }
@@ -506,6 +548,18 @@ var SHELL = (function () {
             }
             if (summary.failed) {
                 parts.push(number(summary.failed) + " could not be read");
+            }
+        }
+        if (job.kind === "proxies") {
+            // (videos.make_proxies: made, kept, failed, removed.)
+            if (typeof summary.made === "number") {
+                parts.push(plural(summary.made, "playable copy", "playable copies") + " made");
+            }
+            if (summary.failed) {
+                parts.push(number(summary.failed) + " failed");
+            }
+            if (summary.removed) {
+                parts.push(plural(summary.removed, "old copy", "old copies") + " removed");
             }
         }
         if (job.kind === "places") {

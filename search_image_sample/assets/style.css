@@ -2374,6 +2374,18 @@ body.is-scrolled #search-bar {
     border-color: var(--accent);
 }
 
+/* Search by: Words / Words + meaning / Meaning */
+.tool-by .segmented button {
+    font-size: 13px;
+    padding: 5px 10px;
+}
+
+/* (Nothing for it to do: a search of filters or quoted phrases only.) */
+.tool-by .segmented button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 #index-banner {
     margin: 0 0 12px;
 }
@@ -2688,6 +2700,17 @@ button.facet-title::after {
     color: var(--warn-text);
     font-size: 13px;
     white-space: normal;
+}
+
+/* What search by meaning did (app.js renderMeaningNotes) */
+#meaning-notes {
+    margin: 0 0 8px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+#meaning-notes .did-you-mean {
+    font-size: inherit;
 }
 
 #active-filters {
@@ -3099,16 +3122,26 @@ button.facet-title::after {
     opacity: 1;
 }
 
+/* (Bounded by the tile, and by the check circle in select mode: badges
+   that do not fit go on a second line rather than off the tile.) */
 .tile-badges {
     position: absolute;
     top: 6px;
     left: 6px;
+    right: 6px;
     display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
     gap: 4px;
     pointer-events: none;
 }
 
+body.select-mode .tile-badges {
+    right: 36px;
+}
+
 .tile-badge {
+    white-space: nowrap;
     padding: 2px 7px;
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.62);
@@ -3116,6 +3149,14 @@ button.facet-title::after {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.02em;
+}
+
+/* Found by meaning alone (no word match): the badge explains itself on hover. */
+.tile-badge.badge-meaning {
+    pointer-events: auto;
+    cursor: help;
+    font-size: 13px;
+    line-height: 1.1;
 }
 
 .tile.is-hidden .tile-link img {
@@ -3404,6 +3445,21 @@ body.no-pictures #search-layout {
 
 #drawer-tools #select-button {
     grid-column: 1 / -1;
+}
+
+#drawer-tools .tool-by .segmented {
+    display: flex;
+    width: 100%;
+}
+
+/* (A phone's drawer is narrow: the words may take two lines.) */
+#drawer-tools .tool-by .segmented button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 4px;
+    font-size: 14px;
+    line-height: 1.25;
+    white-space: normal;
 }
 
 /* Wordings that differ between phones and wider screens */
@@ -3824,6 +3880,31 @@ html.viewer-open body {
     pointer-events: none;
 }
 
+/* A video: the player fills the stage (the browser's own controls). */
+.stage-video {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #000000;
+    object-fit: contain;
+}
+
+.stage.is-video {
+    touch-action: auto;
+}
+
+.stage-note.has-link {
+    pointer-events: auto;
+}
+
+.stage-note a {
+    color: #ffffff;
+    font-weight: 600;
+    text-decoration: underline;
+}
+
 .stage-busy {
     position: absolute;
     right: 14px;
@@ -3975,6 +4056,11 @@ html.viewer-open body {
 
 .info-badge.is-hidden {
     background: var(--surface-3);
+}
+
+.info-badge.is-video {
+    background: var(--info-soft);
+    color: var(--info-text);
 }
 
 .info-badge.is-warn {
@@ -4420,6 +4506,69 @@ body.detail-page {
     border-radius: 4px;
     background: var(--surface);
     font-size: 11px;
+}
+
+/* Search by an example picture (looks): the picture button in the search box,
+   the "Looks like: [picture]" chip and the drop zone over the page */
+
+#search-box > .example-button {
+    position: absolute;
+    right: 42px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-weight: 400;
+}
+
+#search-box.has-example #query {
+    padding-right: 80px;
+}
+
+.example-chip img {
+    width: 34px;
+    height: 24px;
+    object-fit: cover;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+/* (A picture the browser cannot show, before the server's small one comes.) */
+.example-chip .example-icon {
+    width: 34px;
+    height: 24px;
+    flex: none;
+}
+
+/* A new picture being compared: the search is still the one before. */
+.example-chip.example-pending {
+    border-style: dashed;
+    background: transparent;
+}
+
+.drop-zone {
+    position: fixed;
+    inset: 12px;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3px dashed var(--accent);
+    border-radius: 16px;
+    background: var(--backdrop);
+    pointer-events: none;
+}
+
+.drop-zone[hidden] {
+    display: none;
+}
+
+.drop-zone p {
+    margin: 0;
+    padding: 14px 22px;
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 17px;
+    box-shadow: var(--shadow-lg);
 }
 
 /* Less movement for those who asked their system for it */

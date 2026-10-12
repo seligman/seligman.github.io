@@ -10,7 +10,9 @@
    c colors, ex extended words, q aesthetic, sh sharpness, qf quality
    flags, se sensitive, pr private, dk date taken, ts date and time taken,
    cm camera, gp has GPS, ci rg co cc km the place (town, region,
-   country, country code, km from the town), p "360", dg duplicate group,
+   country, country code, km from the town), p "360", mv video (its ty is
+   "video"), dr its length in seconds, vc its codec, vt the kind the AI
+   model saw in its frames when not a photo, dg duplicate group,
    h hidden, ed edited by the owner, ds described, v4). Any key may be
    missing.
    There is no DOM code here:
@@ -60,6 +62,22 @@
               typing     true while the query is still being typed: the
                          last word may be the start of a longer word (see
                          parse)
+              vector     the meaning vector of the query (queryVector of
+                         /api/embed's answer, made from meaningText(query)),
+                         for search by meaning; needs vectors set on the
+                         index (index.setVectors) of the same size
+              meaning    "hybrid" (the default: words and meaning, see
+                         "Search by meaning" below), "meaning" (by meaning
+                         only) or "words" (no meaning, as without a vector)
+              lookVector the look vector of an example picture (an
+                         Int8Array of /api/looks/query's answer, see
+                         queryVector): the pictures that look like it,
+                         closest first, as look: does; needs looks set on
+                         the index (index.setLooks) of the same size. Any
+                         vector of the looks' space ranks the same way
+                         (an image model's text query vector would rank
+                         pictures by their looks for typed words: not
+                         used yet)
      total     how many pictures match (before duplicates are grouped)
      items     the ids of the matches in order (one per stack when grouping;
                when sorted by date a stack sits at its cover's date)
@@ -89,6 +107,10 @@
                it to highlights() so the marks agree with the matches);
                warnings: notes about parts of the query that could not be
                understood
+     byMeaning the ids of the matches found by meaning only (no word match;
+               the page marks them), meaning: {mode ("hybrid", "meaning",
+               "similar" or "look"), best (the highest cosine)} when meaning
+               (or looks) ranked the results, else null
 
    SearchCore.parse(query, options) -> {text, clauses, terms, sequence, ...}
      Never throws. Words must all match (AND), "quoted phrases" must match
@@ -97,7 +119,7 @@
      (or "without people") is people:none. field:value filters: tag:, subject:,
      title:, text: (the text in the picture), description:, scene:,
      setting:, event:, animal:, food:, vehicle:, color:, camera:, folder:,
-     file: (words in that field); type: (photo, screenshot, document,
+     file: (words in that field); type: (photo, video, screenshot, document,
      receipt, chat, ...), people: (none, 1, 2, 3-5, 6-10, crowd, any or a
      number), year: (2019 or 2015-2019), before: / after: (YYYY, YYYY-MM or
      YYYY-MM-DD, not including that period), on: (today: this day in
@@ -105,7 +127,13 @@
      (words of the town, region or country), lib: (library name or id),
      has: (text, gps, people, animals, food, vehicles, description) and
      is: (360, duplicate, hidden, undescribed, described, edited, private,
-     sensitive, blurry, dark, overexposed, accidental, junk, v4 or a type).
+     sensitive, blurry, dark, overexposed, accidental, junk, v4 or a type:
+     is:video finds the videos, is:photo the photos),
+     similar: (a picture id: "More like this", the pictures closest in
+     meaning to that one, best first; without meaning vectors, those
+     sharing tags, the scene or the time, as similar() finds them) and
+     look: (a picture id: "Looks like this", the pictures that look most
+     like that one by their look vectors, see "Looks" below).
      Another word before a colon is searched as ordinary text. With
      options.typing (the page sets it only while the box is being typed
      in) the last word, when the text does not end with a space, also
@@ -131,11 +159,75 @@
      field.
 
    SearchCore.similar(records, id, n, options) -> [ids]
-     "More like this": the picture's duplicate group first, then pictures
-     sharing tags and subjects (Jaccard overlap), the same scene or event,
-     or taken within two hours (the same day in an export, which has no
-     times); one picture per other duplicate group. options: library,
-     hidden, sensitive, private, junk as above.
+     "More like this": the picture's duplicate group first, then the
+     pictures closest in meaning (cosine of the meaning vectors, when the
+     index has them and the picture has one), else pictures sharing tags
+     and subjects (Jaccard overlap), the same scene or event, or taken
+     within two hours (the same day in an export, which has no times);
+     one picture per other duplicate group. options: library, hidden,
+     sensitive, private, junk as above; by: "look" for "Looks like this"
+     (closest by look vector, see "Looks" below; nothing more for a
+     picture without one).
+
+   Search by meaning
+     index.setVectors(vectors) attaches meaning vectors (decodeVectors of
+     /api/vectors' answer or of an export's vectors files: {dims, ids,
+     data: Int8Array of the vectors one after the other}); records
+     without one are only found by their words. The cosine of a picture
+     and the query is the dot product of their signed bytes / 127^2
+     (both were unit length times 127), and a cosine is judged by its z:
+     how many standard deviations it is above the mean cosine of the whole
+     index for that query (see MEANING_MIN_Z). With a query vector and
+     words that are not field filters or quoted phrases ("hybrid"), a
+     picture's score is its word score divided by the best word score of
+     the search (at least WORD_STRONG per free word) plus MEANING_WEIGHT
+     times one more than how far its cosine is above the cosine at
+     MEANING_FLOOR_Z (1 for the best cosine of the search; below that
+     floor it counts against the picture, down to -1: the words are there,
+     the meaning is not). Pictures without the words match too when their
+     z is at least MEANING_MIN_Z and at most MEANING_MARGIN_Z below the best
+     one's (the closest MEANING_EXTRA of them), scored by
+     MEANING_WEIGHT times how far their cosine is above the floor alone:
+     so they come after every word match whose meaning is at least at the
+     floor. When the word matches of a query of one or two words are
+     mostly unlike its meaning (their median z below MEANING_WORDS_Z: a
+     name, a place, a file name or a year, which the search text of a
+     picture leaves out), meaning adds nothing and the words rank as
+     without it. Filters, quoted phrases, field words and -words stay
+     strict.
+     "meaning" ranks by the cosine alone (z at least MEANING_ONLY_Z, at
+     most MEANING_ONLY_MARGIN_Z below the best's). In a small set (fewer
+     than MEANING_SMALL pictures with a vector), where no z gets far, the
+     closest few (MEANING_FEW) count when none of these does and the
+     closest is at least MEANING_FEW_Z. similar: shows the
+     pictures at least SIMILAR_MIN_Z close to that picture, or when fewer
+     than SIMILAR_FEW are, the closest SIMILAR_FEW if they are close in
+     the model's own terms (Index.similarCut). No threshold is a cosine as
+     such: models differ in how close their cosines run (one model's
+     typical query cosine is 0.28, another's 0.19), so every threshold is
+     in standard deviations of the cosines at hand, or of the cosines of
+     two pictures taken at random (Index.pairSpread, worked out from the
+     index's own vectors).
+     SearchCore.meaningText(query) is the text to embed for a query ("" when
+     it has no words that meaning could rank: only filters, phrases or a
+     similar: or look: term); decodeVectors(payload), joinVectors([vectors]) and
+     queryVector(base64, dims) turn the answers into typed arrays.
+
+   Looks
+     index.setLooks(vectors) attaches look vectors (decodeVectors of
+     /api/looks' answer or of an export's looks files): one per picture,
+     made by an image model from what the picture looks like (looks.py).
+     look:<id> ranks the pictures by the cosine of their look vector to that
+     picture's, with the thresholds of similar: (SIMILAR_MIN_Z and the
+     closest few of a small set, see Index.similarCut) worked out over the
+     look vectors' own cosines: image cosines run on another scale than
+     those of descriptions, and nothing here mixes the two. Copies of the
+     picture (cosine LOOK_COPY or more: the same picture, maybe cropped or
+     edited a little) and the pictures of its duplicate stack come right
+     after it but take no part in those thresholds. The words and
+     filters of the query still choose which pictures may match. The
+     lookVector option does the same for an example picture (whose
+     closest copy in the index, if it has one, brings its stack along).
 
    SearchCore.suggest(records, query, options)
        -> {text, changes: [{from, to}]} | null
@@ -641,7 +733,8 @@ var SearchCore = (function () {
         color: "color", colour: "color", colors: "color", colours: "color",
         camera: "camera", folder: "folder", file: "file", filename: "file", type: "type",
         people: "people", year: "year", before: "before", after: "after", lib: "lib",
-        library: "lib", has: "has", is: "is", place: "place", places: "place", on: "on"
+        library: "lib", has: "has", is: "is", place: "place", places: "place", on: "on",
+        similar: "similar", like: "similar", look: "look", looks: "look"
     });
     // Record keys (and field names) for highlights(text, query, field).
     var HIGHLIGHT_FIELDS = dict({
@@ -706,6 +799,14 @@ var SearchCore = (function () {
         }
         if (rec.p === "360") {
             kind.push("360 panorama");
+        }
+        if (rec.mv) {
+            // (Its ty is "video"; also the words people use for one, and the
+            // kind the AI model saw in its frames: a screen recording.)
+            kind.push("movie clip footage");
+            if (isText(rec.vt) && rec.vt !== "other") {
+                kind.push(rec.vt);
+            }
         }
         // "people" and "person" find every picture with people in it (and
         // -people leaves them out), not only those whose description
@@ -784,8 +885,9 @@ var SearchCore = (function () {
     var NO_WORDS = wordSet("no without");
     var PEOPLE_NOUNS = wordSet("people person persons human humans anyone anybody");
 
-    var PHOTO_TYPES = ["photo", "screenshot", "document", "scan", "artwork", "meme", "diagram",
-                       "other"];
+    // ("video" is no answer of the AI model: every video's record has it.)
+    var PHOTO_TYPES = ["photo", "video", "screenshot", "document", "scan", "artwork", "meme",
+                       "diagram", "other"];
     var DOCUMENT_TYPES = ["receipt", "chat", "web", "app", "whiteboard", "sign", "menu",
                           "letter", "form", "ticket", "card_or_id", "book_page", "handwriting",
                           "slide", "map", "other"];
@@ -807,7 +909,7 @@ var SearchCore = (function () {
         note: "handwriting", card: "card_or_id", id: "card_or_id", ids: "card_or_id",
         id_card: "card_or_id", card_id: "card_or_id", book: "book_page", page: "book_page",
         presentation: "slide", invoice: "receipt", bill: "receipt", "360": "360",
-        panorama: "360", pano: "360"
+        panorama: "360", pano: "360", movie: "video", clip: "video", vid: "video"
     });
     var PEOPLE_WORDS = dict({
         none: "none", no: "none", nobody: "none", nobodies: "none", zero: "none",
@@ -975,6 +1077,12 @@ var SearchCore = (function () {
             var state = lookupWord(IS_WORDS, value);
             filter = state ? {kind: "is", what: state} : typeFilter(value);
             hint = "try 360, duplicate, undescribed, edited, screenshot or document";
+        } else if (field === "similar" || field === "look") {
+            var picture = String(raw).replace(/^\s+|\s+$/g, "");
+            filter = /^[0-9A-Za-z_-]{1,64}$/.test(picture) ? {kind: field, value: picture}
+                : null;
+            hint = field + ": takes a picture id; " + (field === "look" ? "Looks like this"
+                : "More like this") + " in the viewer writes it";
         }
         if (!filter) {
             warnings.push(field + ":" + raw + " is not understood (" + hint + ").");
@@ -1375,7 +1483,8 @@ var SearchCore = (function () {
     });
 
     var TYPE_LABELS = dict({
-        photo: "Photos", screenshot: "Screenshots", document: "Documents", scan: "Scans",
+        photo: "Photos", video: "Videos", screenshot: "Screenshots", document: "Documents",
+        scan: "Scans",
         artwork: "Artwork", meme: "Memes", diagram: "Diagrams", other: "Other",
         "doc:receipt": "Receipts", "doc:chat": "Chats", "doc:web": "Web pages",
         "doc:app": "Apps", "doc:whiteboard": "Whiteboards", "doc:sign": "Signs",
@@ -2117,6 +2226,11 @@ var SearchCore = (function () {
         this.scratchPartial = new Int32Array(n);
         this.orders = Object.create(null);
         this.similarData = null;
+        this.vectors = null;                // meaning vectors (setVectors)
+        this.looks = null;                  // a view of the index with look vectors (setLooks)
+        this.vecRows = null;
+        this.vecCount = 0;
+        this.cosCache = [];
         this.tagWords = null;
         this.marks = null;
         this.things = Object.create(null);  // word -> the THING_FIELDS it is a thing of
@@ -3048,6 +3162,13 @@ var SearchCore = (function () {
                 };
             }
             return null;
+        case "similar":
+        case "look":
+            // (Which pictures are like it is decided by the ranking, see
+            // meaningPlan; only "-similar:" and "-look:" use this.)
+            return function (rec) {
+                return String(rec.i) === filter.value;
+            };
         }
         return null;
     }
@@ -3341,6 +3462,9 @@ var SearchCore = (function () {
                 }
             }
         }
+        var plan = this.meaningPlan(parsed, opts, context);
+        // Pictures without the free words (when meaning may find them).
+        var missed = plan && plan.free ? new Uint8Array(n) : null;
         for (var c = 0; c < parsed.clauses.length; c++) {
             var clause = parsed.clauses[c];
             var scores;
@@ -3353,11 +3477,20 @@ var SearchCore = (function () {
                 }
                 continue;
             }
+            if (plan && plan.similar && clause.terms.length === 1 &&
+                    clause.terms[0] === plan.similar) {
+                continue;
+            }
             scores = this.clauseScores(clause, context);
+            var relaxed = missed !== null && plan.free[c] === true;
             for (r = 0; r < n; r++) {
                 if (alive[r]) {
                     if (scores[r] < 0) {
-                        alive[r] = 0;
+                        if (relaxed) {
+                            missed[r] = 1;
+                        } else {
+                            alive[r] = 0;
+                        }
                     } else {
                         score[r] += scores[r];
                     }
@@ -3368,7 +3501,7 @@ var SearchCore = (function () {
             // Whole words only: "red car" together is not "red carpet".
             var matchers = this.matchers(parsed.sequence, false);
             for (r = 0; r < n; r++) {
-                if (alive[r]) {
+                if (alive[r] && !(missed && missed[r])) {
                     var where = this.phraseFields(r, matchers, PHRASE_FIELDS);
                     if (where) {
                         score[r] += where & (1 << F_TITLE) ? SEQUENCE_TITLE_BONUS
@@ -3377,12 +3510,14 @@ var SearchCore = (function () {
                 }
             }
         }
+        var meaning = plan ? this.applyMeaning(plan, alive, score, missed) : null;
+        var ranked = parsed.hasText || meaning !== null;
         var pass = this.facetPass(alive, opts);
         var final = pass.final;
         var sort = SORTS.indexOf(opts.sort) >= 0 ? opts.sort
-            : parsed.hasText ? "relevance" : "newest";
+            : ranked ? "relevance" : "newest";
         var ordered;
-        if (sort === "relevance" && parsed.hasText) {
+        if (sort === "relevance" && ranked) {
             ordered = this.byScore(final, score);
         } else {
             var inFinal = new Uint8Array(n);
@@ -3406,7 +3541,9 @@ var SearchCore = (function () {
             collapsed: grouped ? final.length - grouped.items.length : 0,
             sort: sort,
             query: parsed,
-            warnings: warnings
+            warnings: warnings,
+            byMeaning: meaning ? meaning.only : [],
+            meaning: meaning ? {mode: meaning.mode, best: meaning.best} : null
         };
     };
 
@@ -3490,6 +3627,782 @@ var SearchCore = (function () {
             }
         }
         return {items: items, groups: groups};
+    };
+
+    /* ---------- Search by meaning ------------------------------------------ */
+
+    // Signed-byte vectors are unit length times 127: a dot product over
+    // this is the cosine.
+    var VECTOR_SCALE2 = 127 * 127;
+    /* How close is close depends on the query: with an embedding model
+       every description is somewhat like every query, and some queries
+       are like everything a little more than others. So a cosine is judged
+       against the cosines of the whole index for the same query: z is how
+       many standard deviations it is above their mean. Calibrated on a
+       library of several thousand described photos and documents with
+       two small embedding models at 256 dimensions (Qwen3-Embedding-0.6B,
+       mdbr-leaf-ir): the cosines of a query average about 0.1 to 0.4
+       (deviation 0.04 to 0.1), pictures that show what was asked come out
+       at z 3.5 to 5 with either, and below about z 3 they drift to what
+       merely shares a theme. */
+    // Hybrid: the meaning part of a word match's score, from 0 to twice
+    // this (the word part is at most 1) ...
+    var MEANING_WEIGHT = 0.6;
+    // ... and what one word found in a title (10) or in the tags and the
+    // description scores: word scores are divided by the best one, but by
+    // at least this per free word, so weak matches stay weak.
+    var WORD_STRONG = 10;
+    // ... growing from 0 at this z to the full weight at the best cosine.
+    var MEANING_FLOOR_Z = 1.5;
+    // Hybrid: a picture without the words is found by meaning when its z
+    // is at least this, and at most MEANING_MARGIN_Z below the best one's;
+    // at most MEANING_EXTRA of them (the closest), so a query nothing
+    // matches shows a short list of the nearest pictures, not the top of
+    // the whole index.
+    var MEANING_MIN_Z = 3.0;
+    var MEANING_MARGIN_Z = 1.8;
+    var MEANING_EXTRA = 40;
+    // Hybrid, for a query of at most MEANING_NAME_WORDS words (a longer one
+    // describes something, which is what meaning is for): when the median
+    // z of the word matches is below MEANING_WORDS_Z, the words found
+    // pictures whose meaning is not what the model makes of the query (a
+    // name, a place, a file name, a word in a picture's text): the word
+    // matches are then ranked by their words alone and none are added.
+    var MEANING_WORDS_Z = 1.0;
+    var MEANING_NAME_WORDS = 2;
+    // "Meaning" only: a wider net.
+    var MEANING_ONLY_Z = 2.5;
+    var MEANING_ONLY_MARGIN_Z = 3.0;
+    // A small set (fewer than MEANING_SMALL pictures with a vector, such as
+    // an export of a small library) has few pictures that stand out: with
+    // n pictures no z can be above the square root of n - 1, and the few
+    // that are like a query share the top. When none of its pictures without
+    // the words reaches MEANING_MIN_Z (MEANING_ONLY_Z for "meaning" only),
+    // the closest one still counts when its z is at least MEANING_FEW_Z,
+    // with the next ones up to MEANING_FEW in all that are at most
+    // MEANING_FEW_MARGIN_Z below it. (In a set of 18 described pictures the
+    // closest picture to a query that means one of them comes out at z 2.2
+    // to 3, to an unrelated query at z 1.3 to 2.2.)
+    var MEANING_SMALL = 50;
+    var MEANING_FEW_Z = 2.2;
+    var MEANING_FEW_MARGIN_Z = 0.5;
+    var MEANING_FEW = 4;
+    // similar: and the "More like this" strip: pictures at least this z
+    // (over the cosines of the other pictures to the picture), and at least
+    // SIMILAR_MIN_SD standard deviations above the cosine of two pictures
+    // taken at random (Index.pairSpread) ...
+    var SIMILAR_MIN_Z = 3.0;
+    var SIMILAR_MIN_SD = 1.0;
+    // ... and when fewer than SIMILAR_FEW pictures are that close, the
+    // closest ones up to SIMILAR_FEW in all, if they are at least
+    // SIMILAR_NEAR_SD standard deviations above that cosine and at most
+    // SIMILAR_MARGIN_SD of them below the closest one. (A small set, such as
+    // an export of one library, or one of a single theme, has few pictures
+    // that stand out: with n other pictures no z can be above the square
+    // root of n - 1, so z 3 needs ten of them at the very least. The margin
+    // keeps what merely shares a theme out when one picture is much closer.)
+    var SIMILAR_FEW = 4;
+    var SIMILAR_NEAR_SD = 2.0;
+    var SIMILAR_MARGIN_SD = 1.0;
+    // Index.pairSpread: pairs of pictures looked at, at most; and what a
+    // set too small to say (fewer than SPREAD_MIN_PAIRS pairs) goes by. It
+    // is also the most the spread is taken to be: a set of one theme (one
+    // library, or only documents) has pictures that are all rather alike,
+    // and judged by its own spread, few would stand out as close. (These
+    // are the cosines the thresholds were first set as, on a varied library.)
+    var SPREAD_PAIRS = 2000;
+    var SPREAD_MIN_PAIRS = 45;
+    var DEFAULT_SPREAD = {mean: 0.4, std: 0.1};
+    // The same for look vectors (setLooks), whose cosines run higher and
+    // closer together: two pictures taken at random from a varied library
+    // came out at 0.64 (deviation 0.065) with EmbeddingGemma 2 at 256
+    // dimensions, against 0.37 (0.125) for their descriptions.
+    var LOOK_SPREAD = {mean: 0.65, std: 0.07};
+    // Two look vectors at least this close are the same picture (a copy, or
+    // the same picture cropped, scaled or edited a little: such pairs came
+    // out at 0.97 to 1, different pictures of one scene below). Copies of
+    // the picture looked for are shown first but are not what "close" is
+    // judged by (Index.similarCut): one of them would leave room for
+    // nothing else.
+    var LOOK_COPY = 0.97;
+    // Without vectors, similar: shows at most this many pictures.
+    var SIMILAR_FALLBACK = 200;
+
+    function decodeBase64(text) {
+        if (typeof atob === "function") {
+            var binary = atob(text);
+            var out = new Uint8Array(binary.length);
+            for (var k = 0; k < binary.length; k++) {
+                out[k] = binary.charCodeAt(k);
+            }
+            return out;
+        }
+        /* global Buffer */
+        if (typeof Buffer !== "undefined") {
+            return new Uint8Array(Buffer.from(text, "base64"));
+        }
+        return null;
+    }
+
+    function asBytes(data) {
+        if (typeof data === "string") {
+            try {
+                return decodeBase64(data);
+            } catch (error) {
+                return null;
+            }
+        }
+        if (data instanceof Int8Array || data instanceof Uint8Array) {
+            return data;
+        }
+        return null;
+    }
+
+    /* The vectors of an answer ({model, dims, query, ids, data: base64 or
+       bytes}) as {model, dims, query, ids, data: Int8Array}, or null when
+       it holds none (or is damaged). */
+    function decodeVectors(payload) {
+        if (!payload || typeof payload !== "object" || !Array.isArray(payload.ids)) {
+            return null;
+        }
+        var dims = payload.dims;
+        if (typeof dims !== "number" || !(dims > 0) || Math.floor(dims) !== dims) {
+            return null;
+        }
+        var bytes = asBytes(payload.data);
+        if (!bytes || bytes.length !== payload.ids.length * dims || !payload.ids.length) {
+            return null;
+        }
+        return {model: typeof payload.model === "string" ? payload.model : "", dims: dims,
+                query: payload.query === true, ids: payload.ids,
+                data: new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length)};
+    }
+
+    // Several decodeVectors() answers (an export's files) as one; parts of
+    // another size than the first are left out.
+    function joinVectors(parts) {
+        var list = (Array.isArray(parts) ? parts : []).filter(Boolean);
+        if (!list.length) {
+            return null;
+        }
+        var dims = list[0].dims;
+        list = list.filter(function (part) {
+            return part.dims === dims;
+        });
+        if (list.length === 1) {
+            return list[0];
+        }
+        var total = 0;
+        list.forEach(function (part) {
+            total += part.ids.length;
+        });
+        var data = new Int8Array(total * dims);
+        var ids = [];
+        var at = 0;
+        list.forEach(function (part) {
+            data.set(part.data, at);
+            at += part.data.length;
+            ids = ids.concat(part.ids);
+        });
+        return {model: list[0].model, dims: dims, query: list[0].query, ids: ids, data: data};
+    }
+
+    // A query's vector from /api/embed (base64 of dims signed bytes), or null.
+    function queryVector(text, dims) {
+        var bytes = asBytes(text);
+        if (!bytes || (dims && bytes.length !== dims) || !bytes.length) {
+            return null;
+        }
+        return new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length);
+    }
+
+    // A term meaning may stand in for: a plain word (or words) of no field.
+    function freeTerm(term) {
+        return term.kind !== "filter" && !term.field && !term.quoted && !term.neg;
+    }
+
+    function similarTerm(term) {
+        return term.kind === "filter" && !term.neg && Boolean(term.filter) &&
+            term.filter.kind === "similar";
+    }
+
+    function lookTerm(term) {
+        return term.kind === "filter" && !term.neg && Boolean(term.filter) &&
+            term.filter.kind === "look";
+    }
+
+    /* The text whose meaning a query looks for: its plain words and quoted
+       phrases (small words too: they carry meaning), without filters,
+       field words and -words. "" when there is nothing meaning could rank. */
+    function meaningText(query) {
+        var parsed = asQuery(query);
+        if (parsed.terms.some(similarTerm) || parsed.terms.some(lookTerm) ||
+                !parsed.terms.some(freeTerm)) {
+            return "";
+        }
+        return parsed.terms.filter(function (term) {
+            return term.kind !== "filter" && !term.field && !term.neg;
+        }).map(function (term) {
+            return term.value;
+        }).join(" ").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+    }
+
+    /* Attach meaning vectors (decodeVectors) to the index; returns how many
+       of its records have one. null takes them away. */
+    Index.prototype.setVectors = function (vectors) {
+        this.vectors = null;
+        this.vecRows = null;
+        this.vecCount = 0;
+        this.cosCache = [];
+        if (!vectors || !(vectors.dims > 0) || !vectors.data || !Array.isArray(vectors.ids)) {
+            return 0;
+        }
+        var rows = new Int32Array(this.n);
+        rows.fill(-1);
+        var count = 0;
+        for (var k = 0; k < vectors.ids.length; k++) {
+            var r = this.position[String(vectors.ids[k])];
+            if (r !== undefined && rows[r] < 0) {
+                rows[r] = k;
+                count += 1;
+            }
+        }
+        this.vectors = vectors;
+        this.vecRows = rows;
+        this.vecCount = count;
+        this.spreadCache = null;
+        return count;
+    };
+
+    /* Attach look vectors (decodeVectors of /api/looks or an export's looks
+       files) to the index; returns how many of its records have one. null
+       takes them away. They live on a view of the index (lookView) that
+       holds them where the meaning vectors are, so the cosine, spread and
+       similarCut code serves both with the vectors' own statistics. */
+    Index.prototype.setLooks = function (vectors) {
+        var view = Object.create(this);
+        view.looks = null;
+        view.vectors = null;
+        view.vecRows = null;
+        view.vecCount = 0;
+        view.cosCache = [];
+        view.spreadCache = null;
+        view.spreadDefault = LOOK_SPREAD;
+        view.copyCosine = LOOK_COPY;
+        this.looks = view;
+        return Index.prototype.setVectors.call(view, vectors);
+    };
+
+    // The view of the index that holds the look vectors (none: no vectors).
+    Index.prototype.lookView = function () {
+        if (!this.looks) {
+            this.setLooks(null);
+        }
+        return this.looks;
+    };
+
+    // True when record id has a look vector.
+    Index.prototype.hasLook = function (id) {
+        var r = this.position[String(id)];
+        return Boolean(this.looks && r !== undefined && this.looks.vectorAt(r));
+    };
+
+    /* {mean, std}: the cosine of two pictures taken at random, and its
+       standard deviation, over up to SPREAD_PAIRS pairs of the index's own
+       vectors (always the same pairs), each at most DEFAULT_SPREAD's
+       (LOOK_SPREAD's for look vectors: this.spreadDefault) (also
+       what a set too small to say goes by). */
+    Index.prototype.pairSpread = function () {
+        if (this.spreadCache) {
+            return this.spreadCache;
+        }
+        var cap = this.spreadDefault || DEFAULT_SPREAD;
+        var result = cap;
+        if (this.vectors) {
+            var rows = [];
+            for (var r = 0; r < this.n; r++) {
+                if (this.vecRows[r] >= 0) {
+                    rows.push(r);
+                }
+            }
+            var pairs = Math.min(SPREAD_PAIRS, rows.length * (rows.length - 1) / 2);
+            if (pairs >= SPREAD_MIN_PAIRS) {
+                var seed = 12345;       // (Park-Miller: the same pairs every time)
+                var total = 0;
+                var squares = 0;
+                var count = 0;
+                for (var k = 0; k < pairs; k++) {
+                    seed = seed * 48271 % 2147483647;
+                    var a = seed % rows.length;
+                    seed = seed * 48271 % 2147483647;
+                    var b = seed % rows.length;
+                    if (a === b) {
+                        continue;
+                    }
+                    var first = this.vectorAt(rows[a]);
+                    var second = this.vectorAt(rows[b]);
+                    var dot = 0;
+                    for (var d = 0; d < first.length; d++) {
+                        dot += first[d] * second[d];
+                    }
+                    dot /= VECTOR_SCALE2;
+                    total += dot;
+                    squares += dot * dot;
+                    count += 1;
+                }
+                var mean = total / count;
+                var spread = Math.sqrt(Math.max(0, squares / count - mean * mean));
+                if (spread > 0) {
+                    result = {mean: Math.min(mean, cap.mean), std: Math.min(spread, cap.std)};
+                }
+            }
+        }
+        this.spreadCache = result;
+        return result;
+    };
+
+    // The vector of record r (a view of the attached data), or null.
+    Index.prototype.vectorAt = function (r) {
+        if (!this.vectors || r === undefined || r < 0 || this.vecRows[r] < 0) {
+            return null;
+        }
+        var dims = this.vectors.dims;
+        var start = this.vecRows[r] * dims;
+        return this.vectors.data.subarray(start, start + dims);
+    };
+
+    /* The cosine of every record with a vector (-2 for records without
+       one): {values, mean, std, count, total, squares} (mean and standard
+       deviation of the values of the records with a vector, how many there
+       are, and the sums of the values and of their squares). The last few
+       answers are kept (by key, default: the vector itself), as facets and
+       sorting search again with the same one. */
+    Index.prototype.cosineStats = function (vector, key) {
+        key = key || vector;
+        var cache = this.cosCache || (this.cosCache = []);
+        for (var c = 0; c < cache.length; c++) {
+            if (cache[c].key === key) {
+                return cache[c];
+            }
+        }
+        var n = this.n;
+        var out = new Float32Array(n);
+        var rows = this.vecRows;
+        var data = this.vectors ? this.vectors.data : null;
+        var dims = this.vectors ? this.vectors.dims : 0;
+        var total = 0;
+        var squares = 0;
+        var count = 0;
+        for (var r = 0; r < n; r++) {
+            var row = rows ? rows[r] : -1;
+            if (row < 0 || vector.length !== dims) {
+                out[r] = -2;
+                continue;
+            }
+            var at = row * dims;
+            var sum = 0;
+            for (var d = 0; d < dims; d++) {
+                sum += vector[d] * data[at + d];
+            }
+            sum /= VECTOR_SCALE2;
+            out[r] = sum;
+            total += sum;
+            squares += sum * sum;
+            count += 1;
+        }
+        var mean = count ? total / count : 0;
+        var spread = count ? Math.sqrt(Math.max(0, squares / count - mean * mean)) : 0;
+        var entry = {key: key, values: out, mean: mean, std: spread || 1, count: count,
+                     total: total, squares: squares};
+        cache.unshift(entry);
+        if (cache.length > 4) {
+            cache.pop();
+        }
+        return entry;
+    };
+
+    /* The cosine a picture needs to count as like record origin, for
+       similar: and the "More like this" strip: z SIMILAR_MIN_Z over the
+       cosines of the other pictures (stats: cosineStats of its vector; its
+       own cosine of 1 is left out, as it would raise their mean and
+       deviation in a small set), and SIMILAR_MIN_SD above two pictures taken
+       at random (pairSpread); when fewer than SIMILAR_FEW of the pictures
+       wanted(r) allows are that close, the cosine of the SIMILAR_FEW-th
+       closest of them, but at least SIMILAR_NEAR_SD above two pictures
+       taken at random, and SIMILAR_MARGIN_SD below the closest one. With
+       look vectors (copyCosine, LOOK_COPY), the copies of the picture are
+       left out of all of this, as its own cosine is, and always pass the
+       cut. (origin is -1 for an example picture.) */
+    Index.prototype.similarCut = function (origin, stats, wanted) {
+        var cos = stats.values;
+        var copy = this.copyCosine || Infinity;
+        var own = cos[origin] > -2 ? cos[origin] : 0;
+        var count = stats.count - (cos[origin] > -2 ? 1 : 0);
+        var total = stats.total - own;
+        var squares = stats.squares - own * own;
+        var r;
+        if (copy < Infinity) {
+            for (r = 0; r < this.n; r++) {
+                if (r !== origin && cos[r] >= copy) {
+                    total -= cos[r];
+                    squares -= cos[r] * cos[r];
+                    count -= 1;
+                }
+            }
+        }
+        var mean = count > 0 ? total / count : 0;
+        var spread = count > 0 ? Math.sqrt(Math.max(0, squares / count - mean * mean)) : 0;
+        var typical = this.pairSpread();
+        var close = Math.min(copy, Math.max(typical.mean + SIMILAR_MIN_SD * typical.std,
+                                            mean + SIMILAR_MIN_Z * spread));
+        var closest = [];           // the SIMILAR_FEW best cosines, best first
+        var near = 0;
+        for (r = 0; r < this.n; r++) {
+            var value = cos[r];
+            if (r === origin || value <= -2 || value >= copy || !wanted(r)) {
+                continue;
+            }
+            if (value >= close) {
+                near += 1;
+            }
+            if (closest.length < SIMILAR_FEW || value > closest[closest.length - 1]) {
+                var at = closest.length;
+                while (at > 0 && closest[at - 1] < value) {
+                    at -= 1;
+                }
+                closest.splice(at, 0, value);
+                if (closest.length > SIMILAR_FEW) {
+                    closest.pop();
+                }
+            }
+        }
+        if (near >= SIMILAR_FEW || !closest.length) {
+            return close;
+        }
+        return Math.min(close, Math.max(typical.mean + SIMILAR_NEAR_SD * typical.std,
+                                        closest[closest.length - 1],
+                                        closest[0] - SIMILAR_MARGIN_SD * typical.std));
+    };
+
+    /* How meaning takes part in a search, or null (words only): {mode,
+       vector, free (per clause: may be missed), similar (the similar:
+       term), origin (its record), fallback (ids, when the picture has no
+       vector)}. */
+    Index.prototype.meaningPlan = function (parsed, opts, context) {
+        var look = parsed.terms.filter(function (term) {
+            return lookTerm(term) && term.active !== false;
+        })[0];
+        if (look || opts.lookVector) {
+            return this.lookPlan(look, opts.lookVector, context);
+        }
+        var similar = parsed.terms.filter(function (term) {
+            return similarTerm(term) && term.active !== false;
+        })[0];
+        if (similar) {
+            var origin = this.position[similar.filter.value];
+            var plan = {mode: "similar", similar: similar, origin: origin === undefined ? -1 : origin,
+                        free: null, vector: null, fallback: null};
+            if (origin === undefined) {
+                context.warn("There is no picture " + similar.filter.value + " to find others " +
+                             "like.");
+                return plan;
+            }
+            plan.vector = this.vectorAt(origin);
+            if (!plan.vector) {
+                plan.fallback = this.similar(this.records[origin].i, SIMILAR_FALLBACK, opts);
+            }
+            return plan;
+        }
+        var mode = opts.meaning === "meaning" ? "meaning" : opts.meaning === "words" ? "words"
+            : "hybrid";
+        var vector = opts.vector;
+        if (mode === "words" || !vector || !this.vecCount || vector.length !== this.vectors.dims) {
+            return null;
+        }
+        var free = [];
+        var any = false;
+        parsed.clauses.forEach(function (clause, c) {
+            free[c] = clause.terms.every(freeTerm);
+            any = any || free[c];
+        });
+        return any ? {mode: mode, vector: vector, free: free, similar: null} : null;
+    };
+
+    /* The plan of a look: term (look:<id>), or of an example picture's look
+       vector: {mode "look", similar (the term, if any), origin (its record,
+       or -1), view (lookView), vector (null when there is none to go by)}. */
+    Index.prototype.lookPlan = function (term, example, context) {
+        var view = this.lookView();
+        var plan = {mode: "look", similar: term || null, origin: -1, free: null, vector: null,
+                    fallback: null, view: view};
+        if (term) {
+            var origin = this.position[term.filter.value];
+            if (origin === undefined) {
+                context.warn("There is no picture " + term.filter.value + " to find others " +
+                             "like.");
+                return plan;
+            }
+            plan.origin = origin;
+            plan.vector = view.vectorAt(origin);
+            if (!plan.vector && view.vectors) {
+                // (Nothing is said while no look vectors are attached: a page
+                // that is still loading them searches again once they come.)
+                context.warn("This picture has no look vector yet, so no others are found " +
+                             "by its looks.");
+            }
+            return plan;
+        }
+        if (view.vectors && example && example.length === view.vectors.dims) {
+            plan.vector = example;
+        } else if (view.vectors) {
+            context.warn("The example picture cannot be compared with these pictures' looks.");
+        }
+        return plan;
+    };
+
+    /* True when the median z of the word matches (those with a vector) is
+       below MEANING_WORDS_Z: what the words found is not what the model
+       makes of the query, so meaning has nothing to add (see there). */
+    Index.prototype.wordsUnlikeQuery = function (alive, missed, stats) {
+        var cos = stats.values;
+        var zs = [];
+        for (var r = 0; r < this.n; r++) {
+            if (alive[r] && !missed[r] && cos[r] > -2) {
+                zs.push((cos[r] - stats.mean) / stats.std);
+            }
+        }
+        if (!zs.length) {
+            return false;
+        }
+        zs.sort(function (a, b) {
+            return a - b;
+        });
+        return zs[Math.floor(zs.length / 2)] < MEANING_WORDS_Z;
+    };
+
+    /* Meaning's part of a search (see the notes at the top): changes alive
+       and score in place; returns {mode, best, only (ids found by meaning
+       alone, closest first)}, or null when meaning had nothing to add (the
+       word matches as without it, see MEANING_WORDS_Z). missed marks the
+       pictures without the free words. */
+    Index.prototype.applyMeaning = function (plan, alive, score, missed) {
+        var n = this.n;
+        var r;
+        var only = [];
+        if (plan.mode === "look") {
+            return this.applyLook(plan, alive, score);
+        }
+        if (plan.mode === "similar" && !plan.vector) {
+            var place = Object.create(null);
+            (plan.fallback || []).forEach(function (id, k) {
+                place[String(id)] = k;
+            });
+            var count = (plan.fallback || []).length;
+            for (r = 0; r < n; r++) {
+                if (!alive[r]) {
+                    continue;
+                }
+                var at = place[String(this.records[r].i)];
+                if (r === plan.origin) {
+                    score[r] = count + 1;
+                } else if (at !== undefined) {
+                    score[r] = count - at;
+                } else {
+                    alive[r] = 0;
+                }
+            }
+            return {mode: "similar", best: null, only: only};
+        }
+        var stats = this.cosineStats(plan.vector,
+                                     plan.mode === "similar" ? "r" + plan.origin : null);
+        var cos = stats.values;
+        // The cosine that is z standard deviations above the mean.
+        function atZ(z) {
+            return stats.mean + z * stats.std;
+        }
+        var best = -1;
+        var wordBest = 0;
+        for (r = 0; r < n; r++) {
+            if (alive[r]) {
+                if (cos[r] > best) {
+                    best = cos[r];
+                }
+                if (missed && !missed[r] && score[r] > wordBest) {
+                    wordBest = score[r];
+                }
+            }
+        }
+        if (plan.mode === "similar") {
+            var close = this.similarCut(plan.origin, stats, function (row) {
+                return alive[row];
+            });
+            for (r = 0; r < n; r++) {
+                if (alive[r]) {
+                    if (cos[r] >= close || r === plan.origin) {
+                        score[r] = r === plan.origin ? 2 : cos[r];
+                    } else {
+                        alive[r] = 0;
+                    }
+                }
+            }
+            return {mode: "similar", best: best, only: only};
+        }
+        // A small set: the closest few when nothing else is close (see
+        // MEANING_SMALL), of the pictures wanted(r) allows; else Infinity.
+        function fewCut(wanted) {
+            if (stats.count >= MEANING_SMALL) {
+                return Infinity;
+            }
+            var closest = [];
+            for (var row = 0; row < n; row++) {
+                if (wanted(row) && cos[row] > -2) {
+                    closest.push(cos[row]);
+                }
+            }
+            closest.sort(function (a, b) {
+                return b - a;
+            });
+            if (!closest.length || closest[0] < atZ(MEANING_FEW_Z)) {
+                return Infinity;
+            }
+            return Math.max(closest[0] - MEANING_FEW_MARGIN_Z * stats.std,
+                            closest[Math.min(closest.length, MEANING_FEW) - 1]);
+        }
+        if (plan.mode === "meaning") {
+            var lowest = Math.max(best - MEANING_ONLY_MARGIN_Z * stats.std,
+                                  atZ(MEANING_ONLY_Z));
+            if (best < lowest) {
+                lowest = fewCut(function (row) {
+                    return alive[row];
+                });
+            }
+            for (r = 0; r < n; r++) {
+                if (alive[r]) {
+                    if (cos[r] >= lowest) {
+                        score[r] = cos[r];
+                    } else {
+                        alive[r] = 0;
+                    }
+                }
+            }
+            return {mode: "meaning", best: best, only: only};
+        }
+        var free = 0;
+        plan.free.forEach(function (isFree) {
+            free += isFree ? 1 : 0;
+        });
+        if (free <= MEANING_NAME_WORDS && this.wordsUnlikeQuery(alive, missed, stats)) {
+            for (r = 0; r < n; r++) {
+                if (alive[r] && missed[r]) {
+                    alive[r] = 0;
+                }
+            }
+            return null;
+        }
+        var floor = atZ(MEANING_FLOOR_Z);
+        var span = best - floor;
+        var enough = Math.max(best - MEANING_MARGIN_Z * stats.std, atZ(MEANING_MIN_Z));
+        var reached = false;
+        for (r = 0; r < n && !reached; r++) {
+            reached = Boolean(alive[r] && missed[r] && cos[r] >= enough);
+        }
+        if (!reached) {
+            enough = Math.max(best - MEANING_MARGIN_Z * stats.std, fewCut(function (row) {
+                return alive[row] && missed[row];
+            }));
+        }
+        // Word scores are divided by the best one, or by what strong matches
+        // of every free word would score when even the best is weak.
+        var wordScale = Math.max(wordBest, WORD_STRONG * free);
+        var extra = [];
+        for (r = 0; r < n; r++) {
+            if (!alive[r]) {
+                continue;
+            }
+            // How far the cosine is above the floor (1 at the best); below
+            // it, as far as -1, it counts against a word match (the words
+            // are there, but the picture is about something else). Pictures
+            // without a vector are neither helped nor harmed.
+            var rel = span > 0 && cos[r] > -2 ? Math.max(-1, Math.min(1, (cos[r] - floor) / span))
+                : 0;
+            if (!missed[r]) {
+                // (Shifted by one weight: sorting needs scores of 0 or more.)
+                score[r] = score[r] / wordScale + MEANING_WEIGHT * (1 + rel);
+            } else if (cos[r] >= enough) {
+                // At most one weight: below every word match whose meaning
+                // is at least at the floor.
+                score[r] = MEANING_WEIGHT * rel;
+                extra.push(r);
+            } else {
+                alive[r] = 0;
+            }
+        }
+        // Only the closest MEANING_EXTRA of the pictures found by meaning alone.
+        extra.sort(function (a, b) {
+            return cos[b] - cos[a] || a - b;
+        });
+        for (var k = 0; k < extra.length; k++) {
+            if (k < MEANING_EXTRA) {
+                only.push(this.records[extra[k]].i);
+            } else {
+                alive[extra[k]] = 0;
+            }
+        }
+        return {mode: "hybrid", best: best, only: only};
+    };
+
+    /* Looks' part of a search (lookPlan): only the pictures that look like the
+       origin (or the example) stay, scored by their cosine: the origin first,
+       then its copies (LOOK_COPY) and the other pictures of its duplicate
+       stack (for an example picture: of the stack of its closest copy in
+       the index, if it has one), none of which count when judging what is
+       close (similarCut), then the others. */
+    Index.prototype.applyLook = function (plan, alive, score) {
+        var n = this.n;
+        var r;
+        if (!plan.vector) {
+            for (r = 0; r < n; r++) {
+                if (alive[r]) {
+                    if (r === plan.origin) {
+                        score[r] = 4;
+                    } else {
+                        alive[r] = 0;
+                    }
+                }
+            }
+            return {mode: "look", best: null, only: []};
+        }
+        var view = plan.view;
+        var stats = view.cosineStats(plan.vector, plan.origin >= 0 ? "r" + plan.origin : null);
+        var cos = stats.values;
+        var best = -1;
+        var bestRow = -1;
+        for (r = 0; r < n; r++) {
+            if (alive[r] && r !== plan.origin && cos[r] > best) {
+                best = cos[r];
+                bestRow = r;
+            }
+        }
+        var groupOf = this.groupOf;
+        var stack = plan.origin >= 0 ? groupOf[plan.origin]
+            : bestRow >= 0 && best >= LOOK_COPY ? groupOf[bestRow] : -1;
+        var close = view.similarCut(plan.origin, stats, function (row) {
+            return alive[row] && (stack < 0 || groupOf[row] !== stack);
+        });
+        for (r = 0; r < n; r++) {
+            if (alive[r]) {
+                if (r === plan.origin) {
+                    score[r] = 4;
+                } else if (cos[r] >= LOOK_COPY || (stack >= 0 && groupOf[r] === stack)) {
+                    score[r] = 2 + Math.max(cos[r], 0);
+                } else if (cos[r] > -2 && cos[r] >= close) {
+                    score[r] = cos[r];
+                } else {
+                    alive[r] = 0;
+                }
+            }
+        }
+        return {mode: "look", best: best, only: []};
     };
 
     /* ---------- More like this --------------------------------------------- */
@@ -3626,24 +4539,42 @@ var SearchCore = (function () {
         if (result.length >= limit) {
             return result;
         }
-        var shared = new Int32Array(this.n);
-        var own = data.sets[origin];
-        for (var k = 0; k < own.length; k++) {
-            var posting = data.postings[own[k]];
-            for (var p = 0; p < posting.length; p++) {
-                shared[posting[p]] += 1;
-            }
-        }
         var scores = new Float64Array(this.n);
         var candidates = [];
-        for (r = 0; r < this.n; r++) {
-            if (taken[r] || !visible[r]) {
-                continue;
+        var byLook = opts.by === "look";
+        var source = byLook ? this.lookView() : this;
+        var vector = source.vectorAt(origin);
+        if (vector) {
+            // By meaning (or by look): the cosine of the two pictures' vectors.
+            var stats = source.cosineStats(vector, "r" + origin);
+            var cosines = stats.values;
+            var close = source.similarCut(origin, stats, function (row) {
+                return !taken[row] && visible[row];
+            });
+            for (r = 0; r < this.n; r++) {
+                if (!taken[r] && visible[r] && cosines[r] >= close) {
+                    scores[r] = cosines[r];
+                    candidates.push(r);
+                }
             }
-            var score = this.similarity(origin, r, shared[r]);
-            if (score >= SIMILAR_MIN_SCORE) {
-                scores[r] = score;
-                candidates.push(r);
+        } else if (!byLook) {
+            var shared = new Int32Array(this.n);
+            var own = data.sets[origin];
+            for (var k = 0; k < own.length; k++) {
+                var posting = data.postings[own[k]];
+                for (var p = 0; p < posting.length; p++) {
+                    shared[posting[p]] += 1;
+                }
+            }
+            for (r = 0; r < this.n; r++) {
+                if (taken[r] || !visible[r]) {
+                    continue;
+                }
+                var score = this.similarity(origin, r, shared[r]);
+                if (score >= SIMILAR_MIN_SCORE) {
+                    scores[r] = score;
+                    candidates.push(r);
+                }
             }
         }
         candidates.sort(function (a, b) {
@@ -3810,6 +4741,9 @@ var SearchCore = (function () {
         });
         check.typing = false;
         check.group = false;
+        // By the words alone: the meaning vector is the typed query's, so
+        // meaning would find its pictures whatever the corrected words are.
+        check.meaning = "words";
         if (!this.search(text, check).total) {
             return null;
         }
@@ -3971,8 +4905,8 @@ var SearchCore = (function () {
         {example: "place:hawaii", meaning: "taken in a town, region or country (pictures " +
             "with a GPS position)"},
         {example: "has:text", meaning: "with text, a location (has:gps), people, animals, ..."},
-        {example: "is:360", meaning: "360\u00b0 photos; also is:duplicate, is:undescribed, " +
-            "is:edited, is:hidden"},
+        {example: "is:360", meaning: "360\u00b0 photos; also is:video, is:duplicate, " +
+            "is:undescribed, is:edited, is:hidden"},
         {example: "lib:name", meaning: "only pictures of one library"}
     ];
 
@@ -4010,7 +4944,11 @@ var SearchCore = (function () {
         dateLabel: dateLabel,
         rangeLabel: rangeLabel,
         timelineChoice: timelineChoice,
-        PLACE_SEPARATOR: PLACE_SEPARATOR
+        PLACE_SEPARATOR: PLACE_SEPARATOR,
+        meaningText: meaningText,
+        decodeVectors: decodeVectors,
+        joinVectors: joinVectors,
+        queryVector: queryVector
     };
 })();
 
