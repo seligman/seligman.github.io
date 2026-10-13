@@ -11,7 +11,10 @@
    flags, se sensitive, pr private, dk date taken, ts date and time taken,
    cm camera, gp has GPS, ci rg co cc km the place (town, region,
    country, country code, km from the town), pe the place is only
-   estimated, gx the GPS check set the position aside (the admin's;
+   estimated (is:place-estimated), ps where a place without the
+   picture's own position comes from ("c" a copy, "t" the pictures taken
+   around the same time, "a" the library's area, "o" the owner), gx the
+   GPS check set the position aside (the admin's;
    is:gps-ignored), p "360", mv video (its ty is
    "video"), dr its length in seconds, vc its codec, vt the kind the AI
    model saw in its frames when not a photo, dg duplicate group,
@@ -174,7 +177,8 @@
      is: (360, duplicate, hidden, undescribed, described, edited, private,
      sensitive, blurry, dark, overexposed, accidental, junk, v4, favorite,
      rated, unrated, drive (the clips of drives), gps-ignored (positions
-     the GPS check set aside: the admin's) or a type: is:video finds
+     the GPS check set aside: the admin's), place-estimated (pictures
+     whose place is only estimated) or a type: is:video finds
      the videos, is:photo the photos), rating: (4: exactly 4 stars; >=3, >3, <=2, <2, 4+ or 3-5;
      comparisons find rated pictures only, rating:0 the unrated ones),
      album: (an album's name, any case, or the start of the only one
@@ -1000,7 +1004,11 @@ var SearchCore = (function () {
         starred: "favorite", star: "favorite", rated: "rated", unrated: "unrated",
         drive: "drive", dashcam: "drive", "gps-ignored": "gps_ignored",
         gps_ignored: "gps_ignored", "location-ignored": "gps_ignored",
-        location_ignored: "gps_ignored", "ignored-gps": "gps_ignored", ignored_gps: "gps_ignored"
+        location_ignored: "gps_ignored", "ignored-gps": "gps_ignored", ignored_gps: "gps_ignored",
+        "place-estimated": "place_estimated", place_estimated: "place_estimated",
+        "estimated-place": "place_estimated", estimated_place: "place_estimated",
+        estimated: "place_estimated", "location-estimated": "place_estimated",
+        location_estimated: "place_estimated"
     });
     var QUALITY_FLAGS = wordSet("blurry dark overexposed accidental screen_photo");
 
@@ -3715,6 +3723,10 @@ var SearchCore = (function () {
                 return function (rec) {
                     return Boolean(rec.gx);
                 };
+            case "place_estimated":
+                return function (rec) {
+                    return Boolean(rec.pe);
+                };
             case "favorite":
                 return isFavorite;
             case "rated":
@@ -5722,7 +5734,7 @@ var SearchCore = (function () {
         {example: "on:today", meaning: "taken on this day in earlier years (on:05-14: " +
             "that day in any year)"},
         {example: "place:hawaii", meaning: "taken in a town, region or country (pictures " +
-            "with a GPS position)"},
+            "with a GPS position, or an estimated place: is:place-estimated)"},
         {example: "has:text", meaning: "with text, a location (has:gps), people, animals, ..."},
         {example: "is:360", meaning: "360\u00b0 photos and videos; also is:video, is:drive, " +
             "is:duplicate, is:undescribed, is:edited, is:hidden, is:gps-ignored"},

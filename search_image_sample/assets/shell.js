@@ -357,6 +357,7 @@ var SHELL = (function () {
         places: "Adding place names",
         proxies: "Making playable copies of videos",
         looks: "Making the looks of pictures",
+        "opening views": "Finding where 360 photos open",
         drives: "Describing drives",
         drive_previews: "Making sped-up previews of drives"
     };
@@ -536,10 +537,24 @@ var SHELL = (function () {
             if (summary.offline) {
                 parts.push(number(summary.offline) + " wait for their folder");
             }
+            // (Where 360 photos open, see opening_views.py.)
+            if (summary.views) {
+                parts.push(plural(summary.views, "360 photo") + " given an opening view" +
+                           (summary.views_turned ? " (" + number(summary.views_turned) +
+                            " facing their subject)" : ""));
+            }
+            if (summary.views_dropped) {
+                parts.push(plural(summary.views_dropped, "360 photo") + " back at the front");
+            }
         }
         if ((job.kind === "scan" || job.kind === "process") && summary.looks_pending) {
             // (Looks are made by the Update looks job only: it needs the image model.)
             parts.push(plural(summary.looks_pending, "picture") + " without looks yet");
+        }
+        if ((job.kind === "scan" || job.kind === "process") && summary.views_pending) {
+            // (... and so are the opening views of 360 photos.)
+            parts.push(plural(summary.views_pending, "360 photo") +
+                       " waiting for an opening view");
         }
         if (totals.deleted !== undefined) {
             parts.push(plural(totals.deleted, "picture") + " deleted");

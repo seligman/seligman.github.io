@@ -41,11 +41,23 @@
                                  information pane follows the clip that
                                  plays
        onExpandDrive(id)         open the folded drive of a clip in the grid
+       startAt                   {id, seconds}: a clip of a drive that id
+                                 opens on begins that far in (the map's
+                                 routes); the drive's route (routes.js,
+                                 SITE.loadRoutes) shows in the pane as a
+                                 small map with the place the clip that
+                                 plays is at, and its speed there on the
+                                 strip
        reviewUrl(id)             the Duplicates page for that stack (admin)
    VIEWER.close(), VIEWER.isOpen(), VIEWER.update(ids) (the result list
    changed while open), VIEWER.refreshInfo() (draw the information pane
    again: what similar(id) gives has changed), VIEWER.current() (the id
    shown).
+   On narrow upright screens (phones, SHEET_QUERY) the information pane is
+   a bottom sheet: open (i), it shows the title and the key facts at its
+   peek height, the picture fitted above it; its handle (a tap, a drag,
+   the up and down arrows) takes it up over most of the screen or down to
+   close it. Held sideways, the pane is narrower and beside the picture.
 
    VIEWER.Stage(box, options)  a zoomable picture (wheel, pinch,
        double-click, drag) or, for 360-degree photos, an interactive
@@ -67,7 +79,14 @@
        as a 360 photo, with its poster; its video (both lenses side by
        side) then plays on the sphere, each frame stitched by a shader
        with its lens geometry (rec.fx), under controls of the stage's own
-       (flat, the front lens only, without WebGL).
+       (flat, the front lens only, without WebGL). A 360 video with rec.lv
+       is turned level as it plays: the full record's level track (detail.
+       level, given to stage.videoDetail) says which way was up in its
+       panorama over time (format.levelUp, levelMatrix); "Level" among its
+       controls turns that off and on (remembered in this browser).
+       A 360 photo or video opens at its opening view (rec.ov, see
+       opening_views.py and format.openingView; the front without one), and
+       stage.reset() returns there.
    VIEWER.stageUrls(rec, detail) the addresses stage.show wants.
    VIEWER.renderInfo(box, record, detail, context)  the information pane:
        title, date, place, camera, description and text with the search words
@@ -80,7 +99,11 @@
        why the GPS check set a picture's position aside (detail.
        location_check), with "Use this location anyway" -- and "Ignore
        location" among the admin actions -- which change the record's place
-       in place and tell context.onEdited too. Under the title:
+       in place and tell context.onEdited too. A place only estimated (pe,
+       see place_estimates.py) says where it comes from ("estimated from
+       ...", a tap shows the details); the admin accepts, changes or
+       rejects it there, or
+       sets the place of a picture without one ("Set place..."). Under the title:
        the favorite star (F), the rating (1-5; 0 clears it, or first
        resets a view that was zoomed or turned) and the albums of the
        picture with "Add to album..." (A) -- the admin's to change
@@ -93,6 +116,12 @@
        a new album only when no album matches what was typed),
        byKey(rec, context, key) (the keys F, 1-5, 0 and A for a picture)
        and stars(count).
+   VIEWER.keepOpeningView(rec, stage, button, clear, done) "Open here" (the
+       admin's): the 360 picture rec opens at stage's view from now on (or,
+       clear, at the automatic view or the front again); rec.ov changes in
+       place and done(reply) is told. The lightbox's bar and the detail
+       page's tools have the button; "Automatic opening view" among the
+       pane's admin actions (context.stage, context.onOpening) clears it.
 
    Pages are built with DOM calls and textContent only (never innerHTML).
    VIEWER.format holds the pure helpers (also used by the tests under Node).
@@ -411,6 +440,42 @@ var VIEWER = (function () {
         return {u: u - Math.floor(u), v: 0.5 - lat / Math.PI};
     }
 
+    /* Where a 360 picture's view opens: rec.ov ([yaw, pitch] or [yaw, pitch,
+       fov], degrees: yaw right of the middle of its panorama, pitch up; see
+       opening_views.py) as a stage's view {yaw, pitch, fov} (radians; the
+       view's yaw turns the other way, see panoLookup). The front (and the
+       usual field of view) without one. */
+    function openingView(rec) {
+        var ov = rec && Array.isArray(rec.ov) ? rec.ov : null;
+        var radians = Math.PI / 180;
+        var yaw = ov ? Number(ov[0]) : 0;
+        var pitch = ov ? Number(ov[1]) : 0;
+        var fov = ov && ov.length > 2 ? Number(ov[2]) : NaN;
+        yaw = isFinite(yaw) ? ((yaw + 180) % 360 + 360) % 360 - 180 : 0;
+        // (-0 would read as moved in no test; plain 0.)
+        return {yaw: yaw ? -yaw * radians : 0,
+                pitch: isFinite(pitch) ? clamp(pitch * radians, -MAX_PITCH, MAX_PITCH) : 0,
+                fov: isFinite(fov) ? clamp(fov * radians, MIN_FOV, MAX_FOV) : DEFAULT_FOV};
+    }
+
+    /* A stage's view as an opening view to keep ("Open here"): {yaw, pitch,
+       fov} in degrees, as openingView reads them. */
+    function viewDegrees(view) {
+        var degrees = 180 / Math.PI;
+        var yaw = ((-view.yaw * degrees + 180) % 360 + 360) % 360 - 180;
+        function two(value) {
+            return Math.round(value * 100) / 100;
+        }
+        return {yaw: two(yaw), pitch: two(view.pitch * degrees), fov: two(view.fov * degrees)};
+    }
+
+    // Whether two views look the same way (within about a twentieth of a degree).
+    function sameView(a, b) {
+        var turn = Math.abs(a.yaw - b.yaw) % (2 * Math.PI);
+        return Math.min(turn, 2 * Math.PI - turn) < 1e-3 && Math.abs(a.pitch - b.pitch) < 1e-3 &&
+            Math.abs(a.fov - b.fov) < 1e-3;
+    }
+
     /* The uniforms of the 360 video shader for a record's lens geometry
        (rec.fx, see search_index.py: the lens circles as fractions of the
        frame, degrees for the rest) and a frame of width x height pixels:
@@ -443,6 +508,111 @@ var VIEWER = (function () {
         };
     }
 
+    /* Up in a 360 video's panorama (x right, y up, z ahead) at seconds of
+       the video, from its level track ([[seconds, x, y, z], ...], a fifth
+       number 1 on the samples of a camera upside down; see
+       insta360.level_track): along a straight line between two samples,
+       made a unit vector; the first and the last hold before and after.
+       [0, 1, 0] without a usable track. */
+    function levelUp(track, seconds) {
+        function unit(sample) {
+            var x = Number(sample[1]);
+            var y = Number(sample[2]);
+            var z = Number(sample[3]);
+            var length = Math.sqrt(x * x + y * y + z * z);
+            return length > 0 && isFinite(length) ? [x / length, y / length, z / length]
+                : [0, 1, 0];
+        }
+        if (!Array.isArray(track) || !track.length || !Array.isArray(track[0])) {
+            return [0, 1, 0];
+        }
+        var low = 0;
+        var high = track.length;
+        while (low < high) {
+            var middle = (low + high) >> 1;
+            if (track[middle][0] <= seconds) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        if (low <= 0) {
+            return unit(track[0]);
+        }
+        if (low >= track.length) {
+            return unit(track[track.length - 1]);
+        }
+        var before = unit(track[low - 1]);
+        var after = unit(track[low]);
+        var span = track[low][0] - track[low - 1][0];
+        var f = span > 0 ? (seconds - track[low - 1][0]) / span : 0;
+        return unit([0, before[0] + (after[0] - before[0]) * f,
+                     before[1] + (after[1] - before[1]) * f,
+                     before[2] + (after[2] - before[2]) * f]);
+    }
+
+    /* Whether the camera counts as upside down at seconds of a video: the
+       mark of its level track's sample at or before then (the first
+       sample's before it), as insta360.inverted_at reads it. */
+    function levelInverted(track, seconds) {
+        if (!Array.isArray(track) || !track.length || !Array.isArray(track[0])) {
+            return false;
+        }
+        var low = 0;
+        var high = track.length;
+        while (low < high) {
+            var middle = (low + high) >> 1;
+            if (track[middle][0] <= seconds) {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        var sample = track[Math.max(0, low - 1)];
+        return Array.isArray(sample) && sample.length > 4 && sample[4] === 1;
+    }
+
+    // A single moment's camera counts as upside down past this (degrees
+    // from upright; insta360.INVERTED_DEG), when its track does not say.
+    var INVERTED_COS = Math.cos(135 * Math.PI / 180);
+
+    /* The rotation that takes a level panorama's directions to the
+       camera's, for up (see levelUp), as images.py and insta360.up_rotation
+       turn posters: the smallest turn of [0, 1, 0] onto up (the heading
+       stays); for a camera upside down (inverted, see levelInverted;
+       undefined: from up alone) half a turn about the forward axis, then
+       the smallest turn of [0, -1, 0] onto up (the heading of the camera's
+       front stays). Column by column (for uniformMatrix3fv). */
+    function levelMatrix(up, inverted) {
+        var x = up[0];
+        var y = up[1];
+        var z = up[2];
+        if (inverted === undefined || inverted === null) {
+            inverted = y < INVERTED_COS;
+        }
+        if (inverted) {
+            // (Its columns: those of the turn onto -up, the first two
+            // turned round.)
+            var m = levelMatrix([-x, -y, -z], false);
+            return [-m[0], -m[1], -m[2], -m[3], -m[4], -m[5], m[6], m[7], m[8]];
+        }
+        var s = Math.sqrt(x * x + z * z);
+        if (s < 1e-9) {
+            return y > 0 ? [1, 0, 0, 0, 1, 0, 0, 0, 1] : [1, 0, 0, 0, -1, 0, 0, 0, -1];
+        }
+        var kx = z / s;
+        var kz = -x / s;
+        var c = y;
+        var one = 1 - c;
+        // Rows (c + kx kx one, -kz s, kx kz one), (kz s, c, -kx s),
+        // (kx kz one, kx s, c + kz kz one), given as columns.
+        return [c + kx * kx * one, kz * s, kx * kz * one,
+                -kz * s, c, kx * s,
+                kx * kz * one, -kx * s, c + kz * kz * one];
+    }
+
+    var LEVEL_IDENTITY = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
     // A 360 video's frame holds its two lens circles side by side: every
     // pixel is stitched as images.py's dual_fisheye_to_equirect stitches a
     // frame (the same lens model, seam blend, lens gains and pole fill; see
@@ -472,6 +642,7 @@ var VIEWER = (function () {
         "uniform vec3 u_frontGain;",
         "uniform vec3 u_backGain;",
         "uniform vec2 u_fill;",             // nadir and zenith fill (radians; 0: none)
+        "uniform mat3 u_level;",            // level directions to the camera's (levelMatrix)
         "const float PI = 3.14159265358979;",
         "const float FEATHER = 0.0523599;", // images.POLE_FEATHER_DEG
         // Where a lens's circle shows direction d (its axis is +z): an
@@ -559,7 +730,9 @@ var VIEWER = (function () {
         "    float cy = cos(u_yaw);",
         "    float sy = sin(u_yaw);",
         "    d = vec3(d.x * cy + d.z * sy, d.y, -d.x * sy + d.z * cy);",
-        "    vec3 s = vec3(d.x, d.y, -d.z);",
+        // (Turned from the level view to the camera's: the poles filled
+        // are the camera's.)
+        "    vec3 s = u_level * vec3(d.x, d.y, -d.z);",
         "    vec3 colour = stitched(s);",
         "#ifdef POLE_FILL",
         "    if (u_fill.x > 0.0) {",
@@ -574,7 +747,7 @@ var VIEWER = (function () {
     ].join("\n");
 
     var FISHEYE_UNIFORMS = ["u_front", "u_back", "u_turn", "u_aspect", "u_scale", "u_mirror",
-                            "u_blend", "u_frontGain", "u_backGain", "u_fill"];
+                            "u_blend", "u_frontGain", "u_backGain", "u_fill", "u_level"];
 
     /* ---------- Edits (pure helpers) ---------------------------------------- */
 
@@ -654,19 +827,31 @@ var VIEWER = (function () {
                 tags_remove: (values.removed || []).slice()};
     }
 
-    /* "Kahului, Hawaii, United States (3 km)": the place of a record (its
-       town, when one is near, with how far it is), or "". A place only
-       estimated from the pictures taken around the same time (pe: the
-       picture's own position was set aside) says so. */
-    function placeText(rec) {
+    // "Lucca, Tuscany, Italy": the place names of a record, or "".
+    function placeNames(rec) {
         if (!rec || typeof rec.co !== "string" || !rec.co) {
             return "";
         }
-        var text = [rec.ci, rec.rg, rec.co].filter(function (part) {
+        return [rec.ci, rec.rg, rec.co].filter(function (part) {
             return typeof part === "string" && part;
         }).join(", ");
+    }
+
+    /* "Kahului, Hawaii, United States (3 km)": the place of a record (its
+       town, when one is near, with how far it is), or "". A place only
+       estimated (pe: the picture has no usable position of its own, see
+       place_estimates.py) says where it comes from (ps); the owner's own
+       place (ps "o") says "set by you" when forAdmin. */
+    function placeText(rec, forAdmin) {
+        var text = placeNames(rec);
+        if (!text) {
+            return "";
+        }
         if (rec.pe) {
-            return text + " " + ESTIMATED_PLACE;
+            return text + " " + (ESTIMATED_LABELS[rec.ps] || ESTIMATED_PLACE);
+        }
+        if (rec.ps === "o") {
+            return forAdmin ? text + " (set by you)" : text;
         }
         if (rec.ci && typeof rec.km === "number" && isFinite(rec.km)) {
             text += rec.km < 1 ? " (under 1 km)" : " (" + Math.round(rec.km) + " km)";
@@ -675,10 +860,33 @@ var VIEWER = (function () {
     }
 
     var ESTIMATED_PLACE = "(estimated from pictures taken around the same time)";
+    var TRACK_PLACE = "(estimated from a video's GPS track)";
+    var ESTIMATED_LABELS = {c: "(estimated from a copy of this picture)", t: ESTIMATED_PLACE,
+                            a: "(estimated from the library)"};
+
+    /* Where an estimated place comes from, in a sentence: the server's words
+       (detail.place_estimate.reason) with how far off it may be, or the
+       label of its source (an export has no more). */
+    function estimateReason(rec, estimate) {
+        var text = estimate && typeof estimate.reason === "string" && estimate.reason
+            ? estimate.reason : (ESTIMATED_LABELS[rec && rec.ps] || ESTIMATED_PLACE)
+                .slice(1, -1);
+        text = text.charAt(0).toUpperCase() + text.slice(1) + ".";
+        var radius = estimate && typeof estimate.radius_km === "number" &&
+            isFinite(estimate.radius_km) ? estimate.radius_km : null;
+        if (radius !== null && radius > 0) {
+            text += " It may be off by about " + (radius < 1
+                ? Math.max(100, Math.round(radius * 10) * 100) + " m"
+                : (radius < 10 ? radius.toFixed(1) : String(Math.round(radius))) + " km") + ".";
+        }
+        return text;
+    }
 
     var format = {
         tagKey: tagKey,
         placeText: placeText,
+        placeNames: placeNames,
+        estimateReason: estimateReason,
         splitTags: splitTags,
         tagProblem: tagProblem,
         editedTags: editedTags,
@@ -700,8 +908,14 @@ var VIEWER = (function () {
         panoZoom: panoZoom,
         panoTangents: panoTangents,
         panoLookup: panoLookup,
+        openingView: openingView,
+        viewDegrees: viewDegrees,
+        sameView: sameView,
         fisheyeParams: fisheyeParams,
         fisheyeShader: FISHEYE_SHADER,
+        levelUp: levelUp,
+        levelInverted: levelInverted,
+        levelMatrix: levelMatrix,
         MIN_FOV: MIN_FOV,
         MAX_FOV: MAX_FOV
     };
@@ -946,9 +1160,19 @@ var VIEWER = (function () {
         gl.uniform3f(u.u_frontGain, p.frontGain[0], p.frontGain[1], p.frontGain[2]);
         gl.uniform3f(u.u_backGain, p.backGain[0], p.backGain[1], p.backGain[2]);
         gl.uniform2f(u.u_fill, p.fill[0], p.fill[1]);
+        gl.uniformMatrix3fv(u.u_level, false, this.level || LEVEL_IDENTITY);
         // (What the uniforms were set for: setVideo sets them again for others.)
         this.fisheyeFor = {fx: fx, size: width + "x" + height};
         return true;
+    };
+
+    /* Turn the 360 video's frames by matrix (levelMatrix; null: as the
+       camera saw them) from the next draw on. */
+    Panorama.prototype.setLevel = function (matrix) {
+        this.level = matrix || null;
+        if (this.ok && this.fisheye && this.current === this.fisheye) {
+            this.gl.uniformMatrix3fv(this.uniforms.u_level, false, this.level || LEVEL_IDENTITY);
+        }
     };
 
     /* Upload the video's current frame (its lenses side by side) and draw
@@ -1083,6 +1307,34 @@ var VIEWER = (function () {
 
     var SWIPE_DISTANCE = 60;
     var DOUBLE_TAP_MS = 300;
+    // A 360 video with a level track (rec.lv) waits this long for the full
+    // record that holds it before its frames are shown as they are.
+    var LEVEL_WAIT_MS = 3000;
+    // Whether 360 videos are turned level: on, unless "Level" was turned
+    // off (remembered in this browser).
+    var LEVEL_KEY = "viewer.levelHorizon";
+    var levelSetting = null;
+
+    function levelOn() {
+        if (levelSetting === null) {
+            levelSetting = true;
+            try {
+                levelSetting = window.localStorage.getItem(LEVEL_KEY) !== "off";
+            } catch (error) {
+                // (No storage here: on.)
+            }
+        }
+        return levelSetting;
+    }
+
+    function setLevelOn(on) {
+        levelSetting = Boolean(on);
+        try {
+            window.localStorage.setItem(LEVEL_KEY, on ? "on" : "off");
+        } catch (error) {
+            // (Remembered for this page only.)
+        }
+    }
 
     /* Load a large picture (url) for WebGL and call done(picture) once:
        with an ImageBitmap or a loaded image, or null when there is none.
@@ -1175,6 +1427,13 @@ var VIEWER = (function () {
         this.copyToken = 0;                 // the show the full record said has a copy
         this.controls = null;               // a 360 video's own controls (videoControls)
         this.fisheyeBox = null;             // a 360 video shown flat (flat360Video)
+        this.levelTrack = null;             // a 360 video's level track (setLevelTrack)
+        this.levelWaiting = false;          // its frames wait for the track (rec.lv)
+        this.levelTimer = 0;
+        this.levelButton = null;            // "Level" among its controls
+        this.videoFrame = null;             // shows a 360 video's current frame
+        this.firstFrame = null;             // ... before it has played (start360Video)
+        this.videoDrawn = false;            // a frame of it is shown (not its poster)
         this.note = el("div", {className: "stage-note", hidden: true});
         this.busy = el("div", {className: "stage-busy", hidden: true, attrs: {"aria-hidden": "true"}});
         box.appendChild(this.img);
@@ -1184,7 +1443,7 @@ var VIEWER = (function () {
         this.token = 0;
         this.cancelSharp = null;            // stops loading the large panorama (sharpen)
         this.mode = "image";                // "image", "pano" or "video"
-        this.view = {yaw: 0, pitch: 0, fov: DEFAULT_FOV};
+        this.view = openingView(null);
         this.zoom = 1;
         this.tx = 0;
         this.ty = 0;
@@ -1236,7 +1495,69 @@ var VIEWER = (function () {
         this.dropPano();
         this.dropVideo();
         this.dropDrive();
+        this.dropLevel();
         this.token += 1;
+    };
+
+    // Forget a 360 video's level track (and stop waiting for it).
+    Stage.prototype.dropLevel = function () {
+        if (this.levelTimer) {
+            window.clearTimeout(this.levelTimer);
+        }
+        this.levelTimer = 0;
+        this.levelTrack = null;
+        this.levelWaiting = false;
+    };
+
+    /* A 360 video's level track (detail.level, see format.levelUp; null:
+       none): its frames are turned level from now on, while "Level" is
+       on. */
+    Stage.prototype.setLevelTrack = function (track) {
+        var waited = this.levelWaiting;
+        this.dropLevel();
+        this.levelTrack = Array.isArray(track) && track.length ? track : null;
+        if (this.levelButton) {
+            this.levelButton.hidden = !this.levelTrack;
+        }
+        if (waited && this.videoFrame) {
+            this.videoFrame();
+        } else {
+            this.refreshLevel();
+        }
+        this.state();
+    };
+
+    // Turn the 360 view for the video's frame at seconds (none: level off).
+    Stage.prototype.applyLevel = function (seconds) {
+        if (this.pano) {
+            var track = levelOn() ? this.levelTrack : null;
+            this.pano.setLevel(track ? levelMatrix(levelUp(track, seconds || 0),
+                                                   levelInverted(track, seconds || 0)) : null);
+        }
+    };
+
+    /* Draw the frame shown again, turned as "Level" now says. Before a
+       frame of the video is shown its poster is, made level: with "Level"
+       off its own frame is drawn instead (once the browser has it). */
+    Stage.prototype.refreshLevel = function () {
+        if (!this.pano || !this.video || (this.levelWaiting && levelOn())) {
+            return;
+        }
+        if (!this.videoDrawn) {
+            if (!levelOn() && this.firstFrame) {
+                this.firstFrame();
+            }
+            return;
+        }
+        this.applyLevel(this.video.currentTime || 0);
+        this.redraw();
+    };
+
+    // A 360 video shown as its camera saw it ("Level" off for a video with a
+    // level track): a view kept now would not be one of the level panorama.
+    Stage.prototype.unlevelled = function () {
+        return Boolean(this.video && this.pano && this.rec && this.rec.p === "360" &&
+                       (this.levelTrack || this.rec.lv) && !levelOn());
     };
 
     // Stop a video and take its player away (its download stops too).
@@ -1253,6 +1574,10 @@ var VIEWER = (function () {
         });
         this.controls = null;
         this.fisheyeBox = null;
+        this.levelButton = null;
+        this.videoFrame = null;
+        this.firstFrame = null;
+        this.videoDrawn = false;
         if (!video) {
             return;
         }
@@ -1390,6 +1715,11 @@ var VIEWER = (function () {
             this.driveDetail(detail);
             return;
         }
+        if (detail && this.rec && this.rec.mv && this.rec.p === "360" &&
+                (detail.id === undefined || detail.id === this.rec.i)) {
+            // (Its level track, if it has one. An export's details hold no id.)
+            this.setLevelTrack(detail.level);
+        }
         if (!detail || !detail.playable_copy || !this.rec || detail.id !== this.rec.i) {
             return;
         }
@@ -1413,6 +1743,19 @@ var VIEWER = (function () {
        the full record's playable_copy later: videoDetail). */
     Stage.prototype.show360Video = function (rec, urls, token) {
         var self = this;
+        if (rec.lv && !this.levelTrack) {
+            // (Its frames wait for the full record's level track, a while.)
+            this.levelWaiting = true;
+            this.levelTimer = window.setTimeout(function () {
+                if (token === self.token && self.levelWaiting) {
+                    self.levelWaiting = false;
+                    self.levelTimer = 0;
+                    if (self.videoFrame) {
+                        self.videoFrame();
+                    }
+                }
+            }, LEVEL_WAIT_MS);
+        }
         this.natural = {w: rec.w || 0, h: rec.hgt || 0};
         this.img.alt = altText(rec);
         this.img.src = urls.thumb || urls.preview || "";
@@ -1490,10 +1833,12 @@ var VIEWER = (function () {
        urls.video, and each of its frames is uploaded to the 360 view and
        stitched there (Panorama.setVideo: the fisheye shader with rec.fx)
        as the frames come (requestVideoFrameCallback, else every animation
-       frame while it plays). The stage gets controls of its own
-       (videoControls); Space works as for a video. Without WebGL, or when
-       the browser does not let the view read the frames (an export opened
-       from disk), it plays flat (flat360Video). */
+       frame while it plays), each turned level for its time (applyLevel;
+       while the level track is on its way, the poster stays). The stage
+       gets controls of its own (videoControls); Space works as for a
+       video. Without WebGL, or when the browser does not let the view read
+       the frames (an export opened from disk), it plays flat
+       (flat360Video). */
     Stage.prototype.start360Video = function (rec, urls) {
         var self = this;
         var token = this.token;
@@ -1518,9 +1863,13 @@ var VIEWER = (function () {
             self.cannotPlay360(rec, urls, true);
             self.state();
         }
-        function frame() {
+        var firstWanted = false;
+        function frame(now, metadata) {
             if (!live()) {
                 return false;
+            }
+            if (self.levelWaiting && levelOn()) {
+                return true;
             }
             if (!self.pano || !self.pano.setVideo(video, rec.fx)) {
                 // The 360 view cannot show the frames (or it stopped): flat.
@@ -1531,12 +1880,31 @@ var VIEWER = (function () {
                 self.flat360Video(rec, urls, at, playing);
                 return false;
             }
+            // (The time of the frame shown, where the browser says.)
+            self.applyLevel(metadata && typeof metadata.mediaTime === "number"
+                ? metadata.mediaTime : video.currentTime);
             self.redraw();
+            if (video.readyState >= 2 && video.videoWidth) {
+                self.videoDrawn = true;     // (setVideo had a frame to show)
+            }
             return true;
         }
-        function tick() {
+        // Its frame before it plays: now when the browser has it, else once
+        // it has loaded (it is asked to load more than the metadata).
+        function first() {
+            if (!live() || self.videoDrawn) {
+                return;
+            }
+            if (video.readyState >= 2) {
+                frame();
+            } else {
+                firstWanted = true;
+                video.preload = "auto";
+            }
+        }
+        function tick(now, metadata) {
             running = false;
-            if (frame() && !video.paused && !video.ended) {
+            if (frame(now, metadata) && !video.paused && !video.ended) {
                 running = true;
                 if (typeof video.requestVideoFrameCallback === "function") {
                     video.requestVideoFrameCallback(tick);
@@ -1557,13 +1925,30 @@ var VIEWER = (function () {
             }
         });
         // (Moved while paused: the frame there.)
-        video.addEventListener("seeked", frame);
+        video.addEventListener("seeked", function () {
+            frame();
+        });
+        video.addEventListener("loadeddata", function () {
+            if (firstWanted && !self.videoDrawn) {
+                frame();
+            }
+        });
         video.src = urls.video;
         this.video = video;
+        this.videoFrame = function () {
+            frame();
+        };
+        this.firstFrame = first;
         this.controls = this.videoControls(video);
         this.box.insertBefore(this.controls, this.note);
         this.box.classList.add("has-controls");
         this.setNote("");
+        if (!levelOn() && (rec.lv || this.levelTrack)) {
+            // (Its poster is level: the frames as the camera saw them from
+            // the start, so that playing does not tip the view.)
+            first();
+        }
+        this.state();
     };
 
     /* A 360 video played flat: its front lens's circle (the middle of the
@@ -1637,8 +2022,9 @@ var VIEWER = (function () {
     };
 
     /* The controls of a 360 video played on the sphere (its <video> is
-       not shown): play and pause, where it is, a bar to move in it, and
-       the sound on or off. */
+       not shown): play and pause, where it is, a bar to move in it,
+       "Level" (keep the horizon level; shown when there is a level track)
+       and the sound on or off. */
     Stage.prototype.videoControls = function (video) {
         var self = this;
         var play = el("button", {className: "stage-control stage-play", text: "\u25b6",
@@ -1650,6 +2036,19 @@ var VIEWER = (function () {
         var sound = el("button", {className: "stage-control stage-sound", text: "Sound",
                                   attrs: {type: "button", "aria-pressed": "true",
                                           title: "Sound on or off"}});
+        var level = el("button", {className: "stage-control stage-level", text: "Level",
+                                  attrs: {type: "button", "aria-label": "Level horizon",
+                                          "aria-pressed": levelOn() ? "true" : "false",
+                                          title: "Keep the horizon level (from the camera's " +
+                                              "motion sensor)"}});
+        level.hidden = !this.levelTrack && !(this.rec && this.rec.lv);
+        level.addEventListener("click", function () {
+            setLevelOn(!levelOn());
+            level.setAttribute("aria-pressed", levelOn() ? "true" : "false");
+            self.refreshLevel();
+            self.state();
+        });
+        this.levelButton = level;
         var dragging = false;
         function update() {
             var length = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
@@ -1692,7 +2091,7 @@ var VIEWER = (function () {
         update();
         return el("div", {className: "stage-controls",
                           attrs: {role: "group", "aria-label": "360\u00b0 video"}},
-                  [play, time, seek, sound]);
+                  [play, time, seek, level, sound]);
     };
 
     Stage.prototype.dropPano = function () {
@@ -1722,7 +2121,8 @@ var VIEWER = (function () {
     Stage.prototype.state = function () {
         if (this.options.onState) {
             this.options.onState({zoomed: this.zoom > 1.01, pano: this.mode === "pano",
-                                  zoom: this.zoom, video: this.mode === "video"});
+                                  zoom: this.zoom, video: this.mode === "video",
+                                  unlevelled: this.unlevelled()});
         }
     };
 
@@ -1742,6 +2142,7 @@ var VIEWER = (function () {
         this.dropPano();
         this.dropVideo();
         this.dropDrive();
+        this.dropLevel();
         if (!rec) {
             this.img.removeAttribute("src");
             this.busy.hidden = true;
@@ -1749,7 +2150,8 @@ var VIEWER = (function () {
             return;
         }
         this.mode = "image";
-        this.view = {yaw: 0, pitch: 0, fov: DEFAULT_FOV};
+        // (A 360 picture opens at its opening view, see openingView.)
+        this.view = openingView(rec);
         this.zoom = 1;
         this.img.hidden = false;
         this.box.classList.remove("is-pano");
@@ -2027,7 +2429,8 @@ var VIEWER = (function () {
 
     Stage.prototype.reset = function () {
         if (this.mode === "pano") {
-            this.view = {yaw: 0, pitch: 0, fov: DEFAULT_FOV};
+            // (Back to where the picture opens.)
+            this.view = openingView(this.rec);
             this.redraw();
             return;
         }
@@ -2041,12 +2444,10 @@ var VIEWER = (function () {
     };
 
     // True when the view is not as it was shown: zoomed in, or a 360-degree
-    // view turned or zoomed (0 then resets it).
+    // view turned or zoomed away from where it opens (0 then resets it).
     Stage.prototype.isMoved = function () {
         if (this.mode === "pano") {
-            var view = this.view || {};
-            return Math.abs(view.yaw || 0) > 1e-3 || Math.abs(view.pitch || 0) > 1e-3 ||
-                Math.abs((view.fov || DEFAULT_FOV) - DEFAULT_FOV) > 1e-3;
+            return !sameView(this.view || openingView(null), openingView(this.rec));
         }
         return this.zoom > 1.01;
     };
@@ -2287,11 +2688,12 @@ var VIEWER = (function () {
         this.drive = {spec: spec, urls: urls, timeline: timeline, index: spec.start, active: 0,
                       players: [null, null], loaded: [-1, -1], seek: [null, null],
                       preloading: false, mode: "clips", previewUrl: null, speed: 0,
-                      position: timeline.starts[spec.start] || 0, failed: {}, copies: copies,
+                      position: (timeline.starts[spec.start] || 0) + (spec.offset || 0),
+                      failed: {}, copies: copies,
                       still: null, paneTimer: null, wantPlay: false, strip: null};
         this.buildDriveStrip();
         this.layout();
-        this.driveClip(spec.start, 0, false);
+        this.driveClip(spec.start, spec.offset || 0, false);
         this.state();
     };
 
@@ -2817,8 +3219,10 @@ var VIEWER = (function () {
         }
         var where = "Clip " + (drive.index + 1) + " of " + count + " \u00b7 " +
             durationText(drive.position) + " / " + durationText(drive.timeline.total);
+        var speed = drive.spec.onTime ? drive.spec.onTime(
+            drive.index, drive.position - drive.timeline.starts[drive.index]) : "";
         strip.label.textContent = (drive.mode === "preview" ? "\u00d7" + drive.speed + " \u00b7 "
-            : "") + where;
+            : "") + where + (speed ? " \u00b7 " + speed : "");
         strip.track.setAttribute("aria-valuenow", String(Math.round(drive.position)));
         strip.track.setAttribute("aria-valuetext", where);
         if (drive.previewUrl) {
@@ -2918,9 +3322,11 @@ var VIEWER = (function () {
     }
 
     /* The drive a clip belongs to, for the information pane: its own title
-       and description (when it was described), and where the clip is in it.
-       drive: {cover (the record of its first clip), index, count, start,
-       length} (seconds). */
+       and description (when it was described), where the clip is in it,
+       and the small map of its route. drive: {cover (the record of its
+       first clip), index, count, start, length (seconds), routeMap (or
+       null), compact (a small pane: the map is drawn under the title, see
+       routeMapNode)}. */
     function driveSection(drive, context) {
         var cover = drive.cover || {};
         var body = el("div", {className: "info-drive-body"});
@@ -2935,7 +3341,23 @@ var VIEWER = (function () {
                                 [highlighted(cover.dvd, context.query, "dvd")]));
         }
         body.appendChild(el("p", {className: "info-small", text: facts}));
+        if (!drive.compact) {
+            var map = routeMapNode(drive);
+            if (map) {
+                body.appendChild(map);
+            }
+        }
         return section("Drive", body, "info-drive");
+    }
+
+    /* The small map of a drive's route (routes.js), or null: the same node,
+       moved along as the pane is drawn again. */
+    function routeMapNode(drive) {
+        if (!drive.routeMap || !drive.routeMap.node) {
+            return null;
+        }
+        drive.routeMap.schedule();
+        return drive.routeMap.node;
     }
 
     function section(title, body, className) {
@@ -3053,17 +3475,61 @@ var VIEWER = (function () {
     }
 
     // The place of a picture, as a chip that finds the pictures taken there.
-    function placeFact(rec, context) {
-        var text = placeText(rec);
+    // An estimated place (pe) says where it comes from after it ("estimated
+    // from ...", a button that shows the details); the owner's own place
+    // (ps "o") says so to the admin.
+    function placeFact(rec, context, detail) {
+        var text = placeText(rec, admin());
         var value = text && window.SearchCore && SearchCore.placeOf ? SearchCore.placeOf(rec) : "";
         if (!value) {
             return text;
         }
         var near = rec.ci || rec.rg || rec.co;
-        return chip(text, "place", value, context, rec.ci
-            ? "The town nearest to where it was taken. Show all pictures from " + near
-            : "Show all pictures from " + near);
+        if (!rec.pe && rec.ps !== "o") {
+            var own = chip(text, "place", value, context, rec.ci
+                ? "The town nearest to where it was taken. Show all pictures from " + near
+                : "Show all pictures from " + near);
+            if (!(detail && detail.track && detail.track.position)) {
+                return own;
+            }
+            // (A video's position from its GPS track, tracks.py.)
+            return el("span", {className: "info-place"}, [
+                own, el("span", {className: "info-place-note",
+                                 text: "from the video's GPS track"})]);
+        }
+        var box = el("span", {className: "info-place"});
+        box.appendChild(chip(placeNames(rec), "place", value, context,
+                             "Show all pictures from " + near));
+        if (!rec.pe) {
+            if (admin()) {
+                box.appendChild(el("span", {className: "info-place-note", text: "set by you"}));
+            }
+            return box;
+        }
+        var estimate = detail && detail.place_estimate && typeof detail.place_estimate === "object"
+            ? detail.place_estimate : null;
+        var reason = estimateReason(rec, estimate);
+        placeReasons += 1;
+        var why = el("span", {className: "info-place-reason", text: reason, hidden: true,
+                              id: "info-place-reason-" + placeReasons});
+        // (Pictures taken around the same time that are all points of a
+        // video's GPS track, as the reason says: that track.)
+        var label = rec.ps === "t" && estimate && estimate.track === "all" ? TRACK_PLACE
+            : ESTIMATED_LABELS[rec.ps] || ESTIMATED_PLACE;
+        var toggle = el("button", {type: "button", className: "info-place-estimated",
+                                   text: label.slice(1, -1), title: reason,
+                                   attrs: {"aria-expanded": "false",
+                                           "aria-controls": why.id}});
+        toggle.addEventListener("click", function () {
+            why.hidden = !why.hidden;
+            toggle.setAttribute("aria-expanded", why.hidden ? "false" : "true");
+        });
+        box.appendChild(toggle);
+        box.appendChild(why);
+        return box;
     }
+
+    var placeReasons = 0;
 
     function describedBy(detail) {
         var provenance = detail && detail.provenance;
@@ -3111,7 +3577,7 @@ var VIEWER = (function () {
        aside), estimated}, or null for a picture without a position. */
 
     // The record keys a position changes (gps_check.RECORD_KEYS).
-    var LOCATION_KEYS = ["gp", "ci", "rg", "co", "cc", "km", "pe", "gx"];
+    var LOCATION_KEYS = ["gp", "ci", "rg", "co", "cc", "km", "pe", "ps", "gx"];
 
     /* Use (true) or ignore (false) the picture's GPS position. The server
        keeps the choice (for every copy of the shot) and checks the positions
@@ -3214,6 +3680,354 @@ var VIEWER = (function () {
         return note;
     }
 
+    /* "Open here" (the admin's): the 360 picture rec opens at the stage's view
+       from now on, and so do its copies (opening_views.py; their thumbnails
+       show it too); clear: forget the view set so (the automatic one, or the
+       front, again). rec.ov changes in place; done(reply) is told. */
+    function keepOpeningView(rec, stage, button, clear, done) {
+        var body = clear ? {clear: true} : viewDegrees(stage.view);
+        return busy(button, SHELL.admin("/images/" + encodeURIComponent(rec.i) +
+                                        "/opening-view", body))
+            .then(function (reply) {
+                var ov = reply && reply.record ? reply.record.ov : null;
+                if (Array.isArray(ov)) {
+                    rec.ov = ov;
+                } else {
+                    delete rec.ov;
+                }
+                toast(clear ? "This 360\u00b0 picture opens where it did before you chose a view."
+                    : "This 360\u00b0 picture opens here from now on (its thumbnail too).", "ok");
+                if (done) {
+                    done(reply);
+                }
+            }, function () {});
+    }
+
+    /* ---------- Estimated places (the admin's; see place_estimates.py) ------------
+
+       detail.place_estimate (/api/image): {source ("copy", "time", "area",
+       "owner" or "" after a rejection), reason (words), radius_km, place,
+       track ("all" or "some" for a time estimate from videos' GPS tracks),
+       and for the admin lat, lon, ids, choice ("set", "reject" or "")}, or
+       null. */
+
+    /* Tell the server the owner's choice about the picture's place (body:
+       {choice: "accept" | "set" | "reject" | "clear", lat, lon}); the place
+       keys of the record change in place, the pane is drawn again (unless
+       it shows another picture by now) and context.onEdited(id, detail) is
+       told. */
+    function choosePlace(box, rec, detail, context, body, button, said) {
+        box.placeForm = null;
+        return busy(button, SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/place", body))
+            .then(function (answer) {
+                var released = releaseSheet(box);
+                LOCATION_KEYS.forEach(function (key) {
+                    var value = answer && answer.record ? answer.record[key] : undefined;
+                    if (value === undefined) {
+                        delete rec[key];
+                    } else {
+                        rec[key] = value;
+                    }
+                });
+                var shown = {};
+                Object.keys(detail || {}).forEach(function (key) {
+                    shown[key] = detail[key];
+                });
+                shown.place = answer ? answer.place || null : null;
+                shown.place_estimate = answer ? answer.place_estimate || null : null;
+                toast(said, "ok");
+                var focused = document.activeElement;
+                var hadFocus = !focused || focused === document.body || box.contains(focused);
+                if (box.infoId === rec.i) {
+                    renderInfo(box, rec, shown, context);
+                    var choice = box.querySelector(".info-place-estimate .button");
+                    var next = choice || box.querySelector(".info-title");
+                    if (hadFocus && next) {
+                        if (next.tabIndex === undefined || next.tabIndex < 0) {
+                            next.tabIndex = -1;
+                        }
+                        next.focus({preventScroll: true});
+                        // In sight above the toast at the foot of the screen
+                        // that says what was done: in the middle, or -- the
+                        // sheet going back to its peek height from full -- the
+                        // choices at the top (where they stay as it shrinks).
+                        var note = choice ? box.querySelector(".info-place-estimate") : null;
+                        if (released && note && note.scrollIntoView) {
+                            note.scrollIntoView({block: "start"});
+                        } else if (choice && choice.scrollIntoView) {
+                            choice.scrollIntoView({block: "center"});
+                        }
+                    }
+                }
+                if (context.onEdited) {
+                    context.onEdited(rec.i, shown);
+                }
+            }, function () {
+                releaseSheet(box);
+            });
+    }
+
+    // The viewer's bottom sheet, made full for a form's box to type in (the
+    // edit form's, the place form's) in box, is back at its peek height
+    // (true when it was full so).
+    function releaseSheet(box) {
+        if (lightbox && box === lightbox.pane && lightbox.sheetForced) {
+            setSheetFull(false);
+            return true;
+        }
+        return false;
+    }
+
+    /* Bring a form just opened (its node), whose box to type in has the
+       focus, into sight. On a touch screen it goes to the top of what
+       scrolls, as the keyboard about to open covers the lower part of the
+       screen (and the suggestions come under the box); elsewhere only as
+       far as it takes. */
+    function revealForm(form) {
+        if (!form.scrollIntoView) {
+            return;
+        }
+        var touch = typeof window.matchMedia === "function" &&
+            window.matchMedia("(pointer: coarse)").matches;
+        form.scrollIntoView({block: touch ? "start" : "nearest"});
+    }
+
+    /* The form that sets a picture's place: a town (the server's place
+       names, as typed) or a position ("lat, lon"); Enter takes the first
+       suggestion, Esc closes it (focus back on opener). While it is open
+       box.placeForm remembers it ({id, value, focused}), so the pane drawn
+       again for the same picture (looks or vectors that arrive, a mark)
+       opens it again as it was (see keepPlaceForm). */
+    function placeForm(box, rec, detail, context, opener) {
+        var form = el("div", {className: "info-place-form",
+                              attrs: {role: "group", "aria-label": "Set the place"}});
+        placeForms += 1;
+        var listId = "info-place-list-" + placeForms;
+        var input = el("input", {type: "text", className: "input",
+                                 attrs: {placeholder: "Town, or lat, lon", autocomplete: "off",
+                                         spellcheck: "false", "aria-controls": listId,
+                                         "aria-label": "Town, or a position as lat, lon"}});
+        var list = el("ul", {className: "info-place-list", id: listId});
+        var status = el("p", {className: "info-small", attrs: {"aria-live": "polite"},
+                              text: "Type the start of a town's name (\u201cLucca\u201d, " +
+                                    "\u201cParis, Texas\u201d) or a position."});
+        var choices = [];
+        var timer = 0;
+        var asked = 0;
+
+        function remember() {
+            box.placeForm = {id: rec.i, value: input.value,
+                             focused: document.activeElement === input};
+        }
+
+        function close() {
+            window.clearTimeout(timer);
+            box.placeForm = null;
+            if (form.parentNode) {
+                form.parentNode.removeChild(form);
+            }
+            releaseSheet(box);
+            if (opener) {
+                opener.hidden = false;
+                opener.focus({preventScroll: true});
+                // (The sheet back at its peek height may leave it out of sight.)
+                if (opener.scrollIntoView) {
+                    opener.scrollIntoView({block: "nearest"});
+                }
+            }
+        }
+
+        function pick(choice, button) {
+            box.placeForm = null;
+            choosePlace(box, rec, detail, context, {choice: "set", lat: choice.lat,
+                                                   lon: choice.lon}, button,
+                        "The place is set: " + (choice.label || "the position you gave") + ".");
+        }
+
+        function show(answer, text) {
+            choices = [];
+            clear(list);
+            var position = answer && answer.position;
+            if (position && typeof position.lat === "number") {
+                choices.push({lat: position.lat, lon: position.lon,
+                              label: position.place || position.lat + ", " + position.lon,
+                              text: "Position " + position.lat + ", " + position.lon +
+                                  (position.place ? " (" + position.place + ")" : "")});
+            }
+            (answer && Array.isArray(answer.towns) ? answer.towns : []).forEach(function (town) {
+                var name = [town.name, town.region, town.country].filter(Boolean).join(", ");
+                choices.push({lat: town.lat, lon: town.lon, label: name, text: name});
+            });
+            choices.forEach(function (choice) {
+                var button = el("button", {type: "button", className: "info-place-choice",
+                                           text: choice.text});
+                button.addEventListener("click", function () {
+                    pick(choice, button);
+                });
+                list.appendChild(el("li", {}, [button]));
+            });
+            var first = list.firstChild;
+            if (first && first.scrollIntoView && document.activeElement === input) {
+                first.scrollIntoView({block: "nearest"});    // (the one Enter takes)
+            }
+            if (answer && answer.available === false && !choices.length) {
+                status.textContent = "There are no place names yet (Manage, Place names): " +
+                    "type a position as lat, lon.";
+            } else {
+                status.textContent = !text ? status.textContent : choices.length
+                    ? plural(choices.length, "place") + " found." : "No town starts so.";
+            }
+        }
+
+        function search() {
+            window.clearTimeout(timer);
+            var text = input.value.replace(/^\s+|\s+$/g, "");
+            if (text.length < 2) {
+                show(null, "");
+                return;
+            }
+            timer = window.setTimeout(function () {
+                asked += 1;
+                var mine = asked;
+                SHELL.admin("/places/towns?q=" + encodeURIComponent(text), undefined,
+                            {quiet: true}).then(function (answer) {
+                    if (mine === asked) {
+                        show(answer, text);
+                    }
+                }, function () {
+                    if (mine === asked) {
+                        status.textContent = "The place names could not be searched.";
+                    }
+                });
+            }, 250);
+        }
+
+        input.addEventListener("input", function () {
+            remember();
+            search();
+        });
+        input.addEventListener("focus", remember);
+        input.addEventListener("blur", function () {
+            // (Read after the focus has moved: a click on a suggestion.)
+            window.setTimeout(function () {
+                if (box.placeForm && box.placeForm.id === rec.i && form.parentNode) {
+                    remember();
+                }
+            }, 0);
+        });
+        form.addEventListener("keydown", function (event) {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+            } else if (event.key === "Enter" && event.target === input && choices.length) {
+                event.preventDefault();
+                pick(choices[0], list.querySelector("button"));
+            }
+        });
+        var cancel = actionButton("Cancel", close);
+        form.appendChild(el("div", {className: "info-place-row"}, [input, cancel]));
+        form.appendChild(status);
+        form.appendChild(list);
+        if (opener) {
+            opener.hidden = true;
+        }
+        return {node: form, focus: function () {
+            input.focus({preventScroll: true});
+            revealForm(form);
+        }, restore: function (value, focused) {
+            input.value = value || "";
+            if (input.value) {
+                search();
+            }
+            if (focused) {
+                input.focus({preventScroll: true});
+            }
+            remember();
+        }};
+    }
+
+    // Opens placeForm after its opener (a "Set place..." button).
+    function openPlaceForm(box, rec, detail, context, opener) {
+        var form = placeForm(box, rec, detail, context, opener);
+        opener.parentNode.insertBefore(form.node, opener.nextSibling);
+        return form;
+    }
+
+    /* After the pane was drawn again: the place form that was open for this
+       picture opens again, with what was typed (and the focus). */
+    function keepPlaceForm(box, rec, detail, context) {
+        var kept = box.placeForm;
+        box.placeForm = null;
+        var opener = kept && kept.id === rec.i ? box.querySelector(".info-place-set") : null;
+        if (opener) {
+            openPlaceForm(box, rec, detail, context, opener).restore(kept.value, kept.focused);
+        }
+    }
+
+    var placeForms = 0;
+
+    // A "Set place..." button that opens placeForm after itself.
+    function setPlaceButton(box, rec, detail, context, text) {
+        var button = actionButton(text, function () {
+            var form = openPlaceForm(box, rec, detail, context, button);
+            form.focus();
+            form.restore("", true);
+        }, "info-place-set");
+        button.title = "Give the picture a place of your own (kept across scans)";
+        return button;
+    }
+
+    /* The admin's choices about a picture's estimated place (or own place),
+       under the facts; null when there is nothing to choose (a picture with
+       a GPS position, or one with no place at all: see adminActions). */
+    function placeNote(box, rec, detail, context) {
+        if (!admin() || !detail || (typeof detail.lat === "number" &&
+                                    typeof detail.lon === "number")) {
+            return null;
+        }
+        var estimate = detail.place_estimate && typeof detail.place_estimate === "object"
+            ? detail.place_estimate : null;
+        var note = el("div", {className: "info-place-estimate"});
+        var row = el("div", {className: "info-place-row"});
+        if (estimate && estimate.choice === "reject" && !estimate.source) {
+            note.appendChild(el("p", {className: "info-small",
+                                      text: "You rejected the estimated place."}));
+            row.appendChild(actionButton("Estimate again", function (button) {
+                choosePlace(box, rec, detail, context, {choice: "clear"}, button,
+                            "The place is estimated again.");
+            }));
+        } else if (rec.ps === "o") {
+            note.appendChild(el("p", {className: "info-small", text: "You set this place." +
+                                      " It shows as the picture's own and is not estimated."}));
+            row.appendChild(actionButton("Clear", function (button) {
+                choosePlace(box, rec, detail, context, {choice: "clear"}, button,
+                            "Your place is cleared; the place is estimated again.");
+            }));
+        } else if (rec.pe) {
+            note.appendChild(el("p", {className: "info-small",
+                                      text: "Is the estimated place right?"}));
+            var accept = actionButton("Accept", function (button) {
+                choosePlace(box, rec, detail, context, {choice: "accept"}, button,
+                            "The place is accepted: it shows as the picture's own.");
+            }, "primary");
+            accept.title = "Keep this place as the picture's own (kept across scans)";
+            row.appendChild(accept);
+            var reject = actionButton("Reject", function (button) {
+                choosePlace(box, rec, detail, context, {choice: "reject"}, button,
+                            "The estimated place is rejected: the picture has no place.");
+            }, "subtle-danger");
+            reject.title = "No place for this picture (kept across scans)";
+            row.appendChild(reject);
+        } else {
+            return null;
+        }
+        row.appendChild(setPlaceButton(box, rec, detail, context, rec.pe || rec.ps === "o"
+            ? "Change place\u2026" : "Set place\u2026"));
+        note.appendChild(row);
+        return note;
+    }
+
     function adminActions(rec, context, box, detail) {
         var id = rec.i;
         var row = el("div", {className: "info-actions info-admin"});
@@ -3266,6 +4080,29 @@ var VIEWER = (function () {
                           "the job is done and the page is reloaded.", "ok");
                 }, function () {});
         }));
+        var opening = detail && detail.opening_view && typeof detail.opening_view === "object"
+            ? detail.opening_view : null;
+        if (opening && opening.owner && context.stage) {
+            // (Set with "Open here": back to the automatic view, or the front.)
+            var forget = actionButton("Automatic opening view", function (button) {
+                keepOpeningView(rec, context.stage, button, true, function (reply) {
+                    if (detail) {
+                        detail.opening_view = reply.opening_view;
+                    }
+                    if (context.onOpening) {
+                        context.onOpening(rec, detail);
+                    }
+                });
+            }, "info-opening-forget");
+            forget.title = "Forget the view you chose with " + String.fromCharCode(8220) +
+                "Open here" + String.fromCharCode(8221);
+            row.appendChild(forget);
+        }
+        if (detail && !rec.co && typeof detail.lat !== "number" && !(
+                detail.place_estimate && detail.place_estimate.choice === "reject")) {
+            // (No place at all: the owner can give it one.)
+            row.appendChild(setPlaceButton(box, rec, detail, context, "Set place\u2026"));
+        }
         var check = detail ? detail.location_check : null;
         if (check && typeof check === "object" && !check.ignored) {
             var ignore = actionButton("Ignore location", function (button) {
@@ -4149,6 +4986,7 @@ var VIEWER = (function () {
             // request ran has dropped the focus to the page.)
             var focused = document.activeElement;
             var hadFocus = !focused || focused === document.body || box.contains(focused);
+            releaseSheet(box);              // (the form made the sheet full: done)
             renderInfo(box, rec, shown, token.context);
             if (answer && token.context.onEdited) {
                 token.context.onEdited(rec.i, shown);
@@ -4192,7 +5030,10 @@ var VIEWER = (function () {
        similarUrl(id), onSimilar(id), moreLikeThisUrl(id), onMoreLikeThis(id),
        hasLook(id), looksLike(id), looksLikeUrl(id), onLooksLike(id), onLook(id) (a
        picture of the Looks like this strip opens),
-       onHidden, detailUrl(id), inPage (true in the lightbox), expandedText. */
+       onHidden, detailUrl(id), inPage (true in the lightbox), expandedText,
+       stage (the picture's Stage), onOpening(rec, detail) (the admin's
+       "Automatic opening view" of a 360 picture: its view was forgotten)
+       and drive (a clip of a drive shown in the viewer, see driveSection). */
     function renderInfo(box, rec, detail, context) {
         context = context || {};
         if (isEditing(box)) {
@@ -4237,11 +5078,19 @@ var VIEWER = (function () {
             head.appendChild(badges);
         }
         box.appendChild(head);
+        // In a small pane (a phone's) a drive's route map, which follows the
+        // clip that plays, comes right under the title, and the drive's own
+        // words after the clip's facts: both are in sight with the video.
+        var compact = context.drive && context.drive.compact ? context.drive : null;
+        var routeMap = compact ? routeMapNode(compact) : null;
+        if (routeMap) {
+            box.appendChild(routeMap);
+        }
         var marks = marksRow(rec, context);
         if (marks) {
             box.appendChild(marks);
         }
-        if (context.drive) {
+        if (context.drive && !compact) {
             box.appendChild(driveSection(context.drive, context));
         }
 
@@ -4260,7 +5109,7 @@ var VIEWER = (function () {
         var folder = rec.f || "";
         var factList = facts([
             ["Taken", dateText(rec, detail)],
-            ["Place", placeFact(rec, context)],
+            ["Place", placeFact(rec, context, detail)],
             ["Camera", rec.cm ? chip(rec.cm, "camera", rec.cm, context, "More from this camera") : ""],
             ["Settings", exposure + (lens ? (exposure ? " \u00b7 " : "") + lens : "")],
             ["Video", rec.mv ? videoFacts(rec, detail) : ""],
@@ -4275,6 +5124,13 @@ var VIEWER = (function () {
         var located = locationNote(box, rec, detail, context);
         if (located) {
             box.appendChild(located);
+        }
+        var placed = placeNote(box, rec, detail, context);
+        if (placed) {
+            box.appendChild(placed);
+        }
+        if (compact) {
+            box.appendChild(driveSection(compact, context));
         }
 
         if (rec.d) {
@@ -4489,6 +5345,7 @@ var VIEWER = (function () {
             box.appendChild(section("Looks like this", lookStrip(alike, context),
                                     "info-similar-section info-looks-section"));
         }
+        keepPlaceForm(box, rec, detail, context);
     }
 
     // The "Looks like this" strip: thumbnails of pictures (ids) that open in the viewer
@@ -4519,6 +5376,22 @@ var VIEWER = (function () {
 
     var INFO_KEY = "searchImages.info";
     var lightbox = null;
+    // Narrow upright screens (phones): the information pane is a bottom
+    // sheet under the picture (style.css): at its peek height (the title and
+    // the key facts) the picture is fitted in the space above it; it is
+    // dragged up by its handle to most of the screen ("sheet-full") and
+    // down to close. Other screens: a pane beside the picture (narrower on
+    // a phone held sideways).
+    var SHEET_QUERY = "(max-width: 899px) and (orientation: portrait)";
+    // The screens where the pane is small (a phone's bottom sheet, or its
+    // narrow pane beside the picture held sideways): a drive's route map
+    // comes first in it, and is lower (style.css: the same query).
+    var COMPACT_QUERY = "(max-width: 899px), (max-width: 1000px) and (max-height: 500px) and " +
+        "(orientation: landscape)";
+    // A drag of the handle shorter than this (px) is a tap; a sheet dragged
+    // below this share of its peek height closes.
+    var SHEET_TAP = 8;
+    var SHEET_CLOSE = 0.6;
 
     function storage(key, value) {
         try {
@@ -4559,6 +5432,11 @@ var VIEWER = (function () {
         var zoomOut = iconButton("viewer-zoom-out", "Zoom out (-)", "\u2212");
         var zoomIn = iconButton("viewer-zoom-in", "Zoom in (+)", "+");
         var reset = iconButton("viewer-reset", "Reset the view (0)", "\u27f2");
+        // (The admin's: a 360 picture opens at the view shown from now on.)
+        var openHere = el("button", {type: "button", className: "viewer-button viewer-open-here",
+                                     text: "Open here", hidden: true,
+                                     title: "Open this 360\u00b0 picture here from now on " +
+                                         "(its thumbnail shows this view too)"});
         var info = iconButton("viewer-info-toggle", "Information (i)", "i");
         // The favorite star and the rating: buttons for the admin (they
         // press those of the information pane), else shown when set.
@@ -4570,6 +5448,7 @@ var VIEWER = (function () {
         bar.appendChild(marks);
         bar.appendChild(zoomOut);
         bar.appendChild(zoomIn);
+        bar.appendChild(openHere);
         bar.appendChild(reset);
         bar.appendChild(info);
         var stageBox = el("div", {className: "viewer-stage"});
@@ -4581,17 +5460,32 @@ var VIEWER = (function () {
         main.appendChild(prev);
         main.appendChild(next);
         main.appendChild(stack);
-        var pane = el("aside", {className: "viewer-info", attrs: {"aria-label": "Information"}});
+        // The pane: its handle (a bottom sheet's, see SHEET_QUERY) and the
+        // information itself (renderInfo), which scrolls.
+        var pane = el("div", {className: "viewer-info-body"});
+        var handle = el("button", {type: "button", className: "viewer-sheet-handle",
+                                   attrs: {"aria-expanded": "false",
+                                           "aria-label": "Show more information"}},
+                        [el("span", {className: "viewer-sheet-grip",
+                                     attrs: {"aria-hidden": "true"}})]);
+        handle.title = "Drag up for more, down to close (or tap)";
+        var sheet = el("aside", {className: "viewer-info", attrs: {"aria-label": "Information"}},
+                       [handle, pane]);
         root.appendChild(main);
-        root.appendChild(pane);
+        root.appendChild(sheet);
         document.body.appendChild(root);
 
         var box = {
             root: root, close: close, counter: counter, title: title, zoomIn: zoomIn,
-            zoomOut: zoomOut, reset: reset, info: info, prev: prev, next: next, pane: pane,
-            stack: stack, stageBox: stageBox, options: null, ids: [], index: 0, id: null,
+            zoomOut: zoomOut, reset: reset, openHere: openHere, info: info, prev: prev,
+            next: next, pane: pane,
+            stack: stack, stageBox: stageBox, sheet: sheet, handle: handle, main: main,
+            options: null, ids: [], index: 0, id: null,
             detailToken: 0, returnFocus: null, marks: marks, driveSpec: null,
-            driveIndex: 0, paneId: null, clipToken: 0, shownDetail: null
+            driveIndex: 0, paneId: null, clipToken: 0, shownDetail: null,
+            sheetForced: false,     // (the sheet is full for a box to type in)
+            startAt: null, routeMap: null, routeSpec: null,
+            paneCompact: false      // (the pane is laid out for a small screen: COMPACT_QUERY)
         };
         box.stage = new Stage(stageBox, {
             onSwipe: function (direction) {
@@ -4600,6 +5494,9 @@ var VIEWER = (function () {
             onState: function (state) {
                 root.classList.toggle("is-pano", state.pano);
                 reset.hidden = !state.pano && !state.zoomed;
+                // (Not for a 360 video shown unlevelled: views are kept for
+                // its level panorama.)
+                openHere.hidden = !state.pano || !admin() || Boolean(state.unlevelled);
                 // (A video does not zoom.)
                 zoomIn.hidden = zoomOut.hidden = Boolean(state.video);
             }
@@ -4624,12 +5521,63 @@ var VIEWER = (function () {
         reset.addEventListener("click", function () {
             box.stage.reset();
         });
+        openHere.addEventListener("click", function () {
+            var rec = record(box.id);
+            if (rec && box.stage.rec === rec) {
+                keepOpeningView(rec, box.stage, openHere, false, function (reply) {
+                    if (box.shownDetail && reply.opening_view) {
+                        box.shownDetail.opening_view = reply.opening_view;
+                    }
+                    // (Its copies open there too.)
+                    (reply.ids || []).forEach(function (id) {
+                        var copy = record(id);
+                        if (copy && copy !== rec) {
+                            if (rec.ov) {
+                                copy.ov = rec.ov.slice();
+                            } else {
+                                delete copy.ov;
+                            }
+                        }
+                    });
+                    if ((box.paneId || box.id) === rec.i) {
+                        renderPane(rec, box.detail);
+                    }
+                    if (box.options && box.options.onMarked) {
+                        // (The grid shows its thumbnail again.)
+                        box.options.onMarked(reply.ids || [rec.i]);
+                    }
+                });
+            }
+        });
         info.addEventListener("click", function () {
             setInfo(!root.classList.contains("info-open"), true);
+        });
+        sheetGestures(box);
+        // (A box to type in, such as the edit form's, gets the room it needs.)
+        pane.addEventListener("focusin", function (event) {
+            var tag = event.target && event.target.tagName;
+            if ((tag === "INPUT" || tag === "TEXTAREA") && sheetMode() &&
+                    !root.classList.contains("sheet-full")) {
+                setSheetFull(true);
+                box.sheetForced = true;
+            }
         });
         // While open, the viewer has the keyboard: it listens first (capture)
         // and keeps the keys it uses from the page behind it.
         document.addEventListener("keydown", keydown, true);
+        // A phone turned (or a window resized): a drive's pane is laid out
+        // again when it is for the other size of pane, and its route map is
+        // drawn at its new width.
+        window.addEventListener("resize", function () {
+            if (root.hidden) {
+                return;
+            }
+            var shown = box.driveSpec ? record(box.paneId || box.id) : null;
+            if (shown && box.paneCompact !== compactPane()) {
+                renderPane(shown, box.detail);
+            }
+            drawRouteMap();
+        });
         return box;
     }
 
@@ -4687,12 +5635,149 @@ var VIEWER = (function () {
     function setInfo(open, remember) {
         lightbox.root.classList.toggle("info-open", open);
         lightbox.info.setAttribute("aria-pressed", open ? "true" : "false");
+        if (!open) {
+            setSheetFull(false);
+        }
         if (remember) {
             storage(INFO_KEY, open ? "1" : "0");
         }
         window.setTimeout(function () {
             lightbox.stage.layout();
+            // (A drive's route map had no room while the pane was closed:
+            // drawn now that it has, whether or not the clip plays.)
+            drawRouteMap();
         }, 0);
+    }
+
+    function drawRouteMap() {
+        if (lightbox && lightbox.routeMap && lightbox.routeSpec) {
+            lightbox.routeMap.schedule();
+        }
+    }
+
+    // Is the information pane a bottom sheet here (SHEET_QUERY)?
+    function sheetMode() {
+        return Boolean(typeof window.matchMedia === "function" &&
+                       window.matchMedia(SHEET_QUERY).matches);
+    }
+
+    // Is the information pane a small one here (COMPACT_QUERY)?
+    function compactPane() {
+        return Boolean(typeof window.matchMedia === "function" &&
+                       window.matchMedia(COMPACT_QUERY).matches);
+    }
+
+    // The bottom sheet at most of the screen (full) or at its peek height.
+    function setSheetFull(full) {
+        var box = lightbox;
+        box.sheetForced = false;
+        box.root.classList.toggle("sheet-full", Boolean(full));
+        box.handle.setAttribute("aria-expanded", full ? "true" : "false");
+        box.handle.setAttribute("aria-label", full ? "Show less information"
+            : "Show more information");
+        if (box.sheet.style) {
+            box.sheet.style.height = "";
+            box.sheet.style.marginTop = "";
+        }
+    }
+
+    /* The bottom sheet's handle: a tap (or Enter, Space) switches between
+       the peek height and most of the screen, a drag follows the finger and
+       then settles at the nearer of the two -- or, dragged well below the
+       peek height, closes the pane; the up and down arrows do the same a
+       step at a time. The sheet takes no more room from the picture while
+       it is dragged or full: it grows over it (see style.css). */
+    function sheetGestures(box) {
+        var drag = null;
+        var dragged = false;
+        function peekHeight() {
+            // (Whatever the sheet's own height, the picture keeps the rest.)
+            var whole = box.root.getBoundingClientRect().height;
+            return Math.max(0, whole - box.main.getBoundingClientRect().height);
+        }
+        box.handle.addEventListener("pointerdown", function (event) {
+            if (!sheetMode() || (event.button !== undefined && event.button !== 0)) {
+                return;
+            }
+            try {
+                box.handle.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // (Capture is a nicety: a drag that leaves the handle.)
+            }
+            var height = box.sheet.getBoundingClientRect().height;
+            drag = {id: event.pointerId, y: event.clientY, start: height, height: height,
+                    peek: peekHeight(), whole: box.root.getBoundingClientRect().height,
+                    moved: false};
+            dragged = false;
+        });
+        box.handle.addEventListener("pointermove", function (event) {
+            if (!drag || event.pointerId !== drag.id) {
+                return;
+            }
+            var dy = event.clientY - drag.y;
+            if (!drag.moved && Math.abs(dy) < SHEET_TAP) {
+                return;
+            }
+            drag.moved = true;
+            box.root.classList.add("sheet-dragging");
+            drag.height = clamp(drag.start - dy, 0, drag.whole * 0.95);
+            box.sheet.style.height = drag.height + "px";
+            box.sheet.style.marginTop = (drag.peek - drag.height) + "px";
+        });
+        function release(event) {
+            if (!drag || event.pointerId !== drag.id) {
+                return;
+            }
+            var done = drag;
+            drag = null;
+            box.root.classList.remove("sheet-dragging");
+            if (!done.moved) {
+                return;             // (a tap: the click that follows switches)
+            }
+            dragged = true;
+            if (done.height < done.peek * SHEET_CLOSE) {
+                setInfo(false, true);
+            } else {
+                var full = box.root.classList.contains("sheet-full");
+                var middle = (done.peek + done.whole * 0.86) / 2;
+                setSheetFull(full ? done.height > done.start - (done.start - done.peek) / 3
+                    : done.height > Math.min(middle, done.peek + 80));
+            }
+        }
+        box.handle.addEventListener("pointerup", release);
+        box.handle.addEventListener("pointercancel", release);
+        box.handle.addEventListener("click", function () {
+            if (dragged) {
+                dragged = false;
+                return;
+            }
+            setSheetFull(!box.root.classList.contains("sheet-full"));
+        });
+        box.handle.addEventListener("keydown", function (event) {
+            var full = box.root.classList.contains("sheet-full");
+            if (event.key === "ArrowUp" && !full) {
+                setSheetFull(true);
+            } else if (event.key === "ArrowDown" && full) {
+                setSheetFull(false);
+            } else if (event.key === "ArrowDown") {
+                setInfo(false, true);
+                box.info.focus();
+            } else {
+                return;
+            }
+            event.preventDefault();
+        });
+    }
+
+    // Is node in the information pane's place form (placeForm)?
+    function inPlaceForm(node) {
+        for (var at = node; at && at !== lightbox.root; at = at.parentNode) {
+            if (/(^| )info-place-form( |$)/.test(typeof at.className === "string"
+                ? at.className : "")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // A slider (such as a 360 video's seek bar) is no place to type: the
@@ -4730,7 +5815,7 @@ var VIEWER = (function () {
             return true;
         }
         var own = [lightbox.close, lightbox.zoomIn, lightbox.zoomOut, lightbox.reset,
-                   lightbox.info, lightbox.prev, lightbox.next];
+                   lightbox.openHere, lightbox.info, lightbox.prev, lightbox.next];
         if (lightbox.marks.contains(target)) {
             return true;
         }
@@ -4747,6 +5832,11 @@ var VIEWER = (function () {
         }
         var key = event.key;
         var handled = true;
+        if (key === "Escape" && inPlaceForm(event.target)) {
+            // (The place form's own: Esc closes the form, not the viewer.
+            // It goes on to the form, see placeForm.)
+            return;
+        }
         if (key === "Escape" && isEditing(lightbox.pane)) {
             event.preventDefault();
             cancelEdit();
@@ -4767,6 +5857,9 @@ var VIEWER = (function () {
             // The strip of a drive has the focus: the arrows, Page Up, Page
             // Down, Home and End move in the drive.
             event.preventDefault();
+        } else if (event.target === lightbox.handle && (key === "ArrowUp" || key === "ArrowDown")) {
+            // (The sheet's handle moves the sheet with them.)
+            return;
         } else if (event.target && event.target.tagName === "VIDEO" &&
                    (key === "ArrowLeft" || key === "ArrowRight")) {
             // The player has the keyboard focus: the arrows seek (5 s).
@@ -4919,7 +6012,71 @@ var VIEWER = (function () {
                 renderPane(clip.rec, lightbox.shownDetail);
             }
         };
+        // Where to begin (open's startAt: a moment of a clip), once.
+        var startAt = lightbox.startAt;
+        lightbox.startAt = null;
+        spec.offset = startAt && startAt.id === id && typeof startAt.seconds === "number" &&
+            isFinite(startAt.seconds) ? Math.max(0, startAt.seconds) : 0;
+        // The pane's small map of the route follows the clip that plays; the
+        // strip says the speed there.
+        spec.onTime = function (index, seconds) {
+            var map = lightbox && lightbox.routeMap;
+            var clip = spec.clips[index];
+            if (!map || !clip || lightbox.routeSpec !== spec) {
+                return "";
+            }
+            var speed = map.at(clip.id, seconds);
+            return speed === null ? "" : Math.round(speed) + " km/h";
+        };
+        loadRoutes();
         return spec;
+    }
+
+    /* The routes (routes.js), from SITE.loadRoutes: loaded once, when a drive
+       is first shown. The pane's small map (lightbox.routeMap) shows the
+       route of the drive shown while lightbox.routeSpec is its spec (see
+       infoContext). Nothing without routes.js or a route. */
+    var routeData = null;
+    var routesAsked = false;
+
+    function loadRoutes() {
+        if (routeData || routesAsked || typeof ROUTES === "undefined" || !window.SITE ||
+                !SITE.loadRoutes) {
+            return;
+        }
+        routesAsked = true;
+        SITE.loadRoutes(function (list) {
+            routesAsked = false;
+            if (!list) {
+                return;
+            }
+            routeData = ROUTES.prepare(list);
+            // (A drive on show now: its pane again, with the map.)
+            var shown = lightbox && !lightbox.root.hidden ? lightbox.driveSpec : null;
+            var clip = shown ? shown.clips[lightbox.driveIndex] : null;
+            if (clip && clip.id === lightbox.paneId) {
+                renderPane(clip.rec, clip.id === lightbox.id ? lightbox.shownDetail : null);
+            }
+        });
+    }
+
+    function showRoute(spec, id) {
+        var route = routeData.byClip[id] || null;
+        spec.clips.forEach(function (clip) {
+            route = route || routeData.byClip[clip.id] || null;
+        });
+        if (!route) {
+            lightbox.routeSpec = null;
+            return false;
+        }
+        if (!lightbox.routeMap) {
+            lightbox.routeMap = new ROUTES.MiniMap({tileUrl: SITE.tileUrl,
+                                                    tileSize: SITE.tileSize(),
+                                                    tilesMax: SITE.tilesMax()});
+        }
+        lightbox.routeSpec = spec;
+        lightbox.routeMap.show(route, id);
+        return true;
     }
 
     function preload(id) {
@@ -5009,6 +6166,21 @@ var VIEWER = (function () {
             },
             get: options.get,
             detailUrl: options.detailUrl,
+            stage: lightbox.stage,
+            onOpening: function (opened, detail) {
+                if (lightbox.shownDetail && detail && lightbox.id === opened.i) {
+                    lightbox.shownDetail.opening_view = detail.opening_view;
+                }
+                if ((lightbox.paneId || lightbox.id) === opened.i) {
+                    renderPane(opened, lightbox.detail);
+                }
+                if (lightbox.stage.rec === opened) {
+                    lightbox.stage.reset();
+                }
+                if (options.onMarked) {
+                    options.onMarked([opened.i]);
+                }
+            },
             inPage: true
         };
         var drive = lightbox.driveSpec;
@@ -5023,8 +6195,14 @@ var VIEWER = (function () {
                 var timeline = driveTimeline(drive.clips.map(function (clip) {
                     return clip.duration;
                 }));
+                if (routeData && lightbox.routeSpec !== drive) {
+                    showRoute(drive, rec.i);
+                }
                 context.drive = {cover: drive.cover, index: at, count: drive.clips.length,
-                                 start: timeline.starts[at], length: timeline.total};
+                                 start: timeline.starts[at], length: timeline.total,
+                                 routeMap: lightbox.routeSpec === drive && lightbox.routeMap
+                                     ? lightbox.routeMap : null,
+                                 compact: compactPane()};
             }
         }
         return context;
@@ -5039,7 +6217,10 @@ var VIEWER = (function () {
     function renderPane(rec, detail) {
         var hadFocus = lightbox.pane.contains(document.activeElement);
         lightbox.detail = detail;
-        renderInfo(lightbox.pane, rec, detail, infoContext(rec));
+        var context = infoContext(rec);
+        // (Laid out for a small pane or a large one: see the resize listener.)
+        lightbox.paneCompact = Boolean(context.drive && context.drive.compact);
+        renderInfo(lightbox.pane, rec, detail, context);
         if (hadFocus) {
             keepFocus();
         }
@@ -5191,12 +6372,16 @@ var VIEWER = (function () {
             lightbox = buildLightbox();
         }
         lightbox.options = options;
+        lightbox.startAt = options.startAt && typeof options.startAt === "object"
+            ? options.startAt : null;
         lightbox.ids = (options.ids || []).slice();
         lightbox.index = clamp(options.index || 0, 0, Math.max(0, lightbox.ids.length - 1));
         if (lightbox.root.hidden) {
             lightbox.returnFocus = document.activeElement;
             lightbox.root.hidden = false;
             document.documentElement.classList.add("viewer-open");
+            // (A sheet opens at its peek height, whatever it was before.)
+            setSheetFull(false);
             setInfo(infoWanted(), false);
         }
         show(wanted);
@@ -5213,6 +6398,7 @@ var VIEWER = (function () {
         }
         var id = lightbox.id;
         lightbox.root.hidden = true;
+        setSheetFull(false);
         lightbox.detailToken += 1;
         lightbox.stage.show(null, {});
         lightbox.stage.dropPano();
@@ -5293,6 +6479,7 @@ var VIEWER = (function () {
         Stage: Stage,
         stageUrls: stageUrls,
         renderInfo: renderInfo,
+        keepOpeningView: keepOpeningView,
         altText: altText,
         open: open,
         close: closeLightbox,

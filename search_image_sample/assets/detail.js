@@ -3,7 +3,8 @@
    picture stage (zoom, or the 360-degree view) and information pane
    (viewer.js). The search the picture was found with travels along in the
    address (q, filters, ...), so "Back to search" and the chips lead back
-   to it. The admin marks the picture here as in the viewer (F, 1-5, 0, A).
+   to it. The admin marks the picture here as in the viewer (F, 1-5, 0, A),
+   and chooses where a 360 picture opens ("Open here").
 */
 (function () {
     "use strict";
@@ -70,6 +71,8 @@
             scrollPage: true,
             onState: function (state) {
                 reset.hidden = !state.pano && !state.zoomed;
+                // (Not for a 360 video shown unlevelled, see VIEWER.Stage.)
+                openHere.hidden = !state.pano || !adminOn || Boolean(state.unlevelled);
                 // (A video does not zoom.)
                 zoomOut.hidden = zoomIn.hidden = Boolean(state.video);
             }
@@ -87,8 +90,21 @@
             stage.reset();
         });
         reset.hidden = true;
+        // (The admin's: a 360 picture opens at the view shown from now on.)
+        var openHere = toolButton("viewer-open-here", "Open here (this 360\u00b0 picture opens " +
+                                  "at this view from now on, its thumbnail too)", "Open here",
+                                  function () {
+                                      VIEWER.keepOpeningView(rec, stage, openHere, false,
+                                                             opened);
+                                  });
+        openHere.hidden = true;
+        tools.appendChild(openHere);
         tools.appendChild(reset);
         stage.show(rec, VIEWER.stageUrls(rec, detail));
+        if (detail) {
+            // (A 360 video's level track.)
+            stage.videoDetail(detail);
+        }
 
         var visibility = {library: search.lib || "", hidden: adminOn && search.hidden,
                           sensitive: search.sensitive || undefined, junk: search.junk};
@@ -149,6 +165,11 @@
             onMarked: function () {
                 render();
             },
+            stage: stage,
+            onOpening: function () {
+                stage.reset();
+                render();
+            },
             onEdited: function (id, edited) {
                 // (The viewer changed rec in place; "More like this" uses it.)
                 detail = edited;
@@ -165,6 +186,13 @@
         };
         function render() {
             VIEWER.renderInfo(byId("detail-info"), rec, detail, context);
+        }
+        // A new opening view (rec.ov changed in place): the pane says whose it is.
+        function opened(reply) {
+            if (detail && reply && reply.opening_view) {
+                detail.opening_view = reply.opening_view;
+            }
+            render();
         }
         render();
         if (index) {

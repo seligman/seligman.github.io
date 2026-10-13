@@ -23,6 +23,13 @@
                                    anything), or null. The pages show the
                                    compact record first and add this.
      SITE.loadLocations(callback)  [{id, lat, lon}] or null.
+     SITE.loadRoutes(callback)     the routes of drives (the GPS tracks of
+                                   videos, see tracks.py and routes.js:
+                                   [{d, l, c: [{i, o, p}]}]; server:
+                                   /api/routes, an export: data/routes.js
+                                   with its "routes" option, else []), or
+                                   null when they cannot be loaded. Loaded
+                                   once per page.
      SITE.compactRecord(detail)    a full record as a compact search record.
      SITE.loadVectors(callback)    the meaning vectors of the pictures, as
                                    SearchCore.decodeVectors makes them
@@ -147,7 +154,8 @@
    (window.SEARCH_DATA_MANIFEST = {shards: [...], details: [...],
    libraries, locations, ...}), index shards (SEARCH_DATA.push([...records]))
    and detail shards (SEARCH_DATA.detail({id: details})), with the map
-   data/locations.js (SEARCH_DATA.locations([{id, lat, lon}])) and with the
+   data/locations.js (SEARCH_DATA.locations([{id, lat, lon}])), with its
+   "routes" option data/routes.js (SEARCH_DATA.routes([...])), and with the
    "similar" option vector files (SEARCH_VECTORS.push({dims, ids, data}),
    listed in manifest.vectors, loaded only when a page wants them) and with
    the "looks" option look vector files (SEARCH_LOOKS.push({dims, ids,
@@ -554,13 +562,18 @@ var SITE = (function () {
     };
 
     function thumbUrl(rec) {
+        // (A 360 picture's thumbnail shows its opening view, rec.ov: another
+        // view is another address, so the browser does not keep the old one
+        // -- an export's too, whose file keeps its name.)
+        var view = rec && typeof rec === "object" && Array.isArray(rec.ov)
+            ? "?v=" + encodeURIComponent(rec.ov.join("_")) : "";
         if (isStatic) {
             if (rec && rec._thumb) {
                 return rec._thumb;
             }
-            return staticPrefix.thumbs + encodeURIComponent(recordId(rec)) + ".jpg";
+            return staticPrefix.thumbs + encodeURIComponent(recordId(rec)) + ".jpg" + view;
         }
-        return "/thumb/" + encodeURIComponent(recordId(rec));
+        return "/thumb/" + encodeURIComponent(recordId(rec)) + view;
     }
 
     function imageUrl(rec) {
@@ -824,7 +837,11 @@ var SITE = (function () {
                 rec.km = Math.round(place.km);
             }
             if (place.estimated === true) {
-                rec.pe = 1;     // (gps_check.py: from the pictures around it)
+                rec.pe = 1;     // (place_estimates.py: no position of its own)
+            }
+            var sources = {copy: "c", time: "t", area: "a", owner: "o"};
+            if (sources[place.source]) {
+                rec.ps = sources[place.source];
             }
         }
         if (detail.width) {
@@ -835,6 +852,19 @@ var SITE = (function () {
         }
         if (detail.projection === "equirectangular" || detail.projection === "dual_fisheye") {
             rec.p = "360";
+            // (Where it opens, when not at the front: opening_views.record_value.)
+            var view = detail.opening_view && typeof detail.opening_view === "object"
+                ? detail.opening_view : null;
+            if (view && typeof view.yaw === "number" && typeof view.pitch === "number" &&
+                    isFinite(view.yaw) && isFinite(view.pitch)) {
+                var ov = [Math.round(view.yaw * 10) / 10, Math.round(view.pitch * 10) / 10];
+                if (typeof view.fov === "number" && isFinite(view.fov)) {
+                    ov.push(Math.round(view.fov * 10) / 10);
+                }
+                if (Math.abs(ov[0]) >= 0.5 || Math.abs(ov[1]) >= 0.5 || ov.length > 2) {
+                    rec.ov = ov;
+                }
+            }
         }
         if (detail.media === "video") {
             // (search_index.add_video)
@@ -860,6 +890,10 @@ var SITE = (function () {
                 ? fisheyeRecord(detail.video.fisheye) : null;
             if (geometry) {
                 rec.fx = geometry;
+                if (Array.isArray(detail.level) && detail.level.length) {
+                    // (Its frames are turned level: the record holds the track.)
+                    rec.lv = 1;
+                }
             }
         }
         if (detail.hidden) {
@@ -929,6 +963,7 @@ var SITE = (function () {
     var staticDetails = {};       // id -> full record (older packages, detail shards)
     var staticScripts = {};       // data script name -> promise of it being loaded
     var staticLocations = null;   // [{id, lat, lon}] once data/locations.js has run
+    var staticRoutes = null;      // the routes once data/routes.js has run
 
     // The address of a data script: with the hash of its contents when
     // the manifest has one (export.py, "versions").
@@ -992,6 +1027,9 @@ var SITE = (function () {
             },
             locations: function (list) {
                 staticLocations = Array.isArray(list) ? list : [];
+            },
+            routes: function (list) {
+                staticRoutes = Array.isArray(list) ? list : [];
             }
         };
         var ready = root.SEARCH_DATA_MANIFEST ? Promise.resolve()
@@ -1190,6 +1228,34 @@ var SITE = (function () {
             promise = getJson(cfg.api + "/locations");
         }
         promise.then(callback, function () {
+            callback(null);
+        });
+    }
+
+    var routesPromise = null;     // the routes, once asked for (null again after a failure)
+
+    function loadRoutes(callback) {
+        if (!routesPromise) {
+            if (isStatic) {
+                routesPromise = loadStaticIndex().then(function (data) {
+                    var manifest = data && data.manifest;
+                    if (!manifest || typeof manifest.routes !== "string" || !manifest.routes) {
+                        return [];
+                    }
+                    return loadDataScript(manifest.routes).then(function () {
+                        return staticRoutes || [];
+                    });
+                });
+            } else {
+                routesPromise = getJson(cfg.api + "/routes").then(function (payload) {
+                    return payload && Array.isArray(payload.routes) ? payload.routes : [];
+                });
+            }
+            routesPromise.catch(function () {
+                routesPromise = null;
+            });
+        }
+        routesPromise.then(callback, function () {
             callback(null);
         });
     }
@@ -1724,6 +1790,7 @@ var SITE = (function () {
         refreshIndex: refreshIndex,
         loadRecord: loadRecord,
         loadLocations: loadLocations,
+        loadRoutes: loadRoutes,
         loadVectors: loadVectors,
         refreshVectors: refreshVectors,
         attachVectors: attachVectors,
