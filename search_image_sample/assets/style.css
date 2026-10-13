@@ -3233,6 +3233,53 @@ body.select-mode .tile-badges {
     outline: 2px solid var(--accent);
 }
 
+/* A drive (video clips recorded one after the other, app.js): folded, a
+   stack of its clips with its whole length; opened, its clips in order,
+   those that match the search ringed. */
+.tile.is-drive::before,
+.tile.is-drive::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background: var(--stack-back);
+    border: 1px solid var(--border-strong);
+}
+
+.tile.is-drive::before {
+    transform: translate(3px, -3px);
+}
+
+.tile.is-drive::after {
+    transform: translate(6px, -6px);
+    z-index: -2;
+}
+
+.tile-badge.badge-drive {
+    background: rgba(24, 91, 179, 0.88);
+}
+
+.tile.is-drive-clip .tile-link {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.tile.is-drive-clip.is-match .tile-link {
+    outline: 3px solid #f2b705;
+    outline-offset: -3px;
+}
+
+@media (max-width: 600px) {
+    .tile.is-drive::before {
+        transform: translate(2px, -2px);
+    }
+
+    .tile.is-drive::after {
+        transform: translate(4px, -4px);
+    }
+}
+
 .tile-check {
     display: none;
     position: absolute;
@@ -3653,7 +3700,9 @@ body.no-pictures #search-layout {
         white-space: nowrap;
     }
 
-    #surprise-button {
+    #surprise-button,
+    #album-link,
+    #save-search {
         flex: 0 0 auto;
         padding: 3px 8px;
     }
@@ -3895,6 +3944,101 @@ html.viewer-open body {
     touch-action: auto;
 }
 
+/* A 360 video plays on the sphere (the 360 view) under controls of its
+   own: play, where it is, a bar to move in it, the sound. */
+.stage-controls {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 4px 10px 4px 4px;
+    border-radius: 22px;
+    background: rgba(0, 0, 0, 0.68);
+    color: #f2f2f2;
+    font-size: 13px;
+    cursor: default;
+}
+
+.stage-control {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 10px;
+    border: none;
+    border-radius: 18px;
+    background: transparent;
+    color: #f2f2f2;
+    font: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.stage-play {
+    font-size: 16px;
+}
+
+.stage-control:hover {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.stage-control:focus-visible,
+.stage-seek:focus-visible {
+    outline: 2px solid #6db3f2;
+    outline-offset: 1px;
+}
+
+.stage-sound[aria-pressed="false"] {
+    color: #b8b8b8;
+    text-decoration: line-through;
+}
+
+.stage-time {
+    flex: none;
+    min-width: 72px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.stage-seek {
+    flex: 1 1 auto;
+    min-width: 40px;
+    margin: 0;
+    accent-color: #6db3f2;
+    cursor: pointer;
+}
+
+.stage.has-controls .stage-note {
+    bottom: 64px;
+}
+
+/* A 360 video played flat (no 360 view here): its front lens's circle. */
+.stage-fisheye {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    overflow: hidden;
+    transform: translate(-50%, -50%);
+}
+
+.stage-video.stage-fisheye-video {
+    object-fit: cover;
+}
+
+.stage-fisheye ~ .stage-note,
+.stage.has-controls .stage-fisheye ~ .stage-note {
+    top: 14px;
+    bottom: auto;
+}
+
 .stage-note.has-link {
     pointer-events: auto;
 }
@@ -3903,6 +4047,135 @@ html.viewer-open body {
     color: #ffffff;
     font-weight: 600;
     text-decoration: underline;
+}
+
+/* A drive in the viewer (viewer.js showDrive): under the stage, a strip
+   across the whole drive -- its clips (those that match the search in
+   amber, a red edge after a hole), how far it has played, where it is. */
+.drive-strip {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.35);
+    color: #e8e8e8;
+    font-size: 13px;
+}
+
+.drive-label {
+    flex: 0 0 auto;
+    min-width: 15em;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.drive-track {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 120px;
+    height: 24px;
+    border-radius: 4px;
+    background: #24272c;
+    cursor: pointer;
+    overflow: hidden;
+    touch-action: manipulation;
+}
+
+.drive-track:focus-visible {
+    outline: 2px solid #6db3f2;
+    outline-offset: 2px;
+}
+
+.drive-piece {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    border-left: 1px solid #0c0d0f;
+    background: #3d434b;
+    pointer-events: none;
+}
+
+.drive-piece.is-match {
+    background: #a67c00;
+}
+
+.drive-piece.is-current {
+    background: #6a7685;
+}
+
+.drive-piece.is-match.is-current {
+    background: #f2b705;
+}
+
+.drive-piece.after-hole {
+    border-left: 3px solid #e4635f;
+}
+
+.drive-played {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: rgba(109, 179, 242, 0.28);
+    pointer-events: none;
+}
+
+.drive-cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: #ffffff;
+    pointer-events: none;
+}
+
+.drive-mode {
+    flex: 0 0 auto;
+    padding: 5px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 15px;
+    background: transparent;
+    color: #f2f2f2;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.drive-mode:hover,
+.drive-mode[aria-pressed="true"] {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.drive-mode:focus-visible {
+    outline: 2px solid #6db3f2;
+}
+
+.info-drive-title {
+    margin: 0 0 4px;
+    font-weight: 700;
+}
+
+@media (max-width: 600px) {
+    .drive-strip {
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        padding: 6px 8px;
+    }
+
+    .drive-label {
+        min-width: 0;
+        flex: 1 1 auto;
+    }
+
+    .drive-track {
+        order: 3;
+        flex-basis: 100%;
+        height: 30px;
+    }
 }
 
 .stage-busy {
@@ -4198,6 +4471,37 @@ a.info-chip:focus-visible {
 
 .button.subtle-danger {
     color: var(--danger-fg);
+}
+
+/* The GPS check: why a picture's position was set aside (the admin's) */
+
+.info-location-check {
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-2);
+    font-size: 14px;
+    white-space: normal;
+}
+
+.info-location-check.is-ignored {
+    border-color: var(--warn-border);
+    background: var(--warn-soft);
+    color: var(--warn-text);
+}
+
+.info-location-check .info-location-why {
+    margin: 0 0 4px;
+}
+
+.info-location-check.is-ignored .info-small {
+    color: inherit;
+}
+
+.info-location-check .button {
+    margin-top: 6px;
 }
 
 /* The owner's edits: the badge, added tags, the model's text, the form */
@@ -4569,6 +4873,285 @@ body.detail-page {
     color: var(--text);
     font-size: 17px;
     box-shadow: var(--shadow-lg);
+}
+
+/* Favorites, ratings and albums (albums.py): the stars of the viewer and
+   the information pane, the tiles' favorite badge, the album picker */
+
+:root {
+    --star: #b47c00;            /* a set star on the page background */
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --star: #ffcf40;
+    }
+}
+
+:root[data-theme="dark"] {
+    --star: #ffcf40;
+}
+
+.tile-badge.badge-favorite {
+    color: #ffd54a;
+    font-size: 13px;
+    line-height: 1.1;
+}
+
+.viewer-marks {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.viewer-star.is-on,
+.viewer-rate.is-on,
+.viewer-marks-text {
+    color: #ffd54a;
+}
+
+/* The rating, set apart from the favorite star by a thin line. */
+.viewer-rating {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 6px 0 4px;
+    padding-left: 6px;
+    border-left: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.viewer-rate {
+    min-width: 19px;
+    height: 30px;
+    padding: 0 1px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #bdbdbd;
+    font: inherit;
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.viewer-rate:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.viewer-rate:focus-visible {
+    outline: 2px solid #6db3f2;
+    outline-offset: 1px;
+}
+
+.viewer-marks-text {
+    padding: 0 6px;
+    font-size: 15px;
+    white-space: nowrap;
+}
+
+/* (Phones: the rating is in the information pane; the star stays.) */
+@media (max-width: 600px) {
+    .viewer-rating {
+        display: none;
+    }
+}
+
+.info-marks {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin: -4px 0 14px;
+}
+
+.info-mark-favorite {
+    padding: 3px 11px;
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.info-mark-favorite.is-on {
+    border-color: var(--warn-border);
+    background: var(--warn-soft);
+    color: var(--warn-text);
+}
+
+.info-rating {
+    display: inline-flex;
+    align-items: center;
+}
+
+.info-mark-star,
+.info-mark-clear {
+    padding: 0 2px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 21px;
+    line-height: 1.1;
+    cursor: pointer;
+}
+
+.info-mark-star.is-on {
+    color: var(--star);
+}
+
+.info-mark-clear {
+    margin-left: 4px;
+    font-size: 16px;
+}
+
+.info-mark-favorite:focus-visible,
+.info-mark-star:focus-visible,
+.info-mark-clear:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.info-mark-favorite:disabled,
+.info-mark-star:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* (Touch screens: stars big enough to hit the one meant, a little apart;
+   on a phone the pane holds the only rating buttons.) */
+@media (pointer: coarse) {
+    .info-rating {
+        gap: 4px;
+    }
+
+    .info-mark-star,
+    .info-mark-clear {
+        min-width: 40px;
+        min-height: 40px;
+    }
+
+    .info-mark-favorite {
+        min-height: 40px;
+    }
+
+    .viewer-rate {
+        min-width: 28px;
+    }
+}
+
+.info-rating-text {
+    color: var(--star);
+    font-size: 18px;
+    letter-spacing: 1px;
+}
+
+.info-badge.is-favorite {
+    background: var(--warn-soft);
+    color: var(--warn-text);
+}
+
+.info-albums {
+    flex: 1 1 100%;
+    align-items: center;
+}
+
+.album-picker-find {
+    width: 100%;
+}
+
+.album-picker-new {
+    margin-top: 8px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    text-align: left;
+}
+
+.album-picker-list {
+    max-height: min(50vh, 420px);
+    margin: 10px 0 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.album-picker-list:empty {
+    display: none;
+}
+
+.album-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.album-picker-item:hover:not(:disabled) {
+    background: var(--surface-2);
+}
+
+.album-picker-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.album-picker-check {
+    flex: none;
+    width: 20px;
+    color: var(--text-muted);
+    font-weight: 700;
+    text-align: center;
+}
+
+.album-picker-item[aria-pressed="true"] .album-picker-check {
+    color: var(--ok);
+}
+
+.album-picker-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.album-picker-count {
+    flex: none;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.album-picker-note:empty {
+    display: none;
+}
+
+.rate-choices {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+.rate-choice {
+    justify-content: flex-start;
+    color: var(--star);
+    font-size: 18px;
+    letter-spacing: 2px;
+}
+
+.rate-choice:last-child {
+    color: var(--text);
+    font-size: 14px;
+    letter-spacing: normal;
 }
 
 /* Less movement for those who asked their system for it */

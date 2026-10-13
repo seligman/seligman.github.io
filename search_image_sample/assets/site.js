@@ -9,9 +9,13 @@
 
    Data
      SITE.loadIndex(callback)      callback({version, generated, libraries:
-                                   [{id, name}], records: [...]}) with the
-                                   compact search records (keys: see
-                                   search_index.py), or callback(null).
+                                   [{id, name}], albums, records: [...]})
+                                   with the compact search records (keys:
+                                   see search_index.py), or callback(null).
+                                   albums: the owner's albums (SearchCore's
+                                   albums option; albums.index_albums on
+                                   the server, an export's manifest.albums
+                                   with its "marks" option, else []).
      SITE.loadRecord(id, callback) the full record of one picture (server:
                                    /api/image/<id>, with info, exif,
                                    provenance, ...; an export: what it
@@ -80,6 +84,11 @@
                                    original), or an export's videos/<id>.mp4
                                    (rec.vf); null for pictures and for videos
                                    an export holds only the poster of
+     SITE.drivePreviewUrl(record)  the sped-up preview of the drive a clip
+                                   (rec.dv) belongs to: /drive-preview/<id>
+                                   (the full record says whether there is
+                                   one: detail.drive.preview); null in an
+                                   export
      SITE.tileUrl(z, x, y), SITE.tilesMax(), SITE.tileSize()   map tiles
 
    SITE.shuffleSeed(renew) is the seed of the "shuffle" sort: one per
@@ -113,7 +122,7 @@
    Search state in the address (SITE.searchState)
      read(search)  -> {q, lib, sort, filters: {group: [values]}, group,
                        size, hidden, junk, sensitive, ids, view, from, to,
-                       by}
+                       by, drives}
                        from a query string (default: the page's)
      params(state) -> the query string for a state ("" when all default)
      The facet selections use the group names of SearchCore.FACETS as
@@ -125,7 +134,8 @@
      are the timeline's choice of dates (SearchCore's range option:
      "YYYY", "YYYY-MM" or "YYYY-MM-DD"). by is how words are looked for:
      "words", "meaning", or "" (words and meaning, SearchCore's meaning
-     option).
+     option). drives is false when the clips of drives are shown one by
+     one ("Fold drives" off: drives=0).
 
    SITE.idList.encode(ids, records) -> the ids value for a list of picture
      ids; SITE.idList.decode(text, records) -> {ids: [...], stale} (stale:
@@ -182,10 +192,10 @@ var SITE = (function () {
     /* ---------- Search state in the address --------------------------------- */
 
     // The facet groups of SearchCore.FACETS (a test keeps the two in step).
-    var FACET_KEYS = ["library", "type", "people", "setting", "time", "event", "year", "month",
-                      "place", "camera", "has", "tags", "subjects", "animals", "food",
-                      "vehicles", "colors"];
-    var SORTS = ["relevance", "newest", "oldest", "name", "quality", "shuffle"];
+    var FACET_KEYS = ["library", "favorite", "rating", "type", "people", "setting", "time",
+                      "event", "year", "month", "place", "camera", "has", "tags", "subjects",
+                      "animals", "food", "vehicles", "colors"];
+    var SORTS = ["relevance", "newest", "oldest", "name", "quality", "shuffle", "album"];
     var SIZES = ["s", "m", "l"];
     var SENSITIVE = ["show", "strict"];
     var BY = ["words", "meaning"];
@@ -203,7 +213,7 @@ var SITE = (function () {
     function emptyState() {
         return {q: "", lib: "", sort: "", filters: {}, group: true, size: "",
                 hidden: false, junk: false, sensitive: "", ids: "", view: "", from: "", to: "",
-                by: ""};
+                by: "", drives: true};
     }
 
     // A map view from an address: "lat,lon,zoom" with the latitude within
@@ -242,6 +252,7 @@ var SITE = (function () {
             }
         });
         state.group = params.get("group") !== "0";
+        state.drives = params.get("drives") !== "0";
         var size = params.get("size");
         state.size = SIZES.indexOf(size) >= 0 ? size : "";
         state.hidden = params.get("hidden") === "1";
@@ -282,6 +293,9 @@ var SITE = (function () {
         }
         if (state.group === false) {
             params.set("group", "0");
+        }
+        if (state.drives === false) {
+            params.set("drives", "0");
         }
         if (state.size && SIZES.indexOf(state.size) >= 0) {
             params.set("size", state.size);
@@ -581,7 +595,8 @@ var SITE = (function () {
     // (which is then the whole picture), and in an export for a picture
     // without one (rec.pn: it has panos/<id>.jpg).
     function panoUrl(rec) {
-        if (!rec || typeof rec !== "object" || rec.p !== "360") {
+        // (A 360 video has none: it plays.)
+        if (!rec || typeof rec !== "object" || rec.p !== "360" || rec.mv) {
             return null;
         }
         if (isStatic && rec._pano) {
@@ -613,7 +628,58 @@ var SITE = (function () {
         return "/video/" + encodeURIComponent(recordId(rec));
     }
 
+    // The sped-up preview of a clip's drive (rec.dv): the server's
+    // /drive-preview/<id> (whether there is one: the full record's
+    // drive.preview); an export has none.
+    function drivePreviewUrl(rec) {
+        if (!rec || typeof rec !== "object" || !rec.mv || rec.dv === undefined ||
+                rec.dv === null || isStatic) {
+            return null;
+        }
+        return "/drive-preview/" + encodeURIComponent(recordId(rec));
+    }
+
     /* ---------- Compact records from full ones ------------------------------- */
+
+    // A 360 video's lens geometry (its facts' "fisheye") as a record's fx,
+    // or null: only finite numbers in the expected shapes
+    // (search_index.fisheye_record).
+    function fisheyeRecord(geometry) {
+        if (!geometry || typeof geometry !== "object") {
+            return null;
+        }
+        function numbers(value, count) {
+            if (!Array.isArray(value) || value.length !== count) {
+                return null;
+            }
+            for (var index = 0; index < count; index++) {
+                if (typeof value[index] !== "number" || !isFinite(value[index])) {
+                    return null;
+                }
+            }
+            return value.slice();
+        }
+        function pair(value) {
+            if (!Array.isArray(value) || value.length !== 2) {
+                return null;
+            }
+            var first = numbers(value[0], 3);
+            var second = numbers(value[1], 3);
+            return first && second ? [first, second] : null;
+        }
+        var lens = pair(geometry.lens);
+        var gain = pair(geometry.gain);
+        var turn = numbers(geometry.turn, 2);
+        var fill = numbers(geometry.fill, 2);
+        var fov = numbers([geometry.fov], 1);
+        var blend = numbers([geometry.blend], 1);
+        if (!lens || !gain || !turn || !fill || !fov || !blend ||
+                (geometry.front !== 0 && geometry.front !== 1) || !(fov[0] > 90 && fov[0] < 360)) {
+            return null;
+        }
+        return {lens: lens, fov: fov[0], turn: turn, front: geometry.front,
+                mirror: geometry.mirror === true, blend: blend[0], gain: gain, fill: fill};
+    }
 
     function text(value) {
         return typeof value === "string" ? value.replace(/^\s+|\s+$/g, "") : "";
@@ -757,6 +823,9 @@ var SITE = (function () {
             if (rec.ci && typeof place.km === "number" && place.km >= 0) {
                 rec.km = Math.round(place.km);
             }
+            if (place.estimated === true) {
+                rec.pe = 1;     // (gps_check.py: from the pictures around it)
+            }
         }
         if (detail.width) {
             rec.w = detail.width;
@@ -775,8 +844,22 @@ var SITE = (function () {
                 // (Rounded down, at least 0.1, as search_index does.)
                 rec.dr = Math.max(0.1, Math.floor(detail.duration * 10) / 10);
             }
-            if (detail.video && text(detail.video.codec)) {
-                rec.vc = text(detail.video.codec);
+            var facts = detail.video && typeof detail.video === "object" ? detail.video : {};
+            var codec = text(facts.codec);
+            if (detail.projection === "dual_fisheye") {
+                // (A 360 video plays its LRV, or its original when that
+                // holds both lenses in one stream; lens streams only as a
+                // playable copy.)
+                var lrv = facts.lrv && typeof facts.lrv === "object" ? facts.lrv : {};
+                codec = text(lrv.codec) || (facts.lenses === "frame" ? codec : "");
+            }
+            if (codec) {
+                rec.vc = codec;
+            }
+            var geometry = detail.projection === "dual_fisheye" && detail.video
+                ? fisheyeRecord(detail.video.fisheye) : null;
+            if (geometry) {
+                rec.fx = geometry;
             }
         }
         if (detail.hidden) {
@@ -784,6 +867,29 @@ var SITE = (function () {
         }
         if (detail.edited) {
             rec.ed = 1;
+        }
+        if (detail.location_check && detail.location_check.ignored) {
+            rec.gx = 1;
+        }
+        var marks = detail.marks && typeof detail.marks === "object" ? detail.marks : null;
+        if (marks) {
+            // (search_index.add_marks)
+            if (marks.favorite) {
+                rec.fav = 1;
+            }
+            if (typeof marks.rating === "number" && marks.rating >= 1 && marks.rating <= 5) {
+                rec.rt = marks.rating;
+            }
+            var albumIds = (Array.isArray(marks.albums) ? marks.albums : []).map(function (album) {
+                return album && album.id;
+            }).filter(function (id) {
+                return typeof id === "number";
+            });
+            if (albumIds.length) {
+                rec.al = albumIds.sort(function (a, b) {
+                    return a - b;
+                });
+            }
         }
         return rec;
     }
@@ -906,6 +1012,7 @@ var SITE = (function () {
                     version: manifest.version || 1,
                     generated: manifest.generated || null,
                     libraries: manifest.libraries || (manifest.library ? [manifest.library] : []),
+                    albums: Array.isArray(manifest.albums) ? manifest.albums : [],
                     records: records,
                     manifest: manifest
                 };
@@ -936,7 +1043,7 @@ var SITE = (function () {
                     return {id: name, name: name};
                 });
                 return {version: 0, generated: manifest.generated || null,
-                        libraries: libraries, records: records};
+                        libraries: libraries, albums: [], records: records};
             });
         });
     }
@@ -990,6 +1097,9 @@ var SITE = (function () {
             return response.json().then(function (data) {
                 if (Array.isArray(data)) {
                     data = {version: 0, libraries: [], records: data};
+                }
+                if (!Array.isArray(data.albums)) {
+                    data.albums = [];
                 }
                 data.etag = tag;
                 return data;
@@ -1593,6 +1703,7 @@ var SITE = (function () {
         previewUrl: previewUrl,
         panoUrl: panoUrl,
         videoUrl: videoUrl,
+        drivePreviewUrl: drivePreviewUrl,
         tileUrl: function (zoom, x, y) {
             var prefix = cfg.tiles;
             if (!prefix) {

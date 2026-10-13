@@ -47,6 +47,26 @@
    so, with a message); then the words typed before go (the filters stay).
    The example is kept in the page only (not in the address).
 
+   Favorites, ratings and albums (albums.py): the records carry fav, rt
+   and al, and the index lists the albums (data.albums), which search-core
+   uses for album: (a smart album's search runs inside it; on the server
+   its meaning vector is asked for like the query's). The admin marks
+   pictures in the viewer (F, 1-5, 0, A) and the selected ones from the
+   selection bar (Favorite, Rate..., Add to album..., Remove from
+   album...); the records change in place and the search runs again.
+   "Save as album" keeps the search (words, filters, sort, words/meaning)
+   as a smart album; a search of one album shows it in its own order.
+
+   Drives (runs of video clips recorded one after the other, record key
+   dv, see drives.py and search-core's Drives) show as one tile each while
+   "Fold drives" is on (the default; state.drives): the clip that stands
+   for it (the best one that matches by itself, else the drive's middle
+   one), its length, a "Drive" badge, and the number of its clips, which
+   opens it in the grid (its clips that the search may show at all, in
+   order, those that match by themselves marked). A clip of a drive, folded
+   or not, opens the viewer on the whole drive (VIEWER's driveOf), at
+   that clip.
+
    The grid is laid out in rows by this script (columns from the width and
    the size slider; a header row per month when sorted by date) and cut
    into blocks of about 60 pictures. Only the blocks near the screen hold
@@ -81,6 +101,7 @@
     var FACET_SHOWN = 6;
     var SIZE_KEY = "searchImages.size";
     var GROUP_KEY = "searchImages.group";
+    var DRIVES_KEY = "searchImages.drives";
     var FACETS_CLOSED_KEY = "searchImages.facetsClosed";
     var SIDEBAR_KEY = "searchImages.sidebar";
     var BANNER_KEY = "searchImages.bannerHidden";
@@ -118,12 +139,19 @@
     var monthLabel = byId("month-label");
 
     var state = SITE.searchState.read();
+    // The smart album whose search the Albums page opened ("Change its
+    // search": ?album=<id>), so Save as album offers to update it.
+    var changingAlbum = (function () {
+        var value = /[?&]album=(\d{1,18})(?:&|$)/.exec(window.location.search || "");
+        return value ? Number(value[1]) : null;
+    })();
     var data = null;            // {records, libraries, names, byId, index}
     var result = null;          // the last SearchCore.search answer
     var display = [];           // [{id, stack: [ids] | null, member: bool}]
     var positions = {};         // id -> place in display
     var coverOf = {};           // stack member id -> the id of its stack's cover
     var expanded = {};          // stack cover id -> true while opened in the grid
+    var expandedDrives = {};    // drive key (dv) -> true while its clips are in the grid
     var layout = null;
     var observer = null;
     var focusPos = 0;           // the thumbnail that Tab reaches (roving tabindex)
@@ -190,6 +218,9 @@
         if (!params.has("group")) {
             state.group = SHELL.storageGet(GROUP_KEY) !== "0";
         }
+        if (!params.has("drives")) {
+            state.drives = SHELL.storageGet(DRIVES_KEY) !== "0";
+        }
         if (!params.has("by")) {
             // (Only "Words" is remembered: meaning alone would hide word
             // matches on every later visit without saying so.)
@@ -227,7 +258,8 @@
     // The state as the address keeps it (defaults left out).
     function urlState() {
         return {q: state.q, lib: SHELL.library(), sort: state.sort, filters: state.filters,
-                group: state.group, size: state.size === "m" ? "" : state.size,
+                group: state.group, drives: state.drives,
+                size: state.size === "m" ? "" : state.size,
                 hidden: state.hidden, junk: state.junk, sensitive: state.sensitive,
                 ids: state.ids, view: state.view, from: state.from, to: state.to,
                 by: state.by};
@@ -356,6 +388,7 @@
         data = {
             records: loaded.records,
             libraries: loaded.libraries || [],
+            albums: Array.isArray(loaded.albums) ? loaded.albums : [],
             names: names,
             byId: lookup,
             index: SearchCore.prepare(loaded.records)
@@ -405,6 +438,7 @@
         options.sort = state.sort || undefined;
         options.filters = state.filters;
         options.group = state.group;
+        options.drives = state.drives;
         options.typing = typing;
         options.seed = SITE.shuffleSeed();
         if (state.from || state.to) {
@@ -419,7 +453,57 @@
         if (example && example.vec) {
             options.lookVector = example.vec;
         }
+        options.albums = data.albums;
+        options.vectorFor = albumVector;
         return options;
+    }
+
+    /* The meaning vector of a smart album's search (SearchCore's vectorFor):
+       kept like the query's, asked for once (the server's; an export's model
+       is not loaded for it), and the search runs again when it comes. */
+    var albumAsked = {};
+
+    function albumVector(text) {
+        if (!meaningOn() || !vectors || !text) {
+            return null;
+        }
+        if (queryVectors[text]) {
+            return queryVectors[text];
+        }
+        var kept = keptVector(text);
+        if (kept) {
+            rememberVector(text, kept);
+            return kept;
+        }
+        var tries = albumAsked[text] || 0;
+        if (!serverMode || tries < 0 || tries >= MEANING_TRIES) {
+            return null;
+        }
+        albumAsked[text] = -1;                  // (asking now)
+        SITE.queryVector(text, function (answer) {
+            answer = answer || {};
+            var vector = answer.state === "ready" && vectors && answer.model === vectors.model &&
+                answer.dims === vectors.dims ? SearchCore.queryVector(answer.vec, vectors.dims)
+                : null;
+            if (vector) {
+                rememberVector(text, vector);
+                keepVector(text, answer);
+                albumAsked[text] = MEANING_TRIES;
+                if (data) {
+                    run({keepScroll: true});
+                }
+            } else if (answer.state === "starting" || answer.state === "busy") {
+                albumAsked[text] = tries + 1;
+                window.setTimeout(function () {
+                    if (data) {
+                        run({keepScroll: true});
+                    }
+                }, MEANING_RETRY);
+            } else {
+                albumAsked[text] = MEANING_TRIES;   // (words only)
+            }
+        });
+        return null;
     }
 
     /* ---------- Search by meaning ------------------------------------------------- */
@@ -790,9 +874,22 @@
         });
     }
 
-    // A query with a look: term.
+    // A query with a look: term (also in a smart album it names).
     function lookQuery() {
-        return /(^|\s)looks?:/i.test(state.q);
+        return /(^|\s)-?looks?:/i.test(state.q + " " + albumQueries());
+    }
+
+    // The searches of the smart albums when the query names an album (they
+    // run inside it and may need the look or meaning vectors), else "".
+    function albumQueries() {
+        if (!data || !/(^|\s)-?albums?:/i.test(state.q)) {
+            return "";
+        }
+        return data.albums.filter(function (album) {
+            return album && album.kind === "smart" && typeof album.query === "string";
+        }).map(function (album) {
+            return album.query;
+        }).join(" ");
     }
 
     // The admin may search by an example picture here (the server can make its vector).
@@ -1138,11 +1235,84 @@
 
     /* ---------- Searching -------------------------------------------------------- */
 
+    /* The drive of a clip among the results (result.drives, see
+       search-core): {key, clips (the ids of its clips the search may show
+       at all, in order), matched ({id: true}: those that match by
+       themselves), partial (some of them do not), shown (the clip that
+       stands for it), text (the id of the clip with its own title and
+       description, when they may be shown, else null), length (seconds)},
+       or null. */
+    function driveInfo(id) {
+        var rec = record(id);
+        var key = rec && rec.dv !== undefined && rec.dv !== null ? String(rec.dv) : null;
+        var found = key !== null && result && result.drives ? result.drives[key] : null;
+        if (!found || !found.clips || found.clips.length < 2) {
+            return null;
+        }
+        var matched = {};
+        found.matched.forEach(function (member) {
+            matched[member] = true;
+        });
+        var length = 0;
+        found.clips.forEach(function (clip) {
+            var clipRec = record(clip);
+            length += clipRec && clipRec.dr > 0 ? clipRec.dr : 0;
+        });
+        return {key: key, clips: found.clips, matched: matched, shown: found.shown,
+                text: found.text === undefined ? null : found.text, length: length,
+                partial: found.clips.some(function (clip) {
+                    return !matched[clip];
+                })};
+    }
+
+    // The drive a result stands for while drives are folded, or null.
+    function driveEntry(id) {
+        var drive = state.drives ? driveInfo(id) : null;
+        return drive && drive.shown === id ? drive : null;
+    }
+
+    // Is the tile at entry a folded drive?
+    function foldedDrive(entry) {
+        return Boolean(entry && entry.drive && !entry.member && !expandedDrives[entry.drive.key]);
+    }
+
+    /* The clips a folded drive stands for (what selecting its tile
+       selects): those that match the search by themselves, or all of them
+       when none does (the drive matched by its own words), in the drive's
+       order. A search for favorites never selects the drive's other clips. */
+    function driveMembers(drive) {
+        var own = drive.clips.filter(function (clip) {
+            return drive.matched[clip] === true;
+        });
+        return own.length ? own : drive.clips;
+    }
+
+    // The pictures a tile stands for: all of a folded stack's, a folded
+    // drive's driveMembers.
+    function membersOf(entry) {
+        if (foldedDrive(entry)) {
+            return driveMembers(entry.drive);
+        }
+        return entry.stack && !expanded[entry.id] ? entry.stack : [entry.id];
+    }
+
     function buildDisplay() {
         display = [];
         positions = {};
         coverOf = {};
         result.items.forEach(function (id) {
+            var drive = driveEntry(id);
+            if (drive && expandedDrives[drive.key]) {
+                drive.clips.forEach(function (clip, index) {
+                    display.push({id: clip, stack: null, drive: drive, member: index > 0,
+                                  cover: index > 0 ? drive.clips[0] : undefined});
+                });
+                return;
+            }
+            if (drive) {
+                display.push({id: id, stack: null, drive: drive, member: false});
+                return;
+            }
             var stack = state.group ? result.groups[String(id)] : null;
             stack = stack && stack.length > 1 ? stack : null;
             display.push({id: id, stack: stack, member: false});
@@ -1161,6 +1331,13 @@
                     }
                 });
             }
+            if (foldedDrive(entry)) {
+                entry.drive.clips.forEach(function (clip) {
+                    if (clip !== entry.id) {
+                        coverOf[clip] = entry.id;
+                    }
+                });
+            }
         });
         focusPos = Math.min(focusPos, Math.max(0, display.length - 1));
     }
@@ -1174,10 +1351,17 @@
             return true;
         }
         var cover = coverOf[id];
-        if (cover === undefined || expanded[cover]) {
+        var holder = cover === undefined ? null : display[positions[cover]];
+        if (holder && holder.drive) {
+            if (expandedDrives[holder.drive.key]) {
+                return false;
+            }
+            expandedDrives[holder.drive.key] = true;
+        } else if (cover === undefined || expanded[cover]) {
             return false;
+        } else {
+            expanded[cover] = true;
         }
-        expanded[cover] = true;
         buildDisplay();
         relayout(true);
         renderHead();
@@ -1191,7 +1375,7 @@
         }
         checkPicked();
         dropStaleView();
-        if (!SITE.isStatic || /(^|\s)(similar|like):/i.test(state.q)) {
+        if (!SITE.isStatic || /(^|\s)-?(similar|like):/i.test(state.q + " " + albumQueries())) {
             wantVectors();
         }
         if ((adminOn && serverMode) || lookQuery()) {
@@ -1244,6 +1428,7 @@
     function changed(options) {
         options = options || {};
         expanded = {};
+        expandedDrives = {};
         anchor = null;
         droppedPicks = false;
         run({top: options.top !== false});
@@ -1377,8 +1562,20 @@
 
     function renderControls() {
         var sort = byId("sort");
+        var byAlbum = sort.querySelector("option[value='album']");
+        if (byAlbum) {
+            // (Only while the search names one album.)
+            byAlbum.hidden = byAlbum.disabled = !(result && result.album);
+        }
         sort.value = result ? result.sort : state.sort || "newest";
         byId("group").checked = state.group;
+        var drivesBox = byId("drives");
+        if (drivesBox) {
+            drivesBox.checked = state.drives !== false;
+            // (Only where some videos make drives.)
+            byId("drives-tool").hidden = !(data && data.index.driveKeys &&
+                                            data.index.driveKeys.length);
+        }
         var size = byId("size");
         size.value = String(SIZE_NAMES.indexOf(state.size));
         size.setAttribute("aria-valuetext", SIZE_LABELS[state.size]);
@@ -1455,6 +1652,12 @@
             changed();
         });
         byId("surprise-button").addEventListener("click", surprise);
+        var saveButton = byId("save-search");
+        if (saveButton) {
+            saveButton.addEventListener("click", function () {
+                saveSearch(saveButton);
+            });
+        }
         var by = byId("meaning-switch");
         if (by) {
             Array.prototype.forEach.call(by.querySelectorAll("button"), function (button) {
@@ -1472,6 +1675,13 @@
             SHELL.storageSet(GROUP_KEY, state.group ? "" : "0");
             changed({top: false});
         });
+        if (byId("drives")) {
+            byId("drives").addEventListener("change", function () {
+                state.drives = byId("drives").checked;
+                SHELL.storageSet(DRIVES_KEY, state.drives ? "" : "0");
+                changed({top: false});
+            });
+        }
         byId("size").addEventListener("input", function () {
             state.size = SIZE_NAMES[Number(byId("size").value)] || "m";
             SHELL.storageSet(SIZE_KEY, state.size === "m" ? "" : state.size);
@@ -1510,12 +1720,14 @@
     function syntaxRows() {
         if (!SITE.isStatic) {
             return adminOn ? SearchCore.SYNTAX : SearchCore.SYNTAX.map(function (row) {
-                return row.example.split(":")[0] !== "is" ? row : {
+                return row.example.split(":")[0] !== "is" || row.example === "is:favorite" ? row : {
                     example: row.example,
-                    meaning: "360\u00b0 photos; also is:duplicate, is:undescribed"};
+                    meaning: "360\u00b0 photos and videos; also is:video, is:drive, " +
+                        "is:duplicate, is:undescribed"};
             });
         }
         var caps = SITE.capabilities || {};
+        var marked = caps.marks === true;
         var fields = ["tag", "subject", "title", "text (the text in the picture)", "description",
                       "scene", "animal", "food", "vehicle", "color", "camera"];
         if (caps.folders === true) {
@@ -1530,6 +1742,14 @@
             if (field === "lib" || (field === "place" && caps.places !== true)) {
                 return;
             }
+            if (!marked && (field === "rating" || field === "album" ||
+                            row.example === "is:favorite")) {
+                return;             // (an export without the owner's marks)
+            }
+            if (row.example === "is:favorite") {
+                rows.push(row);
+                return;
+            }
             if (field === "tag") {
                 row = {example: row.example, meaning: "a word in one field: " +
                        fields.join(", ")};
@@ -1539,7 +1759,8 @@
             } else if (field === "has" && caps.map !== true) {
                 row = {example: row.example, meaning: "with text, people, animals, ..."};
             } else if (field === "is") {
-                row = {example: row.example, meaning: "360\u00b0 photos; also is:duplicate"};
+                row = {example: row.example, meaning: "360\u00b0 photos and videos; also " +
+                       "is:video, is:drive, is:duplicate"};
             }
             rows.push(row);
         });
@@ -1988,7 +2209,7 @@
     function located() {
         var count = 0;
         display.forEach(function (entry) {
-            (entry.stack && !expanded[entry.id] ? entry.stack : [entry.id]).forEach(function (id) {
+            membersOf(entry).forEach(function (id) {
                 var rec = record(id);
                 if (rec && rec.gp) {
                     count += 1;
@@ -2078,6 +2299,25 @@
         if (result.collapsed) {
             notes.push(fmt.plural(result.collapsed, "duplicate") + " grouped");
         }
+        if (result.album) {
+            notes.push(["in the " + (result.album.kind === "smart" ? "smart " : "") +
+                        "album \u201c" + result.album.name + "\u201d" +
+                        (result.sort === "album" ? ", in its order" : ""),
+                        "album \u201c" + result.album.name + "\u201d"]);
+        }
+        renderAlbumTools();
+        var driveTiles = 0;
+        var driveClips = 0;
+        display.forEach(function (entry) {
+            if (entry.drive && !entry.member) {
+                driveTiles += 1;
+                driveClips += entry.drive.clips.length;
+            }
+        });
+        if (driveTiles) {
+            notes.push([fmt.plural(driveClips, "clip") + " in " + fmt.plural(driveTiles, "drive"),
+                        fmt.plural(driveTiles, "drive")]);
+        }
         var noteBox = byId("result-notes");
         clear(noteBox);
         notes.forEach(function (note) {
@@ -2135,6 +2375,241 @@
                                             text: fmt.number(count) + " on the map"}));
         }
         finishHead();
+    }
+
+    /* The admin's album tools of the results head: "Save as album" (a smart
+       album of this search) and, for a search of one manual album, a link
+       to arrange it on the Albums page. */
+    function renderAlbumTools() {
+        var save = byId("save-search");
+        var arrange = byId("album-link");
+        if (!save || !arrange) {
+            return;
+        }
+        // (Not for a visibility switch alone, such as "Hide blurry ...":
+        // a smart album does not keep those.)
+        var searching = Boolean(state.q.replace(/\s+/g, "") || savedFilterCount() ||
+                                state.from || state.to || SHELL.library());
+        save.hidden = !adminOn || !serverMode || !searching || Boolean(example) ||
+            Boolean(state.ids);
+        var changing = albumBeingChanged();
+        buttonLabel(save, changing ? "Save the album\u2019s search" : "Save as album",
+                    changing ? "Save search" : "Save");
+        save.title = changing ? "Update the smart album " + changing.name + " with this search " +
+            "(or save it as a new album)" : "Keep this search as a smart album: it always " +
+            "shows the pictures the search finds";
+        var album = result && result.album;
+        arrange.hidden = !adminOn || !serverMode || !album || album.kind !== "manual";
+        if (!arrange.hidden) {
+            arrange.href = "/albums?album=" + encodeURIComponent(album.id);
+            buttonLabel(arrange, "Arrange the album", "Arrange");
+        }
+    }
+
+    /* A button's label, and the shorter one phones show (the results head
+       is one line there); the long one is its name for screen readers. */
+    function buttonLabel(node, long, short) {
+        var shown = node.querySelector(".wide-only");
+        if (shown && shown.textContent === long) {
+            return;
+        }
+        clear(node);
+        node.appendChild(el("span", {className: "wide-only", text: long}));
+        node.appendChild(el("span", {className: "narrow-only", text: short}));
+        node.setAttribute("aria-label", long);
+    }
+
+    // How many filter values a smart album would keep (the visibility
+    // switches are not kept: see savedSearch).
+    function savedFilterCount() {
+        var count = 0;
+        Object.keys(state.filters).forEach(function (key) {
+            count += state.filters[key] ? state.filters[key].length : 0;
+        });
+        return count;
+    }
+
+    // The smart album "Change its search" came from, while it still exists.
+    function albumBeingChanged() {
+        if (changingAlbum === null || !data) {
+            return null;
+        }
+        return data.albums.filter(function (album) {
+            return album && album.kind === "smart" && album.id === changingAlbum;
+        })[0] || null;
+    }
+
+    // What a smart album saves of the search shown (albums.clean_options).
+    function savedSearch() {
+        var options = {};
+        var filters = {};
+        Object.keys(state.filters).forEach(function (key) {
+            if (state.filters[key] && state.filters[key].length) {
+                filters[key] = state.filters[key].slice();
+            }
+        });
+        if (Object.keys(filters).length) {
+            options.filters = filters;
+        }
+        if (state.sort) {
+            options.sort = state.sort;
+        }
+        if (state.by) {
+            options.by = state.by;
+        }
+        if (SHELL.library()) {
+            options.lib = SHELL.library();
+        }
+        if (state.from) {
+            options.from = state.from;
+        }
+        if (state.to) {
+            options.to = state.to;
+        }
+        return options;
+    }
+
+    /* "Save as album": the search as a smart album (its name asked for).
+       An album of that name that is a smart album can be replaced. Opened
+       from an album's "Change its search" (albumBeingChanged), it offers
+       to update that album (and keeps its name) or to save a new one. */
+    function saveSearch(button) {
+        var changing = albumBeingChanged();
+        var box = SHELL.modal({title: changing ? "Save the search of " + changing.name
+            : "Save this search as a smart album"});
+        var name = el("input", {type: "text", className: "input", maxLength: 100,
+                                autocomplete: "off", spellcheck: false,
+                                value: changing ? changing.name
+                                    : state.q.replace(/^\s+|\s+$/g, "").slice(0, 100)});
+        var field = SHELL.field("Album name", name);
+        box.body.appendChild(field.node);
+        var parts = [];
+        if (state.q.replace(/\s+/g, "")) {
+            parts.push("the words \u201c" + state.q.replace(/^\s+|\s+$/g, "") + "\u201d");
+        }
+        var filters = savedFilterCount();
+        if (filters > 0) {
+            parts.push(fmt.plural(filters, "filter"));
+        }
+        if (state.from || state.to) {
+            parts.push(SearchCore.rangeLabel(state.from || "", state.to || ""));
+        }
+        if (SHELL.library()) {
+            parts.push("the library " + (SHELL.libraryName() || SHELL.library()));
+        }
+        box.body.appendChild(el("p", {className: "field-hint", text:
+            "A smart album keeps the search (" + (parts.join(", ") || "these filters") +
+            (state.sort ? ", the sort" : "") + (state.by ? ", " + (state.by === "words"
+                ? "words only" : "by meaning") : "") + ") and always shows the pictures it " +
+            "finds now: new pictures join it by themselves. Open it from Albums, or search " +
+            "album:\u201cname\u201d." + (changing ? " Update changes the search of " +
+                changing.name + "; Save as a new album keeps it as it was." : "")}));
+        var showError = function (message) {
+            field.error.textContent = message;
+            field.error.hidden = !message;
+        };
+        box.button("Cancel", "", function () {
+            box.close();
+        });
+        var asNew = changing ? box.button("Save as a new album", "", function () {
+            go(false);
+        }) : null;
+        var ok = box.button(changing ? "Update" : "Save", "primary", function () {
+            go(Boolean(changing));
+        });
+        box.submitOnEnter(function () {
+            go(Boolean(changing));
+        });
+        name.addEventListener("input", function () {
+            showError("");
+        });
+        function busy(on) {
+            ok.disabled = on;
+            if (asNew) {
+                asNew.disabled = on;
+            }
+        }
+        // update: change the album the search came from (else a new one,
+        // or one of that name).
+        function go(update) {
+            var wanted = name.value.replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+            if (!wanted) {
+                showError("Give the album a name.");
+                name.focus();
+                return;
+            }
+            var same = SearchCore.findAlbum(data.albums, wanted);
+            if (same && same.name.toLowerCase() !== wanted.toLowerCase()) {
+                same = null;
+            }
+            if (update) {
+                same = changing;
+            } else if (same && changing && same === changing) {
+                showError("Give the new album another name.");
+                name.focus();
+                return;
+            }
+            if (same && same.kind !== "smart") {
+                showError("There is a (manual) album called " + same.name + " already.");
+                return;
+            }
+            busy(true);
+            var body = {query: state.q.replace(/^\s+|\s+$/g, ""), options: savedSearch()};
+            var request;
+            if (update) {
+                if (wanted !== changing.name) {
+                    body.name = wanted;             // (renamed too)
+                }
+                request = SHELL.admin("/albums/" + encodeURIComponent(changing.id), body,
+                                      {quiet: true});
+            } else if (same) {
+                request = SHELL.confirm({title: "Replace the search of " + same.name + "?",
+                                         message: "The smart album " + same.name + " will " +
+                                             "show the pictures of this search instead.",
+                                         confirmText: "Replace"}).then(function (yes) {
+                    if (!yes) {
+                        return null;
+                    }
+                    return SHELL.admin("/albums/" + encodeURIComponent(same.id), body,
+                                       {quiet: true});
+                });
+            } else {
+                body.name = wanted;
+                body.kind = "smart";
+                request = SHELL.admin("/albums", body, {quiet: true});
+            }
+            request.then(function (reply) {
+                busy(false);
+                if (!reply) {
+                    return;
+                }
+                var album = reply.album;
+                var entry = same || {};
+                entry.id = album.id;
+                entry.name = album.name;
+                entry.kind = "smart";
+                entry.cover = album.cover || null;
+                entry.query = album.query;
+                entry.options = album.options || {};
+                if (!same) {
+                    data.albums.push(entry);
+                }
+                if (!update && changing) {
+                    changingAlbum = null;           // (saved as a new one: done changing)
+                }
+                box.close();
+                SHELL.toast((update ? "Updated" : "Saved") + " the smart album " + album.name +
+                            ".", "ok");
+                run({keepScroll: true});
+                if (button) {
+                    button.blur();
+                }
+            }, function (error) {
+                busy(false);
+                showError(error && error.message ? error.message
+                    : "The album could not be saved.");
+            });
+        }
     }
 
     /* Under the results head: what search by meaning did when it matters,
@@ -3226,8 +3701,9 @@
             display.forEach(function (entry, index) {
                 if (!entry.member) {
                     var key = monthKey(record(entry.id));
-                    counts[key] = (counts[key] || 0) + (entry.stack && !expanded[entry.id]
-                        ? entry.stack.length : 1);
+                    counts[key] = (counts[key] || 0) + (foldedDrive(entry)
+                        ? Math.max(1, Object.keys(entry.drive.matched).length)
+                        : entry.stack && !expanded[entry.id] ? entry.stack.length : 1);
                     if (key !== month) {
                         month = key;
                         starts.push(index);
@@ -3486,7 +3962,7 @@
         if (!entry) {
             return [];
         }
-        return entry.stack && !expanded[entry.id] ? entry.stack : [entry.id];
+        return membersOf(entry);
     }
 
     function tileLabel(rec, entry) {
@@ -3502,8 +3978,20 @@
         if (entry.stack && !expanded[entry.id]) {
             parts.push(entry.stack.length + " similar pictures");
         }
+        if (foldedDrive(entry)) {
+            parts.push("a drive of " + entry.drive.clips.length + " clips, " +
+                       VIEWER.format.durationText(entry.drive.length));
+        } else if (entry.drive) {
+            parts.push("clip " + (entry.drive.clips.indexOf(entry.id) + 1) + " of a drive");
+        }
         if (rec.h) {
             parts.push("hidden");
+        }
+        if (rec.fav) {
+            parts.push("a favorite");
+        }
+        if (rec.rt) {
+            parts.push("rated " + fmt.plural(rec.rt, "star"));
         }
         if (meaningOnly[entry.id]) {
             parts.push("found by meaning");
@@ -3515,10 +4003,15 @@
         var entry = display[position];
         var rec = record(entry.id) || {i: entry.id};
         var stacked = entry.stack && !expanded[entry.id];
+        var folded = foldedDrive(entry);
         // Screenshots and documents show their top (a chat's first
         // message, a receipt's shop name), not their middle.
         var page = DOC_TYPES[rec.ty] === true || Boolean(rec.dt);
         var node = el("div", {className: "tile" + (stacked ? " is-stack" : "") +
+                              (folded ? " is-drive" : "") +
+                              (entry.drive && !folded ? " is-drive-clip" : "") +
+                              (entry.drive && !folded && entry.drive.partial &&
+                               entry.drive.matched[entry.id] ? " is-match" : "") +
                               (entry.stack && expanded[entry.id] ? " is-stack-open" : "") +
                               (entry.member ? " is-member" : "") + (rec.h ? " is-hidden" : "") +
                               (page ? " is-page" : "") +
@@ -3535,6 +4028,10 @@
         link.appendChild(image);
         var caption = el("span", {className: "tile-caption", attrs: {"aria-hidden": "true"}});
         var title = rec.t || rec.n || "";
+        var driveText = folded && entry.drive.text !== null ? record(entry.drive.text) : null;
+        if (driveText && driveText.dvt) {
+            title = driveText.dvt;          // (the drive's own title)
+        }
         if (title) {
             caption.appendChild(el("span", {className: "tile-title", text: title}));
         }
@@ -3547,7 +4044,13 @@
         if (rec.p === "360") {
             badges.appendChild(el("span", {className: "tile-badge", text: "360\u00b0"}));
         }
-        if (rec.mv) {
+        if (folded) {
+            // A drive: its whole length ("2:31:04").
+            var driveLength = VIEWER.format.durationText(entry.drive.length);
+            badges.appendChild(el("span", {className: "tile-badge badge-video badge-drive",
+                                           text: "\u25b6 Drive" +
+                                               (driveLength ? " " + driveLength : "")}));
+        } else if (rec.mv) {
             // A play sign and the length ("0:24").
             var length = VIEWER.format.durationText(rec.dr);
             badges.appendChild(el("span", {className: "tile-badge badge-video",
@@ -3555,6 +4058,10 @@
         }
         if (rec.h) {
             badges.appendChild(el("span", {className: "tile-badge badge-hidden", text: "Hidden"}));
+        }
+        if (rec.fav) {
+            badges.appendChild(el("span", {className: "tile-badge badge-favorite",
+                                           text: "\u2605"}));
         }
         if (meaningOnly[entry.id]) {
             badges.appendChild(el("span", {className: "tile-badge badge-meaning", text: "\u2248",
@@ -3565,6 +4072,20 @@
         }
         link.appendChild(el("span", {className: "tile-check", attrs: {"aria-hidden": "true"}}));
         node.appendChild(link);
+        if (entry.drive && (folded || entry.id === entry.drive.clips[0])) {
+            // The number of its clips (opens them in the grid), or Close.
+            var count = entry.drive.clips.length;
+            var driveButton = el("button", {
+                type: "button", className: "tile-stack tile-drive",
+                text: folded ? "\u00d7" + count : "Close",
+                title: folded ? "Show the " + count + " clips of this drive"
+                    : "Fold the drive back",
+                attrs: {"aria-expanded": folded ? "false" : "true",
+                        "aria-label": folded ? "Show the " + count + " clips of this drive"
+                            : "Fold the drive back"}});
+            driveButton.tabIndex = -1;
+            node.appendChild(driveButton);
+        }
         if (entry.stack) {
             var open = Boolean(expanded[entry.id]);
             var stackButton = el("button", {type: "button", className: "tile-stack",
@@ -3699,6 +4220,15 @@
     }
 
     function gridClick(event) {
+        var driveButton = event.target.closest ? event.target.closest(".tile-drive") : null;
+        if (driveButton) {
+            event.preventDefault();
+            var at = display[Number(driveButton.parentNode.getAttribute("data-pos"))];
+            if (at && at.drive) {
+                toggleDrive(at.drive.key, at.id);
+            }
+            return;
+        }
         var stackButton = event.target.closest ? event.target.closest(".tile-stack") : null;
         if (stackButton) {
             event.preventDefault();
@@ -3718,6 +4248,32 @@
             toggleSelect(at, event.shiftKey);
         } else {
             openViewer(at, true);
+        }
+    }
+
+    /* Open a folded drive in the grid (all of its clips, in order), or fold
+       it. The focus goes to the clip the tile showed (opened: the clip that
+       matched, among the others), else to the drive's tile. */
+    function toggleDrive(key, shown) {
+        if (expandedDrives[key]) {
+            delete expandedDrives[key];
+        } else {
+            expandedDrives[key] = true;
+        }
+        buildDisplay();
+        relayout(true);
+        renderHead();
+        var head = positions[shown] !== undefined ? positions[shown] : -1;
+        display.forEach(function (entry, index) {
+            if (head < 0 && entry.drive && entry.drive.key === key && !entry.member) {
+                head = index;
+            }
+        });
+        if (head >= 0 && !VIEWER.isOpen()) {
+            focusTile(head);
+        }
+        if (VIEWER.isOpen()) {
+            VIEWER.update(viewerIds());
         }
     }
 
@@ -3842,22 +4398,39 @@
         });
     }
 
+    // The pictures the results stand for, in their order (membersOf every
+    // tile): what "Select all" selects.
     function allResultIds() {
         var ids = [];
         display.forEach(function (entry) {
-            if (!entry.member) {
-                (entry.stack || [entry.id]).forEach(function (id) {
-                    ids.push(id);
-                });
-            }
+            membersOf(entry).forEach(function (id) {
+                ids.push(id);
+            });
         });
         return ids;
     }
 
+    /* The selected pictures in the order the results show them (a drive's
+       clips in the drive's order), so that an album gets them in that
+       order. */
     function selectedIds() {
-        return Object.keys(selected).map(function (id) {
-            return /^\d+$/.test(id) ? Number(id) : id;
+        var ids = [];
+        var seen = {};
+        allResultIds().forEach(function (id) {
+            if (selected[id] && !seen[id]) {
+                seen[id] = true;
+                ids.push(id);
+            }
         });
+        // (Any others last: trimSelection keeps none that are not shown.)
+        Object.keys(selected).forEach(function (key) {
+            var id = /^\d+$/.test(key) ? Number(key) : key;
+            if (!seen[id]) {
+                seen[id] = true;
+                ids.push(id);
+            }
+        });
+        return ids;
     }
 
     function chunks(list, size) {
@@ -4074,6 +4647,82 @@
         });
     }
 
+    // The selected pictures were marked: the search runs again (a list of
+    // favorites or of an album changes), the viewer's pane too.
+    function marksChanged() {
+        run({keepScroll: true});
+        VIEWER.refreshInfo();
+    }
+
+    /* "Favorite": makes every selected picture a favorite, or, when all of
+       them are already, takes the star away. */
+    function favoriteSelected(button) {
+        var ids = selectedIds();
+        if (!ids.length) {
+            return;
+        }
+        var all = ids.every(function (id) {
+            var rec = record(id);
+            return rec && rec.fav;
+        });
+        button.disabled = true;
+        VIEWER.marks.favorite(ids, !all, record).then(function (changedCount) {
+            SHELL.toast(all ? fmt.plural(changedCount, "picture") + " no longer favorites."
+                : fmt.plural(changedCount, "picture") + " made favorites.", "ok");
+        }, function () {}).then(function () {
+            button.disabled = false;
+            marksChanged();
+        });
+    }
+
+    // "Rate...": a rating (or none) for every selected picture.
+    function rateSelected(button) {
+        var ids = selectedIds();
+        if (!ids.length) {
+            return;
+        }
+        var box = SHELL.modal({title: "Rate " + fmt.plural(ids.length, "selected picture")});
+        var row = el("div", {className: "rate-choices", attrs: {role: "group",
+                                                             "aria-label": "Rating"}});
+        [5, 4, 3, 2, 1, 0].forEach(function (value) {
+            var choice = el("button", {type: "button", className: "button rate-choice",
+                                       text: value ? VIEWER.marks.stars(value) : "No rating",
+                                       title: value ? fmt.plural(value, "star") : "Clear the rating",
+                                       attrs: {"aria-label": value ? fmt.plural(value, "star")
+                                           : "No rating"}});
+            choice.addEventListener("click", function () {
+                box.close();
+                button.disabled = true;
+                VIEWER.marks.rate(ids, value, record).then(function (changedCount) {
+                    SHELL.toast(value ? fmt.plural(changedCount, "picture") + " rated " +
+                                fmt.plural(value, "star") + "."
+                        : "The rating of " + fmt.plural(changedCount, "picture") + " was cleared.",
+                                "ok");
+                }, function () {}).then(function () {
+                    button.disabled = false;
+                    marksChanged();
+                });
+            });
+            row.appendChild(choice);
+        });
+        box.body.appendChild(row);
+        box.body.appendChild(el("p", {className: "field-hint",
+                                      text: "In the viewer: the keys 1 to 5, and 0 to clear."}));
+        box.button("Cancel", "", function () {
+            box.close();
+        });
+    }
+
+    // "Add to album..." / "Remove from album...": the album picker.
+    function albumSelected(mode) {
+        var ids = selectedIds();
+        if (!ids.length) {
+            return;
+        }
+        VIEWER.marks.picker({ids: ids, get: record, albums: data.albums, mode: mode,
+                             onChange: marksChanged});
+    }
+
     function copyPaths(button) {
         var ids = selectedIds();
         if (!ids.length) {
@@ -4157,6 +4806,31 @@
         removeTag.addEventListener("click", function () {
             tagSelected(false, removeTag);
         });
+        var favorite = el("button", {type: "button", className: "button small",
+                                     text: "\u2605 Favorite", disabled: !selectedCount,
+                                     title: "Make the selected pictures favorites (again: take " +
+                                         "the star away)"});
+        favorite.addEventListener("click", function () {
+            favoriteSelected(favorite);
+        });
+        var rate = el("button", {type: "button", className: "button small", text: "Rate\u2026",
+                                 disabled: !selectedCount, title: "Rate the selected pictures"});
+        rate.addEventListener("click", function () {
+            rateSelected(rate);
+        });
+        var toAlbum = el("button", {type: "button", className: "button small",
+                                    text: "Add to album\u2026", disabled: !selectedCount,
+                                    title: "Put the selected pictures in an album"});
+        toAlbum.addEventListener("click", function () {
+            albumSelected("add");
+        });
+        var fromAlbum = el("button", {type: "button", className: "button small",
+                                      text: "Remove from album\u2026", disabled: !selectedCount,
+                                      title: "Take the selected pictures out of an album (they " +
+                                          "stay in the library)"});
+        fromAlbum.addEventListener("click", function () {
+            albumSelected("remove");
+        });
         var copy = el("button", {type: "button", className: "button small", text: "Copy file paths",
                                  disabled: !selectedCount});
         copy.addEventListener("click", function () {
@@ -4166,6 +4840,10 @@
         done.addEventListener("click", function () {
             setSelecting(false);
         });
+        bar.appendChild(favorite);
+        bar.appendChild(rate);
+        bar.appendChild(toAlbum);
+        bar.appendChild(fromAlbum);
         bar.appendChild(hide);
         bar.appendChild(unhide);
         bar.appendChild(addTag);
@@ -4264,6 +4942,23 @@
                 var entry = display[positions[other]];
                 return entry && entry.stack && !expanded[other] ? entry.stack : null;
             },
+            driveOf: function (other) {
+                // (A clip of a drive plays the whole drive, folded or not.)
+                var entry = display[positions[other]];
+                var drive = entry && entry.drive ? entry.drive : driveInfo(other);
+                if (!drive) {
+                    return null;
+                }
+                return {key: drive.key, clips: drive.clips, text: drive.text,
+                        matched: drive.partial ? drive.matched : {},
+                        folded: foldedDrive(entry)};
+            },
+            onExpandDrive: function (other) {
+                var entry = display[positions[other]];
+                if (foldedDrive(entry)) {
+                    toggleDrive(entry.drive.key, other);
+                }
+            },
             onExpandStack: function (other) {
                 toggleStack(other);
             },
@@ -4291,7 +4986,13 @@
             onHidden: function () {
                 run({keepScroll: true});
             },
-            onEdited: recordsEdited
+            onEdited: recordsEdited,
+            albums: function () {
+                return data ? data.albums : [];
+            },
+            onMarked: function () {
+                run({keepScroll: true});
+            }
         });
         return opened;
     }
@@ -4333,8 +5034,9 @@
     }
 
     function globalKeydown(event) {
-        if (VIEWER.isOpen() || event.ctrlKey || event.metaKey || event.altKey) {
-            return;
+        if (VIEWER.isOpen() || event.ctrlKey || event.metaKey || event.altKey ||
+                (event.target && event.target.closest && event.target.closest("dialog"))) {
+            return;             // (a dialog, such as the album picker, has the keys)
         }
         if (event.key === "/" && !typingIn(event.target)) {
             event.preventDefault();

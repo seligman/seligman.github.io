@@ -3,7 +3,7 @@
    picture stage (zoom, or the 360-degree view) and information pane
    (viewer.js). The search the picture was found with travels along in the
    address (q, filters, ...), so "Back to search" and the chips lead back
-   to it.
+   to it. The admin marks the picture here as in the viewer (F, 1-5, 0, A).
 */
 (function () {
     "use strict";
@@ -143,6 +143,12 @@
             onHidden: function () {
                 render();
             },
+            albums: function () {
+                return data && data.albums ? data.albums : [];
+            },
+            onMarked: function () {
+                render();
+            },
             onEdited: function (id, edited) {
                 // (The viewer changed rec in place; "More like this" uses it.)
                 detail = edited;
@@ -178,9 +184,13 @@
         document.title = (rec.t || rec.n || "Picture") + " - " + (SITE.title || "Image Search");
         document.addEventListener("keydown", function (event) {
             var tag = event.target && event.target.tagName;
-            if (event.ctrlKey || event.metaKey || event.altKey || tag === "INPUT" ||
-                    tag === "TEXTAREA" || tag === "SELECT") {
-                return;
+            // (A slider, such as a 360 video's seek bar, is no place to
+            // type: the letters and digits below work there too.)
+            var slider = tag === "INPUT" && String(event.target.type).toLowerCase() === "range";
+            if (event.ctrlKey || event.metaKey || event.altKey || (tag === "INPUT" && !slider) ||
+                    tag === "TEXTAREA" || tag === "SELECT" ||
+                    (event.target.closest && event.target.closest("dialog"))) {
+                return;         // (a dialog, such as the album picker, has the keys)
             }
             if ((event.key === "e" || event.key === "E") && adminOn) {
                 var edit = byId("detail-info").querySelector(".info-edit-button");
@@ -200,8 +210,14 @@
                 stage.zoomBy(1.5);
             } else if (event.key === "-" || event.key === "_") {
                 stage.zoomBy(1 / 1.5);
-            } else if (event.key === "0") {
+            } else if (event.key === "0" && (!adminOn || stage.isMoved())) {
                 stage.reset();
+            } else if (adminOn && /^[fFaA0-5]$/.test(event.key)) {
+                // (The marks: favorite, rating, albums; 0 clears the rating
+                // once the view is as it was.)
+                if (VIEWER.marks.byKey(rec, context, event.key)) {
+                    event.preventDefault();
+                }
             }
         });
     }
@@ -247,6 +263,7 @@
                     lookup[rec.i] = rec;
                 });
                 data = {byId: lookup, libraries: loaded.libraries || [],
+                        albums: Array.isArray(loaded.albums) ? loaded.albums : [],
                         records: loaded.records, index: SearchCore.prepare(loaded.records)};
             }
             done();

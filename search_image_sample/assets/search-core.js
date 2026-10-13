@@ -10,11 +10,17 @@
    c colors, ex extended words, q aesthetic, sh sharpness, qf quality
    flags, se sensitive, pr private, dk date taken, ts date and time taken,
    cm camera, gp has GPS, ci rg co cc km the place (town, region,
-   country, country code, km from the town), p "360", mv video (its ty is
+   country, country code, km from the town), pe the place is only
+   estimated, gx the GPS check set the position aside (the admin's;
+   is:gps-ignored), p "360", mv video (its ty is
    "video"), dr its length in seconds, vc its codec, vt the kind the AI
    model saw in its frames when not a photo, dg duplicate group,
-   h hidden, ed edited by the owner, ds described, v4). Any key may be
-   missing.
+   h hidden, ed edited by the owner, ds described, v4, fav a favorite,
+   rt its rating 1-5, al the ids of the albums it is in; dv the drive of a
+   clip (the id of its first clip), dx its place in the drive, dh the
+   seconds missing before it, dvt dvd dvg the drive's own title,
+   description and tags, dvp and dvs their private and sensitive flags,
+   on one of its clips: see Drives). Any key may be missing.
    There is no DOM code here:
    the same file runs in the browser (also from file:// in an export) and
    under Node for the tests (tests/js/search_core_test.js).
@@ -32,8 +38,12 @@
               libraries  [{id, name}] of the index, for lib:<name>
               sort       "relevance" (the default when there are words to
                          look for), "newest" (the default otherwise),
-                         "oldest", "name", "quality" or "shuffle" (a
+                         "oldest", "name", "quality", "shuffle" (a
                          random order that stays the same for one seed)
+                         or "album" (the order of the one album the query
+                         names, and the default when it names one and
+                         has no words: a manual album's own order, a
+                         smart album's sort)
               seed       a number for "shuffle" (the page keeps one per
                          session, so the order holds while scrolling)
               range      {from, to}: only pictures taken from .. to
@@ -49,6 +59,16 @@
                          all match (AND); every "has" value must match
               group      true: show each duplicate group once, at the place
                          of its best-ranked match, as its cover
+              drives     true: show each drive (dv: a run of video clips
+                         recorded one after the other) once, like a
+                         duplicate group, as the clip result.drives
+                         names (shown); a clip of a drive is then in no
+                         duplicate group
+              wholeDrives true: a drive that matches by its own words
+                         only (none of its clips matches by itself) stands
+                         for all of its clips in items: they are listed in
+                         the drive's order where the drive is (an album
+                         made from the search holds the whole drive)
               hidden     true: include hidden pictures (admin)
               sensitive  true or "show": include explicit and graphic
                          pictures; "strict": also leave out suggestive
@@ -59,6 +79,19 @@
                          blurry
               ids        a list of picture ids: only these can match (the
                          pictures picked on the map)
+              albums     the albums album: can name: [{id, name, kind
+                         ("manual" or "smart"), items (manual: picture ids
+                         in the album's order), query and options (smart:
+                         the saved search, {filters, sort, by, lib, from,
+                         to})}] (the "albums" of /api/index, or of an
+                         export's manifest). A manual album holds the
+                         pictures of its items and those whose al names it
+                         (the page changes al in place); a smart album the
+                         matches of its saved search, worked out here with
+                         the visibility options of the search around it
+              vectorFor  function (meaning text) -> the meaning vector of
+                         a smart album's search, or null while there is
+                         none (it is then searched by its words)
               typing     true while the query is still being typed: the
                          last word may be the start of a longer word (see
                          parse)
@@ -94,8 +127,18 @@
                the countries, and the regions and towns under a chosen
                one; its entries also have level, label and open.
      groups    when grouping: {shown id: [ids of the stack, shown id first]}
-               for every stack of two or more matches
-     collapsed how many matches are folded into stacks
+               for every duplicate stack of two or more matches
+     drives    {key (dv): {clips, matched, shown, text}} for every drive
+               with a match, folded or not: clips the ids of its clips
+               that the search may show at all (visibility options, ids,
+               dates), in order; matched those that match by themselves,
+               best first; shown the clip that stands for the drive (its
+               best-ranked clip that matches by itself, else its cover);
+               text the id of the clip that carries its own title,
+               description and tags when they may be shown, else null.
+               See Drives.
+     collapsed how many matches are folded into duplicate stacks (not
+               counting the clips of drives)
      timeline  only with options.timeline (else null): how many matches
                were taken when: {level ("year", "month" or "day"; null when
                none has a date), bars: [{key, count}] for every year from
@@ -103,6 +146,8 @@
                days of the one month the matches are in, dated, undated}. A
                record whose date is only its file's time (du) counts as
                undated
+     album     {id, name, kind} of the one album the query names (album
+               order is then possible), else null
      sort      the order used; query: the parse() result as searched (pass
                it to highlights() so the marks agree with the matches);
                warnings: notes about parts of the query that could not be
@@ -127,8 +172,14 @@
      (words of the town, region or country), lib: (library name or id),
      has: (text, gps, people, animals, food, vehicles, description) and
      is: (360, duplicate, hidden, undescribed, described, edited, private,
-     sensitive, blurry, dark, overexposed, accidental, junk, v4 or a type:
-     is:video finds the videos, is:photo the photos),
+     sensitive, blurry, dark, overexposed, accidental, junk, v4, favorite,
+     rated, unrated, drive (the clips of drives), gps-ignored (positions
+     the GPS check set aside: the admin's) or a type: is:video finds
+     the videos, is:photo the photos), rating: (4: exactly 4 stars; >=3, >3, <=2, <2, 4+ or 3-5;
+     comparisons find rated pictures only, rating:0 the unrated ones),
+     album: (an album's name, any case, or the start of the only one
+     that starts so; "quoted" when it has spaces: album:"Summer 2024";
+     album:#12 names the album with id 12, see albumTerm),
      similar: (a picture id: "More like this", the pictures closest in
      meaning to that one, best first; without meaning vectors, those
      sharing tags, the scene or the time, as similar() finds them) and
@@ -221,12 +272,15 @@
      picture's, with the thresholds of similar: (SIMILAR_MIN_Z and the
      closest few of a small set, see Index.similarCut) worked out over the
      look vectors' own cosines: image cosines run on another scale than
-     those of descriptions, and nothing here mixes the two. Copies of the
-     picture (cosine LOOK_COPY or more: the same picture, maybe cropped or
-     edited a little) and the pictures of its duplicate stack come right
-     after it but take no part in those thresholds. The words and
-     filters of the query still choose which pictures may match. The
-     lookVector option does the same for an example picture (whose
+     those of descriptions, and nothing here mixes the two. A look cosine
+     is the dot product divided by the two vectors' own lengths (rounded
+     to whole numbers, they are 127 give or take about 1.5%), as the
+     server's duplicate stacks (search_index._look_cosine) work it out.
+     Copies of the picture (cosine LOOK_COPY or more: the same picture,
+     maybe cropped or edited a little) and the pictures of its duplicate
+     stack come right after it but take no part in those thresholds. The
+     words and filters of the query still choose which pictures may match.
+     The lookVector option does the same for an example picture (whose
      closest copy in the index, if it has one, brings its stack along).
 
    SearchCore.suggest(records, query, options)
@@ -610,12 +664,17 @@ var SearchCore = (function () {
     // country (COUNTRY_WORDS) -- weak, below the description: town names
     // hold everyday words ("Long Beach", "Lake Placid", "Mountain View"),
     // and a picture taken in Long Beach is not a picture of a beach.
+    // F_DRIVE: a drive's own title, description and tags, on the record
+    // that carries them (see Drives): they are the drive's words, not that
+    // clip's, so a plain word searches them apart (term.driveMask), never
+    // as part of ALL_FIELDS.
     var F_TITLE = 0, F_TAGS = 1, F_SUBJECTS = 2, F_ANIMALS = 3, F_FOOD = 4, F_VEHICLES = 5,
         F_PEOPLE = 6, F_SCENE = 7, F_EVENT = 8, F_SETTING = 9, F_KIND = 10, F_TEXT = 11,
         F_DESCRIPTION = 12, F_EXTENDED = 13, F_COLORS = 14, F_FLAGS = 15, F_FOLDER = 16,
-        F_FILE = 17, F_CAMERA = 18, F_DATE = 19, F_YEAR = 20, F_PLACE = 21;
-    var WEIGHTS = [10, 7, 6, 6, 6, 6, 6, 4, 4, 4, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 8, 2];
-    var ALL_FIELDS = (1 << WEIGHTS.length) - 1;
+        F_FILE = 17, F_CAMERA = 18, F_DATE = 19, F_YEAR = 20, F_PLACE = 21, F_DRIVE = 22;
+    var WEIGHTS = [10, 7, 6, 6, 6, 6, 6, 4, 4, 4, 4, 4, 3, 3, 2, 2, 1, 1, 1, 1, 8, 2, 3];
+    var DRIVE_BIT = 1 << F_DRIVE;
+    var ALL_FIELDS = ((1 << WEIGHTS.length) - 1) & ~DRIVE_BIT;
     // A word matched only as the start of a longer word (while typing)
     // scores this much less: even in a title (2.5) it stays below a whole
     // word anywhere but the weakest fields.
@@ -734,7 +793,8 @@ var SearchCore = (function () {
         camera: "camera", folder: "folder", file: "file", filename: "file", type: "type",
         people: "people", year: "year", before: "before", after: "after", lib: "lib",
         library: "lib", has: "has", is: "is", place: "place", places: "place", on: "on",
-        similar: "similar", like: "similar", look: "look", looks: "look"
+        similar: "similar", like: "similar", look: "look", looks: "look",
+        rating: "rating", rated: "rating", stars: "rating", album: "album", albums: "album"
     });
     // Record keys (and field names) for highlights(text, query, field).
     var HIGHLIGHT_FIELDS = dict({
@@ -743,7 +803,8 @@ var SearchCore = (function () {
         sc: F_SCENE, st: F_SETTING, ev: F_EVENT, ty: F_KIND, dt: F_KIND, td: F_KIND,
         o: F_TEXT, text: F_TEXT, d: F_DESCRIPTION, description: F_DESCRIPTION,
         ex: F_EXTENDED, c: F_COLORS, qf: F_FLAGS, f: F_FOLDER, n: F_FILE, cm: F_CAMERA,
-        ci: F_PLACE, rg: F_PLACE, co: F_PLACE, place: F_PLACE
+        ci: F_PLACE, rg: F_PLACE, co: F_PLACE, place: F_PLACE,
+        dvt: F_DRIVE, dvd: F_DRIVE, dvg: F_DRIVE
     });
 
     // Other names of countries (by ISO code) that find pictures taken
@@ -807,6 +868,9 @@ var SearchCore = (function () {
             if (isText(rec.vt) && rec.vt !== "other") {
                 kind.push(rec.vt);
             }
+            if (rec.dv !== undefined && rec.dv !== null) {
+                kind.push("drive");
+            }
         }
         // "people" and "person" find every picture with people in it (and
         // -people leaves them out), not only those whose description
@@ -823,6 +887,7 @@ var SearchCore = (function () {
         add(F_FOLDER, textList(rec.f));
         add(F_FILE, textList(rec.n));
         add(F_CAMERA, textList(rec.cm));
+        add(F_DRIVE, textList(rec.dvt).concat(textList(rec.dvd), textList(rec.dvg)));
         if (isText(rec.co)) {
             add(F_PLACE, textList(rec.ci).concat(textList(rec.rg), [rec.co],
                                                  COUNTRY_WORDS[rec.cc] || []));
@@ -930,7 +995,12 @@ var SearchCore = (function () {
         pending: "undescribed", described: "described", private: "private",
         sensitive: "sensitive", blurry: "blurry", blur: "blurry", dark: "dark",
         overexposed: "overexposed", accidental: "accidental", screen_photo: "screen_photo",
-        junk: "junk", v4: "v4", old: "v4", edited: "edited", edit: "edited"
+        junk: "junk", v4: "v4", old: "v4", edited: "edited", edit: "edited",
+        favorite: "favorite", favourite: "favorite", fav: "favorite", faved: "favorite",
+        starred: "favorite", star: "favorite", rated: "rated", unrated: "unrated",
+        drive: "drive", dashcam: "drive", "gps-ignored": "gps_ignored",
+        gps_ignored: "gps_ignored", "location-ignored": "gps_ignored",
+        location_ignored: "gps_ignored", "ignored-gps": "gps_ignored", ignored_gps: "gps_ignored"
     });
     var QUALITY_FLAGS = wordSet("blurry dark overexposed accidental screen_photo");
 
@@ -1026,6 +1096,37 @@ var SearchCore = (function () {
         return (number < 10 ? "0" : "") + number;
     }
 
+    /* rating:4 (exactly 4 stars), rating:>=3, >3, <=2, <2, 4+ or 3-5
+       (comparisons find rated pictures only), rating:0 (or none,
+       unrated): pictures without a rating. {kind "rating", min, max}. */
+    function ratingFilter(value) {
+        var text = value.replace(/\s+/g, "");
+        if (/^(0|none|no|unrated|not)$/.test(text)) {
+            return {kind: "rating", min: 0, max: 0};
+        }
+        var range = /^([0-5])(?:-|\.\.|\u2013)([0-5])$/.exec(text);
+        if (range) {
+            var low = parseInt(range[1], 10);
+            var high = parseInt(range[2], 10);
+            return {kind: "rating", min: Math.min(low, high), max: Math.max(low, high)};
+        }
+        var match = /^([<>]=?|=[<>]?)?([0-5])(\+)?$/.exec(text);
+        if (!match) {
+            return null;
+        }
+        var stars = parseInt(match[2], 10);
+        var op = match[3] ? ">=" : match[1] || "=";
+        if (op.length === 2 && op.charAt(0) === "=") {
+            op = op.charAt(1) + "=";            // (=> is >=, =< is <=)
+        }
+        var min = op === ">=" ? stars : op === ">" ? stars + 1 : op === "=" ? stars : 1;
+        var max = op === "<=" ? stars : op === "<" ? stars - 1 : op === "=" ? stars : 5;
+        if (op !== "=" && min === 0) {
+            min = 1;                    // (rating:>=0: every rated picture)
+        }
+        return min <= max ? {kind: "rating", min: min, max: max} : null;
+    }
+
     // on:today (this day in earlier years), on:MM-DD (that day of any year)
     // or on:YYYY-MM-DD (that day).
     function onFilter(value) {
@@ -1069,6 +1170,11 @@ var SearchCore = (function () {
             hint = "try on:today, or on:05-14 for a month and day";
         } else if (field === "lib") {
             filter = {kind: "lib", value: String(raw).replace(/^\s+|\s+$/g, "")};
+        } else if (field === "album") {
+            filter = {kind: "album", value: String(raw).replace(/^\s+|\s+$/g, "")};
+        } else if (field === "rating") {
+            filter = ratingFilter(value);
+            hint = "try rating:4, rating:>=3 or rating:0 for pictures without one";
         } else if (field === "has") {
             var what = lookupWord(HAS_WORDS, value);
             filter = what ? {kind: "has", what: what} : null;
@@ -1076,7 +1182,7 @@ var SearchCore = (function () {
         } else if (field === "is") {
             var state = lookupWord(IS_WORDS, value);
             filter = state ? {kind: "is", what: state} : typeFilter(value);
-            hint = "try 360, duplicate, undescribed, edited, screenshot or document";
+            hint = "try 360, duplicate, undescribed, edited, favorite, screenshot or document";
         } else if (field === "similar" || field === "look") {
             var picture = String(raw).replace(/^\s+|\s+$/g, "");
             filter = /^[0-9A-Za-z_-]{1,64}$/.test(picture) ? {kind: field, value: picture}
@@ -1163,6 +1269,8 @@ var SearchCore = (function () {
         }
         term.kind = term.quoted || term.words.length > 1 ? "phrase" : "word";
         term.mask = term.field ? FIELD_MASKS[term.field] : ALL_FIELDS;
+        // (A plain word also searches the drives' own words, apart.)
+        term.driveMask = term.field ? 0 : DRIVE_BIT;
         term.level = skipLevel(term);
         term.stop = term.level > 0;
         return true;
@@ -1424,6 +1532,8 @@ var SearchCore = (function () {
 
     var FACETS = [
         {key: "library", label: "Library"},
+        {key: "favorite", label: "Favorites"},
+        {key: "rating", label: "Rating"},
         {key: "type", label: "Type"},
         {key: "people", label: "People"},
         {key: "setting", label: "Setting"},
@@ -1445,12 +1555,18 @@ var SearchCore = (function () {
     FACETS.forEach(function (facet) {
         FACET_LIMITS[facet.key] = facet.limit || 0;
     });
-    // Groups with values (all but "has").
+    /* Groups worked out from the records as they are at each search, not
+       when they are indexed: "has" (flags), and the owner's favorites and
+       ratings, which the page changes in place (see livePass). */
+    var LIVE_GROUPS = wordSet("has favorite rating");
+    // Groups with values indexed once (all but LIVE_GROUPS).
     var VALUE_KEYS = FACETS.map(function (facet) {
         return facet.key;
     }).filter(function (key) {
-        return key !== "has";
+        return !LIVE_GROUPS[key];
     });
+    // The values of the rating group, best first.
+    var RATING_VALUES = ["5", "4", "3", "2", "1"];
     var MULTI_GROUPS = wordSet("type tags subjects animals food vehicles colors place");
     var LOWER_GROUPS = wordSet("tags subjects animals food vehicles colors");
     // Groups whose values are grouped by their singular (see facetKey).
@@ -1498,7 +1614,11 @@ var SearchCore = (function () {
                       "3-5": "3-5 people", "6-10": "6-10 people", crowd: "A crowd"}),
         setting: dict({indoor: "Indoors", outdoor: "Outdoors", vehicle: "In a vehicle"}),
         time: dict({day: "Day", sunrise_sunset: "Sunrise or sunset", night: "Night"}),
-        has: dict({text: "Has text", gps: "Has a location", "360": "360\u00b0 photos"})
+        has: dict({text: "Has text", gps: "Has a location",
+                   "360": "360\u00b0 photos and videos"}),
+        favorite: dict({yes: "Favorites"}),
+        rating: dict({"5": "5 stars", "4": "4 stars", "3": "3 stars", "2": "2 stars",
+                      "1": "1 star"})
     });
 
     /* The values of the place group: "Country", "Country|Region" and
@@ -2280,6 +2400,7 @@ var SearchCore = (function () {
             this.facets[VALUE_KEYS[g]] = buildFacet(list, VALUE_KEYS[g]);
         }
         this.findGroups();
+        this.findDrives();
         this.newestRank = new Int32Array(n);
         var newest = this.order("newest");
         for (var p = 0; p < newest.length; p++) {
@@ -2467,6 +2588,328 @@ var SearchCore = (function () {
             this.groupOf[r] = group;
         }
         this.groupCover = new Int32Array(covers);
+    };
+
+    /* ---------- Drives ---------------------------------------------------- */
+
+    /* A drive (record key dv: a run of video clips recorded one after the
+       other, see drives.py) is a unit of its own here. Its own title,
+       description and tags (dvt, dvd, dvg, on one of its clips, with its
+       flags dvp and dvs) are the drive's words, searched apart from any
+       clip's (F_DRIVE): they never make the clip that carries them a match
+       by its own words. When they match a part of the query, the drive's
+       cover passes that part: the middle one of its clips that the search
+       may show at all (after the visibility options, ids and dates, and
+       within the one album the query names: the drive of an album is made
+       of the album's clips, as in an export of the album), which
+       also stands for the drive when no clip of it matches by itself; so
+       does a clip of it that matches another part by its own words
+       (driveClauses). A clip "matches by itself" when its own words (or
+       its own meaning) do;
+       the carrier's meaning vector holds the drive's description too, so a
+       match of the carrier found by meaning alone counts as the drive's.
+       The drive's own words are only searched and shown when its flags
+       pass the options (sensitive, private), as a picture's would.
+       Numbers the drives: driveOf[record] (-1: none), driveKeys[drive] (its
+       dv), driveRecords[drive] (its record indexes in order, dx) and
+       driveText[drive] (the record index of the clip that carries its own
+       words, -1: none). */
+    Index.prototype.findDrives = function () {
+        var keys = Object.create(null);
+        var records = this.records;
+        this.driveOf = new Int32Array(this.n);
+        this.driveKeys = [];
+        this.driveRecords = [];
+        this.driveNumber = keys;
+        var text = [];
+        for (var r = 0; r < this.n; r++) {
+            var rec = records[r];
+            this.driveOf[r] = -1;
+            if (!rec || typeof rec !== "object" || rec.dv === undefined || rec.dv === null) {
+                continue;
+            }
+            var key = String(rec.dv);
+            var drive = keys[key];
+            if (drive === undefined) {
+                drive = this.driveKeys.length;
+                keys[key] = drive;
+                this.driveKeys.push(rec.dv);
+                this.driveRecords.push([]);
+                text.push(-1);
+            }
+            this.driveOf[r] = drive;
+            this.driveRecords[drive].push(r);
+            if (text[drive] < 0 && (isText(rec.dvt) || isText(rec.dvd) ||
+                                    textList(rec.dvg).length)) {
+                text[drive] = r;
+            }
+        }
+        this.driveText = new Int32Array(text);
+        this.driveRecords.forEach(function (list) {
+            list.sort(function (a, b) {
+                return ((records[a].dx || 0) - (records[b].dx || 0)) || a - b;
+            });
+        });
+    };
+
+    // May a drive's own words (flags dvs, dvp of rec, the clip that carries
+    // them) be searched and shown with these options? As visibility() says.
+    function driveTextShown(rec, options) {
+        var sensitive = options.sensitive;
+        var level = sensitive === true || sensitive === "show" ? 0 : sensitive === "strict" ? 2 : 1;
+        if (level && isText(rec.dvs) && (rec.dvs === "explicit" || rec.dvs === "graphic" ||
+                                         (level === 2 && rec.dvs === "suggestive"))) {
+            return false;
+        }
+        return !(options["private"] === false && rec.dvp);
+    }
+
+    /* The ids of a drive's clips (key: their dv), in order ([] for none);
+       with options, only those visibility(options) shows. */
+    Index.prototype.driveClips = function (key, options) {
+        var drive = this.driveNumber[String(key)];
+        if (drive === undefined) {
+            return [];
+        }
+        var records = this.records;
+        var shown = options && typeof options === "object" ? this.visibility(options) : null;
+        return this.driveRecords[drive].filter(function (r) {
+            return !shown || shown[r] === 1;
+        }).map(function (r) {
+            return records[r].i;
+        });
+    };
+
+    /* What a search needs of the drives, or null when there are none:
+       members[drive] (its record indexes that alive allows, in order; with
+       within, an album's rank per record, only those in the album),
+       cover[drive] (the middle one; -1: none), text[drive] (1 when its own
+       words may be searched and shown), and per record own (1: it matched a
+       part of the query by its own words) and via (1: it passed a part by
+       its drive's words), see driveClauses. */
+    Index.prototype.drivePlan = function (alive, options, within) {
+        var count = this.driveKeys.length;
+        if (!count) {
+            return null;
+        }
+        var members = [];
+        var cover = new Int32Array(count);
+        var text = new Uint8Array(count);
+        function shown(r) {
+            return alive[r] === 1 && (!within || within[r] >= 0);
+        }
+        for (var d = 0; d < count; d++) {
+            var list = this.driveRecords[d].filter(shown);
+            members.push(list);
+            cover[d] = list.length ? list[(list.length - 1) >> 1] : -1;
+            var carrier = this.driveText[d];
+            text[d] = carrier >= 0 && driveTextShown(this.records[carrier], options) ? 1 : 0;
+        }
+        return {members: members, cover: cover, text: text, own: new Uint8Array(this.n),
+                via: new Uint8Array(this.n)};
+    };
+
+    /* The scores of the query's clauses with the drives' own words: null
+       when no clause searches them, else per clause its scores (null for a
+       clause to work out as usual). A drive whose words match a clause
+       passes it at its cover, and at each clip of it that matches another
+       part of the query by its own words ("leaving lighthouse": the clip of
+       leaving, on a drive past a lighthouse), when the clip does not pass
+       it by its own words. plan.own marks the clips that matched a part by
+       their own words, plan.via those that passed a part by their drive's. */
+    Index.prototype.driveClauses = function (parsed, context, plan) {
+        if (!plan) {
+            return null;
+        }
+        var self = this;
+        var own = [];
+        var best = [];
+        var any = false;
+        parsed.clauses.forEach(function (clause) {
+            var terms = clause.terms.filter(function (term) {
+                return term.driveMask && !term.neg && term.kind !== "filter";
+            });
+            any = any || terms.length > 0;
+            own.push(terms.length ? self.clauseScores(clause, context) : null);
+            best.push(terms.length ? self.driveWords(terms, context, plan) : null);
+        });
+        if (!any) {
+            return null;
+        }
+        var c;
+        var d;
+        var k;
+        var r;
+        for (c = 0; c < own.length; c++) {
+            for (d = 0; own[c] && d < plan.members.length; d++) {
+                for (k = 0; k < plan.members[d].length; k++) {
+                    r = plan.members[d][k];
+                    if (own[c][r] >= 0) {
+                        plan.own[r] = 1;
+                    }
+                }
+            }
+        }
+        for (c = 0; c < own.length; c++) {
+            for (d = 0; own[c] && d < plan.members.length; d++) {
+                if (best[c][d] < 0) {
+                    continue;
+                }
+                for (k = 0; k < plan.members[d].length; k++) {
+                    r = plan.members[d][k];
+                    if (own[c][r] < 0 && (r === plan.cover[d] || plan.own[r] === 1)) {
+                        own[c][r] = best[c][d];
+                        plan.via[r] = 1;
+                    }
+                }
+            }
+        }
+        return own;
+    };
+
+    // Per drive, the best score of its own words for the terms (alternatives;
+    // -1: they do not match, or its words may not be searched).
+    Index.prototype.driveWords = function (terms, context, plan) {
+        var count = this.driveKeys.length;
+        var best = filled(count, -1);
+        for (var t = 0; t < terms.length; t++) {
+            var term = {};
+            for (var name in terms[t]) {
+                if (Object.prototype.hasOwnProperty.call(terms[t], name)) {
+                    term[name] = terms[t][name];
+                }
+            }
+            term.mask = term.driveMask;
+            var found = this.termScores(term, context);
+            for (var d = 0; d < count; d++) {
+                var carrier = this.driveText[d];
+                if (carrier >= 0 && plan.text[d] && found[carrier] > best[d]) {
+                    best[d] = found[carrier];
+                }
+            }
+        }
+        return best;
+    };
+
+    // Did the record match the query by its own words (not by its drive's only)?
+    function ownMatch(plan, r) {
+        return plan.via[r] !== 1 || plan.own[r] === 1;
+    }
+
+    /* After the query's words: a cover that matches only with its drive's
+       words is left out when another clip of the drive matches by its own
+       words (that clip stands for the drive; the cover would only be noise
+       in a list of clips). */
+    Index.prototype.driveCovers = function (plan, alive, missed) {
+        for (var d = 0; d < plan.cover.length; d++) {
+            var cover = plan.cover[d];
+            if (cover < 0 || !alive[cover] || ownMatch(plan, cover)) {
+                continue;
+            }
+            var members = plan.members[d];
+            for (var k = 0; k < members.length; k++) {
+                var r = members[k];
+                if (r !== cover && alive[r] && ownMatch(plan, r) && !(missed && missed[r])) {
+                    alive[cover] = 0;
+                    break;
+                }
+            }
+        }
+    };
+
+    /* The drives among the matches (ordered, in their order): {drives: {key
+       (dv): {clips (the ids of its clips the search may show, in order),
+       matched (the ids of those that match by themselves, best first),
+       shown (the id of the clip that stands for it: when ranked, its
+       best-ranked clip that matches by itself, else its cover; unranked,
+       the middle one of its matches), text (the id of the clip that carries
+       its own words when they may be shown, else null)}}, shown: per drive
+       the record index of shown (-1: none of its clips matches, or it has
+       fewer than two to show)}. Only drives with a match are listed.
+       meaning: true when every match was found by meaning; missed (or
+       null): per record, 1 when it was found by meaning without the free
+       words (see search). */
+    Index.prototype.driveResults = function (ordered, plan, ranked, meaning, missed) {
+        var count = this.driveKeys.length;
+        var records = this.records;
+        var driveOf = this.driveOf;
+        var shown = new Int32Array(count);
+        var first = new Int32Array(count);
+        var matched = [];
+        var included = new Uint8Array(this.n);
+        var d;
+        shown.fill(-1);
+        first.fill(-1);
+        for (d = 0; d < count; d++) {
+            matched.push([]);
+        }
+        for (var k = 0; k < ordered.length; k++) {
+            var r = ordered[k];
+            d = driveOf[r];
+            if (d < 0 || plan.members[d].length < 2) {
+                continue;
+            }
+            included[r] = 1;
+            shown[d] = r;
+            // (The carrier's vector holds the drive's description too.)
+            var byDrive = !ownMatch(plan, r) ||
+                (r === this.driveText[d] && (meaning || Boolean(missed && missed[r] === 1)));
+            if (!ranked || !byDrive) {
+                matched[d].push(records[r].i);
+                if (first[d] < 0) {
+                    first[d] = r;
+                }
+            }
+        }
+        var out = {};
+        function hit(r) {
+            return included[r] === 1;
+        }
+        function id(r) {
+            return records[r].i;
+        }
+        for (d = 0; d < count; d++) {
+            if (shown[d] < 0) {
+                continue;
+            }
+            var members = plan.members[d];
+            if (!ranked) {
+                var hits = members.filter(hit);
+                shown[d] = hits[(hits.length - 1) >> 1];
+            } else {
+                shown[d] = first[d] >= 0 ? first[d] : plan.cover[d];
+            }
+            out[String(this.driveKeys[d])] = {
+                clips: members.map(id), matched: matched[d], shown: records[shown[d]].i,
+                text: plan.text[d] === 1 ? records[this.driveText[d]].i : null};
+        }
+        return {drives: out, shown: shown};
+    };
+
+    /* items with each drive that matches by its own words only (none of
+       its clips by itself: drives[key].matched is empty) standing for all
+       of its clips, in the drive's order, where the first of them is (see
+       options.wholeDrives). */
+    Index.prototype.wholeDrives = function (items, drives) {
+        var self = this;
+        var out = [];
+        var done = Object.create(null);
+        items.forEach(function (id) {
+            var rec = self.get(id);
+            var key = rec && rec.dv !== undefined && rec.dv !== null ? String(rec.dv) : null;
+            var drive = key !== null ? drives[key] : null;
+            if (!drive || drive.matched.length) {
+                out.push(id);
+                return;
+            }
+            if (!done[key]) {
+                done[key] = true;
+                drive.clips.forEach(function (clip) {
+                    out.push(clip);
+                });
+            }
+        });
+        return out;
     };
 
     Index.prototype.get = function (id) {
@@ -3010,6 +3453,103 @@ var SearchCore = (function () {
         return Array.isArray(rec.qf) && rec.qf.indexOf(flag) >= 0;
     }
 
+    // A record's rating (0: none) and whether it is a favorite.
+    function ratingOf(rec) {
+        var value = rec.rt;
+        return typeof value === "number" && value >= 1 && value <= 5 ? Math.round(value) : 0;
+    }
+
+    function isFavorite(rec) {
+        return Boolean(rec.fav);
+    }
+
+    // The ids of the albums of a record (al).
+    function inAlbum(rec, id) {
+        var list = rec.al;
+        if (!Array.isArray(list)) {
+            return false;
+        }
+        for (var k = 0; k < list.length; k++) {
+            if (list[k] === id || String(list[k]) === String(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // An album name as album: compares it: normalized, without quotes (a
+    // quoted value cannot hold them), single spaces.
+    var QUOTE_CHARS = new RegExp("[" + QUOTES + "]", "g");
+    var QUOTE_TEST = new RegExp("[" + QUOTES + "]");
+
+    function albumKey(text) {
+        return normalize(text).replace(QUOTE_CHARS, "").replace(/\s+/g, " ")
+            .replace(/^\s+|\s+$/g, "");
+    }
+
+    function albumName(album) {
+        return albumKey(album.name);
+    }
+
+    /* The album that value names among albums: #<id> the one with that id
+       (only); else the one with that name (any case, accents too), else
+       with that id, else the only one whose name starts so; or null.
+       {album, ambiguous} with details: ambiguous is true when more than one
+       name starts so. */
+    function findAlbum(albums, value, details) {
+        var list = (Array.isArray(albums) ? albums : []).filter(function (album) {
+            return album && typeof album === "object" && album.id !== undefined &&
+                album.id !== null && isText(album.name);
+        });
+        var answer = function (album, ambiguous) {
+            return details ? {album: album, ambiguous: Boolean(ambiguous)} : album;
+        };
+        var text = String(value === null || value === undefined ? "" : value)
+            .replace(/^\s+|\s+$/g, "");
+        var k;
+        var byId = /^#(\d{1,18})$/.exec(text);
+        if (byId) {
+            for (k = 0; k < list.length; k++) {
+                if (String(list[k].id) === byId[1]) {
+                    return answer(list[k]);
+                }
+            }
+            return answer(null);
+        }
+        var wanted = albumKey(text);
+        if (!wanted) {
+            return answer(null);
+        }
+        for (k = 0; k < list.length; k++) {
+            if (albumName(list[k]) === wanted) {
+                return answer(list[k]);
+            }
+        }
+        for (k = 0; k < list.length; k++) {
+            if (String(list[k].id) === text) {
+                return answer(list[k]);
+            }
+        }
+        var starts = list.filter(function (album) {
+            return startsWith(albumName(album), wanted);
+        });
+        return answer(starts.length === 1 ? starts[0] : null, starts.length > 1);
+    }
+
+    /* The album: term that names album (one of albums) and no other: its
+       name (quoted when it has spaces), or album:#<id> when the name cannot
+       say it (it has quotes, or names another album first). */
+    function albumTerm(albums, album) {
+        var name = String(album.name);
+        if (QUOTE_TEST.test(name) || findAlbum(albums, name) !== album) {
+            return "album:#" + album.id;
+        }
+        return "album:" + (/\s/.test(name) ? "\"" + name + "\"" : name);
+    }
+
+    // Albums inside smart albums inside ... are worked out this deep at most.
+    var ALBUM_DEPTH = 4;
+
     function isJunk(rec) {
         return hasQualityFlag(rec, "accidental") || hasQualityFlag(rec, "blurry");
     }
@@ -3074,6 +3614,20 @@ var SearchCore = (function () {
                 return isText(rec.dk) && !rec.du && rec.dk.slice(4, 10) === monthDay &&
                     (!year || rec.dk.slice(0, 4) < year);
             };
+        case "rating":
+            return function (rec) {
+                var stars = ratingOf(rec);
+                return stars >= filter.min && stars <= filter.max;
+            };
+        case "album":
+            var found = context.albumSets ? context.albumSets[filter.value] : null;
+            if (!found) {
+                return null;
+            }
+            return function (rec) {
+                var at = index.position[String(rec.i)];
+                return at !== undefined && found.rank[at] >= 0;
+            };
         case "lib":
             var ids = libraryIds(filter.value, index, context.libraries);
             if (!ids.length) {
@@ -3125,6 +3679,10 @@ var SearchCore = (function () {
                 return function (rec) {
                     return rec.dg !== undefined && rec.dg !== null;
                 };
+            case "drive":
+                return function (rec) {
+                    return rec.dv !== undefined && rec.dv !== null;
+                };
             case "hidden":
                 return function (rec) {
                     return Boolean(rec.h);
@@ -3152,6 +3710,20 @@ var SearchCore = (function () {
             case "edited":
                 return function (rec) {
                     return Boolean(rec.ed);
+                };
+            case "gps_ignored":
+                return function (rec) {
+                    return Boolean(rec.gx);
+                };
+            case "favorite":
+                return isFavorite;
+            case "rated":
+                return function (rec) {
+                    return ratingOf(rec) > 0;
+                };
+            case "unrated":
+                return function (rec) {
+                    return ratingOf(rec) === 0;
                 };
             case "junk":
                 return isJunk;
@@ -3254,7 +3826,10 @@ var SearchCore = (function () {
         return out;
     };
 
-    function facetPasses(test, r, flags) {
+    function facetPasses(test, r, flags, records) {
+        if (test.live) {
+            return test.live(records[r]);
+        }
         if (test.bit) {
             return (flags[r] & test.bit) !== 0;
         }
@@ -3320,6 +3895,24 @@ var SearchCore = (function () {
                 tests.push({data: null, mark: null, bit: HAS_BITS[value], group: -1});
             }
         });
+        // Favorites and ratings, read from the records as they are now.
+        if (selected.favorite.indexOf("yes") >= 0) {
+            tests.push({live: isFavorite, group: -1});
+        }
+        var ratingMark = [0, 0, 0, 0, 0, 0];
+        selected.rating.forEach(function (value) {
+            if (RATING_VALUES.indexOf(value) >= 0) {
+                ratingMark[Number(value)] = 1;
+            }
+        });
+        if (selected.rating.length) {
+            tests.push({live: function (rec) {
+                return ratingMark[ratingOf(rec)] === 1;
+            }, group: -2});
+        }
+        var records = this.records;
+        var favoriteCount = 0;
+        var ratingCounts = [0, 0, 0, 0, 0, 0];
         var hasCounts = [0, 0, 0];
         var final = [];
         for (var r = 0; r < this.n; r++) {
@@ -3329,7 +3922,7 @@ var SearchCore = (function () {
             var failed = null;
             var failures = 0;
             for (var t = 0; t < tests.length; t++) {
-                if (!facetPasses(tests[t], r, flags)) {
+                if (!facetPasses(tests[t], r, flags, records)) {
                     failures += 1;
                     failed = tests[t];
                     if (failures > 1) {
@@ -3347,9 +3940,16 @@ var SearchCore = (function () {
                         hasCounts[b] += 1;
                     }
                 }
+                if (isFavorite(records[r])) {
+                    favoriteCount += 1;
+                }
+                ratingCounts[ratingOf(records[r])] += 1;
             } else if (failures === 1 && failed.group >= 0) {
                 // (A record failing a "has" value has not got it: nothing to count.)
                 countFacet(failed.data, counts[failed.group], r);
+            } else if (failures === 1 && failed.group === -2) {
+                // (Its rating would match if that rating were chosen too.)
+                ratingCounts[ratingOf(records[r])] += 1;
             }
         }
         var facets = {};
@@ -3366,10 +3966,140 @@ var SearchCore = (function () {
                 facets.has.push({value: value, count: hasCounts[index], selected: isSelected});
             }
         });
+        facets.favorite = [];
+        if (favoriteCount > 0 || selected.favorite.indexOf("yes") >= 0) {
+            facets.favorite.push({value: "yes", count: favoriteCount,
+                                  selected: selected.favorite.indexOf("yes") >= 0});
+        }
+        facets.rating = [];
+        RATING_VALUES.forEach(function (value) {
+            var isSelected = selected.rating.indexOf(value) >= 0;
+            var count = ratingCounts[Number(value)];
+            if (count > 0 || isSelected) {
+                facets.rating.push({value: value, count: count, selected: isSelected});
+            }
+        });
         return {final: final, facets: facets};
     };
 
-    var SORTS = ["relevance", "newest", "oldest", "name", "quality", "shuffle"];
+    var SORTS = ["relevance", "newest", "oldest", "name", "quality", "shuffle", "album"];
+
+    /* The album filter of the one clause that names an album (album:, not
+       negated, alone in its clause), when the query has exactly one. */
+    function soleAlbum(parsed) {
+        var found = [];
+        parsed.clauses.forEach(function (clause) {
+            var term = clause.terms[0];
+            if (clause.terms.length === 1 && !term.neg && term.kind === "filter" &&
+                    term.filter && term.filter.kind === "album") {
+                found.push(term.filter);
+            }
+        });
+        return found.length === 1 ? found[0] : null;
+    }
+
+    /* The search a smart album saved, as options of a search of its own:
+       its filters, sort, words/meaning mode, library and dates, with the
+       visibility of the search around it (opts). */
+    function smartOptions(album, opts, stack) {
+        var saved = album.options && typeof album.options === "object" ? album.options : {};
+        var out = {
+            libraries: opts.libraries,
+            library: isText(saved.lib) ? saved.lib : "",
+            hidden: opts.hidden,
+            sensitive: opts.sensitive,
+            "private": opts["private"],
+            junk: opts.junk,
+            today: opts.today,
+            seed: opts.seed,
+            filters: saved.filters && typeof saved.filters === "object" ? saved.filters : {},
+            sort: isText(saved.sort) ? saved.sort : undefined,
+            meaning: saved.by === "words" || saved.by === "meaning" ? saved.by : "hybrid",
+            albums: opts.albums,
+            vectorFor: opts.vectorFor,
+            albumStack: stack.concat([album.id]),
+            group: false,
+            // (A drive found by its own words is in the album whole.)
+            wholeDrives: true
+        };
+        if (isText(saved.from) || isText(saved.to)) {
+            out.range = {from: saved.from || "", to: saved.to || ""};
+        }
+        if (out.meaning !== "words" && typeof opts.vectorFor === "function") {
+            var text = meaningText(album.query || "");
+            out.vector = text ? opts.vectorFor(text) || null : null;
+        }
+        return out;
+    }
+
+    /* The pictures of an album the query names: {album, rank (per record:
+       its place in the album, -1 when it is not in it), count}, or null
+       when there is no such album (with a warning). */
+    Index.prototype.albumSet = function (value, opts, context) {
+        var found = findAlbum(opts.albums, value, true);
+        var album = found.album;
+        if (!album) {
+            context.warn(found.ambiguous ? "More than one album starts with \"" + value +
+                         "\": type more of its name." : "There is no album called \"" +
+                         value + "\".");
+            return null;
+        }
+        var rank = new Int32Array(this.n);
+        rank.fill(-1);
+        var count = 0;
+        var r;
+        if (album.kind === "smart") {
+            var stack = Array.isArray(opts.albumStack) ? opts.albumStack : [];
+            if (stack.indexOf(album.id) >= 0 || stack.length >= ALBUM_DEPTH) {
+                context.warn("The smart album \"" + album.name + "\" names itself (or albums " +
+                             "within albums too deeply), so it finds nothing here.");
+                return {album: album, rank: rank, count: 0};
+            }
+            var found = this.search(album.query || "", smartOptions(album, opts, stack));
+            // (What its search could not understand is said here too.)
+            found.warnings.forEach(context.warn);
+            for (var k = 0; k < found.items.length; k++) {
+                r = this.position[String(found.items[k])];
+                if (r !== undefined && rank[r] < 0) {
+                    rank[r] = count;
+                    count += 1;
+                }
+            }
+            return {album: album, rank: rank, count: count};
+        }
+        var items = Array.isArray(album.items) ? album.items : [];
+        for (var i = 0; i < items.length; i++) {
+            r = this.position[String(items[i])];
+            if (r !== undefined && rank[r] < 0 && (!this.records[r].al ||
+                                                   inAlbum(this.records[r], album.id))) {
+                rank[r] = count;
+                count += 1;
+            }
+        }
+        // (Pictures put in it on this page since the albums were loaded.)
+        for (r = 0; r < this.n; r++) {
+            var rec = this.records[r];
+            if (rank[r] < 0 && rec && typeof rec === "object" && inAlbum(rec, album.id)) {
+                rank[r] = count;
+                count += 1;
+            }
+        }
+        return {album: album, rank: rank, count: count};
+    };
+
+    // The albums the query names, worked out before anything else (a
+    // smart album runs a search of its own): {filter value: albumSet()}.
+    Index.prototype.albumSets = function (parsed, opts, context) {
+        var sets = Object.create(null);
+        var self = this;
+        parsed.terms.forEach(function (term) {
+            if (term.kind === "filter" && term.filter && term.filter.kind === "album" &&
+                    sets[term.filter.value] === undefined) {
+                sets[term.filter.value] = self.albumSet(term.filter.value, opts, context);
+            }
+        });
+        return sets;
+    };
 
     /* The query as it is searched here: a word being typed that is a word
        of the records already ("car", "cat") is searched as that word only,
@@ -3439,6 +4169,7 @@ var SearchCore = (function () {
                                ART_WORDS[folded]);
             });
         });
+        context.albumSets = this.albumSets(parsed, opts, context);
         var alive = this.visibility(opts, parsed.wantsHidden);
         var score = new Float64Array(n);
         var r;
@@ -3462,6 +4193,12 @@ var SearchCore = (function () {
                 }
             }
         }
+        // (Within the one album the query names, its drives are made of
+        // its clips only.)
+        var soleSet = soleAlbum(parsed);
+        soleSet = soleSet ? context.albumSets[soleSet.value] : null;
+        var drivePlan = this.drivePlan(alive, opts, soleSet ? soleSet.rank : null);
+        var driveScores = this.driveClauses(parsed, context, drivePlan);
         var plan = this.meaningPlan(parsed, opts, context);
         // Pictures without the free words (when meaning may find them).
         var missed = plan && plan.free ? new Uint8Array(n) : null;
@@ -3481,7 +4218,8 @@ var SearchCore = (function () {
                     clause.terms[0] === plan.similar) {
                 continue;
             }
-            scores = this.clauseScores(clause, context);
+            scores = driveScores && driveScores[c] ? driveScores[c]
+                : this.clauseScores(clause, context);
             var relaxed = missed !== null && plan.free[c] === true;
             for (r = 0; r < n; r++) {
                 if (alive[r]) {
@@ -3510,14 +4248,31 @@ var SearchCore = (function () {
                 }
             }
         }
+        if (drivePlan) {
+            this.driveCovers(drivePlan, alive, missed);
+        }
         var meaning = plan ? this.applyMeaning(plan, alive, score, missed) : null;
         var ranked = parsed.hasText || meaning !== null;
         var pass = this.facetPass(alive, opts);
         var final = pass.final;
         var sort = SORTS.indexOf(opts.sort) >= 0 ? opts.sort
             : ranked ? "relevance" : "newest";
+        // The order of the one album the query names: when asked for, and
+        // by default when there are no words to rank by.
+        var sole = soleAlbum(parsed);
+        var albumSet = sole ? context.albumSets[sole.value] : null;
+        if (albumSet && (sort === "album" || (SORTS.indexOf(opts.sort) < 0 && !ranked))) {
+            sort = "album";
+        } else if (sort === "album") {
+            sort = ranked ? "relevance" : "newest";
+        }
         var ordered;
-        if (sort === "relevance" && ranked) {
+        if (sort === "album") {
+            var albumRank = albumSet.rank;
+            ordered = final.slice().sort(function (a, b) {
+                return albumRank[a] - albumRank[b] || a - b;
+            });
+        } else if (sort === "relevance" && ranked) {
             ordered = this.byScore(final, score);
         } else {
             var inFinal = new Uint8Array(n);
@@ -3529,16 +4284,29 @@ var SearchCore = (function () {
                 return inFinal[index] === 1;
             });
         }
-        var grouped = opts.group ? this.groupResults(ordered, sort) : null;
+        var drives = drivePlan ? this.driveResults(ordered, drivePlan, ranked,
+                                                   Boolean(meaning && meaning.mode === "meaning"),
+                                                   missed) : null;
+        var grouped = opts.group || (opts.drives && drives)
+            ? this.groupResults(ordered, sort, Boolean(opts.group),
+                                opts.drives && drives ? drives.shown : null) : null;
+        var items = grouped ? grouped.items : ordered.map(function (index) {
+            return records[index].i;
+        });
+        if (opts.wholeDrives === true && drives) {
+            items = this.wholeDrives(items, drives.drives);
+        }
         return {
             total: final.length,
-            items: grouped ? grouped.items : ordered.map(function (index) {
-                return records[index].i;
-            }),
+            items: items,
             facets: pass.facets,
             timeline: opts.timeline === true ? timelineOf(this.taken, final) : null,
             groups: grouped ? grouped.groups : {},
-            collapsed: grouped ? final.length - grouped.items.length : 0,
+            drives: drives ? drives.drives : {},
+            collapsed: grouped ? grouped.collapsed : 0,
+            album: albumSet ? {id: albumSet.album.id, name: albumSet.album.name,
+                               kind: albumSet.album.kind === "smart" ? "smart" : "manual"}
+                : null,
             sort: sort,
             query: parsed,
             warnings: warnings,
@@ -3582,37 +4350,52 @@ var SearchCore = (function () {
        is a match too (else as its best-ranked match). The stack sits where
        its best-ranked match is -- but in a date order where the cover is,
        so a stack never puts a picture of one month among another month's.
-       */
-    Index.prototype.groupResults = function (ordered, sort) {
+       dupes: duplicate groups; drives (driveResults' shown, or null): each
+       drive once too, as its shown clip (in a date order where that is, or
+       where its first match is when it is not a match), none of its clips
+       in a duplicate group. */
+    Index.prototype.groupResults = function (ordered, sort, dupes, drives) {
         var records = this.records;
         var groupOf = this.groupOf;
-        var covers = this.groupCover;
+        var driveOf = this.driveOf;
+        var first = this.groupCover.length;     // drive d is group first + d
+        var count = first + (drives ? drives.length : 0);
         var dated = sort === "newest" || sort === "oldest";
         var included = new Uint8Array(this.n);
-        var shownFor = new Int32Array(covers.length);
-        var placed = new Uint8Array(covers.length);
+        var shownFor = new Int32Array(count);
+        var placed = new Uint8Array(count);
         var stacks = [];
         var items = [];
         var k;
+        dupes = dupes !== false;
+        drives = drives || null;
+        function folded(r) {
+            return drives !== null && driveOf[r] >= 0 && drives[driveOf[r]] >= 0;
+        }
         for (k = 0; k < ordered.length; k++) {
             included[ordered[k]] = 1;
         }
         shownFor.fill(-1);
         for (k = 0; k < ordered.length; k++) {
             var r = ordered[k];
-            var group = groupOf[r];
+            var group = folded(r) ? first + driveOf[r] : dupes ? groupOf[r] : -1;
             if (group < 0) {
                 items.push(records[r].i);
                 continue;
             }
             var shown = shownFor[group];
             if (shown < 0) {
-                var cover = covers[group];
-                shown = cover >= 0 && included[cover] ? cover : r;
+                if (group >= first) {
+                    shown = drives[group - first];
+                } else {
+                    // (A cover that is a clip of a folded drive is in its drive.)
+                    var cover = this.groupCover[group];
+                    shown = cover >= 0 && included[cover] && !folded(cover) ? cover : r;
+                }
                 shownFor[group] = shown;
                 stacks[group] = [records[shown].i];
             }
-            if (!placed[group] && (!dated || r === shown)) {
+            if (!placed[group] && (!dated || r === shown || !included[shown])) {
                 placed[group] = 1;
                 items.push(records[shown].i);
             }
@@ -3621,18 +4404,21 @@ var SearchCore = (function () {
             }
         }
         var groups = {};
-        for (k = 0; k < stacks.length; k++) {
+        var collapsed = 0;
+        for (k = 0; k < first; k++) {
             if (stacks[k] && stacks[k].length > 1) {
                 groups[String(stacks[k][0])] = stacks[k];
+                collapsed += stacks[k].length - 1;
             }
         }
-        return {items: items, groups: groups};
+        return {items: items, groups: groups, collapsed: collapsed};
     };
 
     /* ---------- Search by meaning ------------------------------------------ */
 
     // Signed-byte vectors are unit length times 127: a dot product over
-    // this is the cosine.
+    // this is the cosine (of meaning vectors; look vectors are divided by
+    // their own lengths, Index.norms, as their cut-offs are finer).
     var VECTOR_SCALE2 = 127 * 127;
     /* How close is close depends on the query: with an embedding model
        every description is somewhat like every query, and some queries
@@ -3852,6 +4638,7 @@ var SearchCore = (function () {
     Index.prototype.setVectors = function (vectors) {
         this.vectors = null;
         this.vecRows = null;
+        this.norms = null;
         this.vecCount = 0;
         this.cosCache = [];
         if (!vectors || !(vectors.dims > 0) || !vectors.data || !Array.isArray(vectors.ids)) {
@@ -3890,8 +4677,33 @@ var SearchCore = (function () {
         view.spreadDefault = LOOK_SPREAD;
         view.copyCosine = LOOK_COPY;
         this.looks = view;
-        return Index.prototype.setVectors.call(view, vectors);
+        var count = Index.prototype.setVectors.call(view, vectors);
+        view.norms = vectorNorms(view.vectors);
+        return count;
     };
+
+    // 1 / the length of a vector (0 for one of length 0).
+    function inverseLength(vector) {
+        var sum = 0;
+        for (var d = 0; d < vector.length; d++) {
+            sum += vector[d] * vector[d];
+        }
+        return sum > 0 ? 1 / Math.sqrt(sum) : 0;
+    }
+
+    // inverseLength of every vector of vectors (decodeVectors), or null.
+    function vectorNorms(vectors) {
+        if (!vectors) {
+            return null;
+        }
+        var dims = vectors.dims;
+        var count = Math.floor(vectors.data.length / dims);
+        var norms = new Float64Array(count);
+        for (var k = 0; k < count; k++) {
+            norms[k] = inverseLength(vectors.data.subarray(k * dims, (k + 1) * dims));
+        }
+        return norms;
+    }
 
     // The view of the index that holds the look vectors (none: no vectors).
     Index.prototype.lookView = function () {
@@ -3945,7 +4757,12 @@ var SearchCore = (function () {
                     for (var d = 0; d < first.length; d++) {
                         dot += first[d] * second[d];
                     }
-                    dot /= VECTOR_SCALE2;
+                    if (this.norms) {
+                        dot *= this.norms[this.vecRows[rows[a]]] *
+                            this.norms[this.vecRows[rows[b]]];
+                    } else {
+                        dot /= VECTOR_SCALE2;
+                    }
                     total += dot;
                     squares += dot * dot;
                     count += 1;
@@ -3990,6 +4807,8 @@ var SearchCore = (function () {
         var rows = this.vecRows;
         var data = this.vectors ? this.vectors.data : null;
         var dims = this.vectors ? this.vectors.dims : 0;
+        var norms = this.norms;
+        var scale = norms ? inverseLength(vector) : 1 / VECTOR_SCALE2;
         var total = 0;
         var squares = 0;
         var count = 0;
@@ -4004,7 +4823,7 @@ var SearchCore = (function () {
             for (var d = 0; d < dims; d++) {
                 sum += vector[d] * data[at + d];
             }
-            sum /= VECTOR_SCALE2;
+            sum *= norms ? scale * norms[row] : scale;
             out[r] = sum;
             total += sum;
             squares += sum * sum;
@@ -4812,7 +5631,7 @@ var SearchCore = (function () {
         var lists = [];
         parsed.terms.forEach(function (term) {
             if (!term.active || term.neg || term.kind === "filter" ||
-                    (fieldBit && !(term.mask & fieldBit))) {
+                    (fieldBit && !((term.mask | term.driveMask) & fieldBit))) {
                 return;
             }
             if (term.words.length === 1) {
@@ -4905,8 +5724,12 @@ var SearchCore = (function () {
         {example: "place:hawaii", meaning: "taken in a town, region or country (pictures " +
             "with a GPS position)"},
         {example: "has:text", meaning: "with text, a location (has:gps), people, animals, ..."},
-        {example: "is:360", meaning: "360\u00b0 photos; also is:video, is:duplicate, " +
-            "is:undescribed, is:edited, is:hidden"},
+        {example: "is:360", meaning: "360\u00b0 photos and videos; also is:video, is:drive, " +
+            "is:duplicate, is:undescribed, is:edited, is:hidden, is:gps-ignored"},
+        {example: "is:favorite", meaning: "the favorites (the pictures marked with a star)"},
+        {example: "rating:>=4", meaning: "rated 4 or 5 stars (rating:5 exactly; rating:0 " +
+            "not rated)"},
+        {example: "album:\"Summer\"", meaning: "the pictures of an album (see Albums)"},
         {example: "lib:name", meaning: "only pictures of one library"}
     ];
 
@@ -4943,6 +5766,8 @@ var SearchCore = (function () {
         },
         dateLabel: dateLabel,
         rangeLabel: rangeLabel,
+        findAlbum: findAlbum,
+        albumTerm: albumTerm,
         timelineChoice: timelineChoice,
         PLACE_SEPARATOR: PLACE_SEPARATOR,
         meaningText: meaningText,

@@ -330,7 +330,8 @@ var SHELL = (function () {
         delete_library: "Delete indexed data",
         export: "Export",
         places: "Add place names",
-        proxies: "Make playable copies"
+        proxies: "Make playable copies",
+        drive_previews: "Make sped-up drives"
     };
     var STATE_LABELS = {
         queued: "Waiting",
@@ -355,7 +356,9 @@ var SHELL = (function () {
         "build places": "Building the place index",
         places: "Adding place names",
         proxies: "Making playable copies of videos",
-        looks: "Making the looks of pictures"
+        looks: "Making the looks of pictures",
+        drives: "Describing drives",
+        drive_previews: "Making sped-up previews of drives"
     };
     var STAGE_VERBS = {
         scan: "Scanning",
@@ -561,6 +564,25 @@ var SHELL = (function () {
             if (summary.removed) {
                 parts.push(plural(summary.removed, "old copy", "old copies") + " removed");
             }
+        }
+        if (job.kind === "drive_previews") {
+            // (drives.make_previews: made, kept, failed, removed.)
+            if (typeof summary.made === "number") {
+                parts.push(plural(summary.made, "sped-up drive") + " made");
+            }
+            if (summary.failed) {
+                parts.push(number(summary.failed) + " failed");
+            }
+            if (summary.removed) {
+                parts.push(plural(summary.removed, "old one") + " removed");
+            }
+        }
+        if (summary.drives && typeof summary.drives.described === "number" &&
+                (summary.drives.described || summary.drives.failed)) {
+            // (A describe run's drives: drives.describe_drives.)
+            parts.push(plural(summary.drives.described, "drive") + " described" +
+                       (summary.drives.failed ? " (" + number(summary.drives.failed) +
+                        " failed)" : ""));
         }
         if (job.kind === "places") {
             if (summary.index && typeof summary.index.cities === "number") {
@@ -1047,6 +1069,11 @@ var SHELL = (function () {
         var mapHref = site.mapUrl ? site.mapUrl() : null;
         if (mapHref) {
             nav.appendChild(link("Map", mapHref, "map"));
+        }
+        if (!site.isStatic) {
+            // (The owner's albums; others may look at them, only the admin
+            // changes them.)
+            nav.appendChild(link("Albums", "/albums", "albums"));
         }
         if (adminOn) {
             nav.appendChild(link("Duplicates", "/duplicates", "duplicates"));

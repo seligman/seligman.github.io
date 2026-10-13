@@ -20,9 +20,27 @@
        onShow(id, position)      a picture is shown (the page keeps #id=)
        onClose(id)               the lightbox closed on picture id
        onHidden(ids, hidden)     pictures were hidden or shown again (admin)
+       albums()                  the albums (SITE.loadIndex's list; a new
+                                 album is added to it), for the picture's
+                                 albums and the album picker
+       onMarked(ids)             pictures were made favorites, rated, or put
+                                 in (or taken out of) an album (admin): the
+                                 records were changed in place
        detailUrl(id)             the detail page of a picture
        stackOf(id), onExpandStack(id)  a folded stack of similar pictures,
                                  and opening it in the grid
+       driveOf(id)               the drive of a video clip (a run of clips
+                                 recorded one after the other): {key,
+                                 clips (ids in order), matched ({id:
+                                 true}: the clips that match the search by
+                                 themselves), text (the id of the clip with
+                                 the drive's own title and description, or
+                                 null), folded (it is one tile in the
+                                 grid)}, or null; the viewer then plays the
+                                 whole drive (Stage.showDrive), and the
+                                 information pane follows the clip that
+                                 plays
+       onExpandDrive(id)         open the folded drive of a clip in the grid
        reviewUrl(id)             the Duplicates page for that stack (admin)
    VIEWER.close(), VIEWER.isOpen(), VIEWER.update(ids) (the result list
    changed while open), VIEWER.refreshInfo() (draw the information pane
@@ -43,7 +61,13 @@
        when VIEWER.stageUrls gives a video address and the browser can
        play it (format.canPlayVideo; HEVC often not): otherwise the poster
        stays with a note, and stage.videoDetail(detail) starts the player
-       when the full record says there is a playable copy.
+       when the full record says there is a playable copy. A drive
+       (urls.drive) plays clip after clip with a strip across the whole
+       drive (see showDrive). A 360 video (rec.mv and rec.p "360") starts
+       as a 360 photo, with its poster; its video (both lenses side by
+       side) then plays on the sphere, each frame stitched by a shader
+       with its lens geometry (rec.fx), under controls of the stage's own
+       (flat, the front lens only, without WebGL).
    VIEWER.stageUrls(rec, detail) the addresses stage.show wants.
    VIEWER.renderInfo(box, record, detail, context)  the information pane:
        title, date, place, camera, description and text with the search words
@@ -52,7 +76,23 @@
        pictures) and "Looks like this" (look:<id>, L, and its strip).
        The admin can edit the title, description and tags there ("Edit",
        or E; Ctrl+Enter saves, Esc cancels): the record is changed in
-       place and context.onEdited(id, detail) is told.
+       place and context.onEdited(id, detail) is told. The admin also sees
+       why the GPS check set a picture's position aside (detail.
+       location_check), with "Use this location anyway" -- and "Ignore
+       location" among the admin actions -- which change the record's place
+       in place and tell context.onEdited too. Under the title:
+       the favorite star (F), the rating (1-5; 0 clears it, or first
+       resets a view that was zoomed or turned) and the albums of the
+       picture with "Add to album..." (A) -- the admin's to change
+       (context.onMarked(ids) is told), shown to others when set.
+   VIEWER.marks: favorite(ids, on, get), rate(ids, stars, get) (each
+       resolves when the server has them; the records are changed in
+       place), picker({ids, get, albums, mode ("add" or "remove"),
+       onChange}): the album picker (find an album, or make a new one;
+       Enter only ever adds -- or, with "remove", takes out -- and makes
+       a new album only when no album matches what was typed),
+       byKey(rec, context, key) (the keys F, 1-5, 0 and A for a picture)
+       and stars(count).
 
    Pages are built with DOM calls and textContent only (never innerHTML).
    VIEWER.format holds the pure helpers (also used by the tests under Node).
@@ -256,6 +296,45 @@ var VIEWER = (function () {
         return parts.join(" \u00b7 ");
     }
 
+    /* A drive's clips on one time line: {starts (seconds from the drive's
+       start where each clip begins), lengths, total}. A clip whose length is
+       not known counts DRIVE_CLIP seconds. */
+    var DRIVE_CLIP = 60;
+
+    function driveTimeline(durations) {
+        var starts = [];
+        var lengths = [];
+        var total = 0;
+        (durations || []).forEach(function (seconds) {
+            var length = number(seconds);
+            length = length !== null && length > 0 ? length : DRIVE_CLIP;
+            starts.push(total);
+            lengths.push(length);
+            total += length;
+        });
+        return {starts: starts, lengths: lengths, total: total};
+    }
+
+    // Where a moment (seconds into a drive) is: {index (its clip), offset (seconds into it)}.
+    function drivePlace(timeline, seconds) {
+        var starts = timeline.starts;
+        if (!starts.length) {
+            return {index: 0, offset: 0};
+        }
+        seconds = clamp(number(seconds) || 0, 0, timeline.total);
+        var low = 0;
+        var high = starts.length - 1;
+        while (low < high) {
+            var middle = (low + high + 1) >> 1;
+            if (starts[middle] <= seconds) {
+                low = middle;
+            } else {
+                high = middle - 1;
+            }
+        }
+        return {index: low, offset: Math.min(timeline.lengths[low], seconds - starts[low])};
+    }
+
     /* Split text at highlight ranges ([[start, end], ...], sorted, not
        overlapping): [{text, mark}]. Bad ranges are ignored. */
     function segments(text, ranges) {
@@ -331,6 +410,171 @@ var VIEWER = (function () {
         var u = lon / (2 * Math.PI) + 0.5;
         return {u: u - Math.floor(u), v: 0.5 - lat / Math.PI};
     }
+
+    /* The uniforms of the 360 video shader for a record's lens geometry
+       (rec.fx, see search_index.py: the lens circles as fractions of the
+       frame, degrees for the rest) and a frame of width x height pixels:
+       {front, back: [x, y, r] of each lens's circle, frontTurn, backTurn
+       (radians), aspect (height / width), scale (1 / half the field of
+       view, radians), mirror, blend (radians, at most what the lenses see
+       past 180 degrees), frontGain, backGain, fill ([nadir, zenith],
+       radians)}; null when fx is not usable. */
+    function fisheyeParams(fx, width, height) {
+        if (!fx || typeof fx !== "object" || !Array.isArray(fx.lens) || fx.lens.length !== 2 ||
+                !(fx.fov > 90 && fx.fov < 360) || !width || !height) {
+            return null;
+        }
+        var front = fx.front === 0 ? 0 : 1;
+        var radians = Math.PI / 180;
+        var turn = Array.isArray(fx.turn) ? fx.turn : [0, 0];
+        var gain = Array.isArray(fx.gain) && fx.gain.length === 2 ? fx.gain
+            : [[1, 1, 1], [1, 1, 1]];
+        var fill = Array.isArray(fx.fill) ? fx.fill : [0, 0];
+        var halfFov = fx.fov / 2 * radians;
+        var blend = Math.min(Math.max(0, Number(fx.blend) || 0), Math.max(0, fx.fov / 2 - 90));
+        return {
+            front: fx.lens[front].slice(0, 3), back: fx.lens[1 - front].slice(0, 3),
+            frontTurn: (Number(turn[front]) || 0) * radians,
+            backTurn: (Number(turn[1 - front]) || 0) * radians,
+            aspect: height / width, scale: 1 / halfFov, mirror: fx.mirror === true,
+            blend: blend * radians, frontGain: gain[0].slice(0, 3), backGain: gain[1].slice(0, 3),
+            fill: [Math.max(0, Number(fill[0]) || 0) * radians,
+                   Math.max(0, Number(fill[1]) || 0) * radians]
+        };
+    }
+
+    // A 360 video's frame holds its two lens circles side by side: every
+    // pixel is stitched as images.py's dual_fisheye_to_equirect stitches a
+    // frame (the same lens model, seam blend, lens gains and pole fill; see
+    // fisheyeParams for the uniforms). Directions here are x right, y up,
+    // z ahead (the front lens's axis). lens, frontPoint, backPoint,
+    // frontWeight and gained are the sums of images.py's _fisheye_point,
+    // _seam_mask and _gain_table: the tests run this text's own functions
+    // against them (tests/js/glsl.js), so keep them to plain float sums.
+    var FISHEYE_SHADER = [
+        "#ifdef GL_FRAGMENT_PRECISION_HIGH",
+        "precision highp float;",
+        "#else",
+        "precision mediump float;",
+        "#endif",
+        "varying vec2 v_pos;",
+        "uniform sampler2D u_image;",
+        "uniform vec2 u_tan;",
+        "uniform float u_yaw;",
+        "uniform float u_pitch;",
+        "uniform vec3 u_front;",            // the front lens's circle: x (of the width), y, r
+        "uniform vec3 u_back;",
+        "uniform vec2 u_turn;",             // the front and the back lens's turn (radians)
+        "uniform float u_aspect;",          // the frame's height / width
+        "uniform float u_scale;",           // 1 / half the field of view (radians)
+        "uniform float u_mirror;",
+        "uniform float u_blend;",           // radians either side of the seams (0: hard)
+        "uniform vec3 u_frontGain;",
+        "uniform vec3 u_backGain;",
+        "uniform vec2 u_fill;",             // nadir and zenith fill (radians; 0: none)
+        "const float PI = 3.14159265358979;",
+        "const float FEATHER = 0.0523599;", // images.POLE_FEATHER_DEG
+        // Where a lens's circle shows direction d (its axis is +z): an
+        // equidistant fisheye, turned and maybe mirrored.
+        "vec2 lens(vec3 d, vec3 circle, float turn) {",
+        "    float theta = acos(clamp(d.z, -1.0, 1.0));",
+        "    float angle = theta < 0.00001 ? 0.0 : atan(d.y, d.x);",
+        "    if (u_mirror > 0.5) {",
+        "        angle = PI - angle;",
+        "    }",
+        "    angle += turn;",
+        "    float distance = circle.z * theta * u_scale;",
+        "    return vec2(circle.x + distance * cos(angle) * u_aspect,",
+        "                circle.y - distance * sin(angle));",
+        "}",
+        "vec2 frontPoint(vec3 d) {",
+        "    return lens(d, u_front, u_turn.x);",
+        "}",
+        // (The back lens looks the other way.)
+        "vec2 backPoint(vec3 d) {",
+        "    return lens(vec3(-d.x, d.y, -d.z), u_back, u_turn.y);",
+        "}",
+        // The front lens's share: a smooth ramp across the seams.
+        "float frontWeight(vec3 d) {",
+        "    float side = asin(clamp(d.z, -1.0, 1.0));",
+        "    if (u_blend > 0.0) {",
+        "        float t = clamp(0.5 + 0.5 * side / u_blend, 0.0, 1.0);",
+        "        return t * t * (3.0 - 2.0 * t);",
+        "    }",
+        "    return side >= 0.0 ? 1.0 : 0.0;",
+        "}",
+        // A lens's gain, fading out towards white (no new clipping).
+        "vec3 gained(vec3 c, vec3 g) {",
+        "    return clamp(c * pow(g, vec3(1.0) - c * c * c * c), 0.0, 1.0);",
+        "}",
+        "vec3 stitched(vec3 d) {",
+        "    float w = frontWeight(d);",
+        // (Only the lens or lenses that count: away from the seams one.)
+        "    vec3 colour = vec3(0.0);",
+        "    if (w > 0.0) {",
+        "        colour += w * gained(texture2D(u_image, frontPoint(d)).rgb, u_frontGain);",
+        "    }",
+        "    if (w < 1.0) {",
+        "        colour += (1.0 - w) * gained(texture2D(u_image, backPoint(d)).rgb, u_backGain);",
+        "    }",
+        "    return colour;",
+        "}",
+        // The soft fill over a pole (images._fill_pole): within fill of it
+        // the colours of the ring just outside are spread over the disc as
+        // heat spreads (the Poisson kernel of a disc over 24 fixed points of
+        // the ring, each the mean of two: smooth, no spokes), fading in over
+        // FEATHER. pole: -1.0 the nadir, 1.0 the zenith.
+        // (Compiled only when there is a fill: it costs much where the
+        // shader runs on the processor.)
+        "#ifdef POLE_FILL",
+        "vec3 poleFill(vec3 d, vec3 colour, float fill, float pole) {",
+        "    float reach = fill + FEATHER;",
+        "    float away = PI / 2.0 - pole * asin(clamp(d.y, -1.0, 1.0));",
+        "    if (away >= reach) {",
+        "        return colour;",
+        "    }",
+        "    float lon = atan(d.x, d.z);",
+        "    float ring = pole * (PI / 2.0 - reach);",
+        "    float rho = 0.75 * away / reach;",
+        "    vec3 sum = vec3(0.0);",
+        "    float total = 0.0;",
+        "    for (int k = 0; k < 24; k++) {",
+        "        float at = float(k) * PI / 12.0;",
+        "        float weight = (1.0 - rho * rho) / (1.0 - 2.0 * rho * cos(lon - at) + rho * rho);",
+        "        float c = cos(ring);",
+        "        vec3 node = stitched(vec3(c * sin(at - 0.05), sin(ring), c * cos(at - 0.05))) +",
+        "            stitched(vec3(c * sin(at + 0.05), sin(ring), c * cos(at + 0.05)));",
+        "        sum += weight * node;",
+        "        total += 2.0 * weight;",
+        "    }",
+        "    float t = clamp((reach - away) / FEATHER, 0.0, 1.0);",
+        "    return mix(colour, sum / total, t * t * (3.0 - 2.0 * t));",
+        "}",
+        "#endif",
+        "void main() {",
+        "    vec3 d = normalize(vec3(v_pos.x * u_tan.x, v_pos.y * u_tan.y, -1.0));",
+        "    float cp = cos(u_pitch);",
+        "    float sp = sin(u_pitch);",
+        "    d = vec3(d.x, d.y * cp - d.z * sp, d.y * sp + d.z * cp);",
+        "    float cy = cos(u_yaw);",
+        "    float sy = sin(u_yaw);",
+        "    d = vec3(d.x * cy + d.z * sy, d.y, -d.x * sy + d.z * cy);",
+        "    vec3 s = vec3(d.x, d.y, -d.z);",
+        "    vec3 colour = stitched(s);",
+        "#ifdef POLE_FILL",
+        "    if (u_fill.x > 0.0) {",
+        "        colour = poleFill(s, colour, u_fill.x, -1.0);",
+        "    }",
+        "    if (u_fill.y > 0.0) {",
+        "        colour = poleFill(s, colour, u_fill.y, 1.0);",
+        "    }",
+        "#endif",
+        "    gl_FragColor = vec4(colour, 1.0);",
+        "}"
+    ].join("\n");
+
+    var FISHEYE_UNIFORMS = ["u_front", "u_back", "u_turn", "u_aspect", "u_scale", "u_mirror",
+                            "u_blend", "u_frontGain", "u_backGain", "u_fill"];
 
     /* ---------- Edits (pure helpers) ---------------------------------------- */
 
@@ -411,7 +655,9 @@ var VIEWER = (function () {
     }
 
     /* "Kahului, Hawaii, United States (3 km)": the place of a record (its
-       town, when one is near, with how far it is), or "". */
+       town, when one is near, with how far it is), or "". A place only
+       estimated from the pictures taken around the same time (pe: the
+       picture's own position was set aside) says so. */
     function placeText(rec) {
         if (!rec || typeof rec.co !== "string" || !rec.co) {
             return "";
@@ -419,11 +665,16 @@ var VIEWER = (function () {
         var text = [rec.ci, rec.rg, rec.co].filter(function (part) {
             return typeof part === "string" && part;
         }).join(", ");
+        if (rec.pe) {
+            return text + " " + ESTIMATED_PLACE;
+        }
         if (rec.ci && typeof rec.km === "number" && isFinite(rec.km)) {
             text += rec.km < 1 ? " (under 1 km)" : " (" + Math.round(rec.km) + " km)";
         }
         return text;
     }
+
+    var ESTIMATED_PLACE = "(estimated from pictures taken around the same time)";
 
     var format = {
         tagKey: tagKey,
@@ -442,11 +693,15 @@ var VIEWER = (function () {
         codecName: codecName,
         canPlayVideo: canPlayVideo,
         videoFacts: videoFacts,
+        driveTimeline: driveTimeline,
+        drivePlace: drivePlace,
         segments: segments,
         panoDrag: panoDrag,
         panoZoom: panoZoom,
         panoTangents: panoTangents,
         panoLookup: panoLookup,
+        fisheyeParams: fisheyeParams,
+        fisheyeShader: FISHEYE_SHADER,
         MIN_FOV: MIN_FOV,
         MAX_FOV: MAX_FOV
     };
@@ -598,36 +853,142 @@ var VIEWER = (function () {
         if (!gl) {
             return;
         }
-        var vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-        var fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
-        if (!vertex || !fragment) {
+        this.gl = gl;
+        var buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+                      gl.STATIC_DRAW);
+        this.buffer = buffer;
+        // The equirectangular picture's program; a 360 video's frames use
+        // FISHEYE_SHADER (useFisheye).
+        this.equirect = this.program(FRAGMENT_SHADER, []);
+        this.fisheye = null;
+        this.current = null;
+        if (!this.equirect) {
+            this.gl = null;
             return;
+        }
+        this.use(this.equirect);
+        this.texture = gl.createTexture();
+        this.ok = true;
+    }
+
+    // A linked program with fragment shader source: {program, position,
+    // uniforms (tan, yaw, pitch, image and the names asked for)}, or null.
+    Panorama.prototype.program = function (source, names) {
+        var gl = this.gl;
+        var vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+        var fragment = compile(gl, gl.FRAGMENT_SHADER, source);
+        if (!vertex || !fragment) {
+            return null;
         }
         var program = gl.createProgram();
         gl.attachShader(program, vertex);
         gl.attachShader(program, fragment);
         gl.linkProgram(program);
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            return;
+            return null;
         }
-        gl.useProgram(program);
-        var buffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
-                      gl.STATIC_DRAW);
-        var position = gl.getAttribLocation(program, "a_pos");
-        gl.enableVertexAttribArray(position);
-        gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
-        this.uniforms = {
+        var uniforms = {
             tan: gl.getUniformLocation(program, "u_tan"),
             yaw: gl.getUniformLocation(program, "u_yaw"),
             pitch: gl.getUniformLocation(program, "u_pitch"),
             image: gl.getUniformLocation(program, "u_image")
         };
-        this.texture = gl.createTexture();
-        this.gl = gl;
-        this.ok = true;
-    }
+        names.forEach(function (name) {
+            uniforms[name] = gl.getUniformLocation(program, name);
+        });
+        return {program: program, position: gl.getAttribLocation(program, "a_pos"),
+                uniforms: uniforms};
+    };
+
+    Panorama.prototype.use = function (info) {
+        var gl = this.gl;
+        gl.useProgram(info.program);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+        gl.enableVertexAttribArray(info.position);
+        gl.vertexAttribPointer(info.position, 2, gl.FLOAT, false, 0, 0);
+        this.current = info;
+        this.uniforms = info.uniforms;
+    };
+
+    /* Draw a 360 video's frames from now on: fx is the record's lens
+       geometry, width x height the frame's size (see fisheyeParams). False
+       when that cannot be done (no such shader here, or fx unusable). */
+    Panorama.prototype.useFisheye = function (fx, width, height) {
+        var gl = this.gl;
+        var p = this.ok ? fisheyeParams(fx, width, height) : null;
+        if (!p) {
+            return false;
+        }
+        // Two programs: with the pole fill, and (much cheaper) without.
+        var key = p.fill[0] > 0 || p.fill[1] > 0 ? "fill" : "plain";
+        this.fisheyes = this.fisheyes || {};
+        if (!(key in this.fisheyes)) {
+            this.fisheyes[key] = this.program((key === "fill" ? "#define POLE_FILL\n" : "") +
+                                              FISHEYE_SHADER, FISHEYE_UNIFORMS) || false;
+        }
+        this.fisheye = this.fisheyes[key];
+        if (!this.fisheye) {
+            return false;
+        }
+        if (this.current !== this.fisheye) {
+            this.use(this.fisheye);
+        }
+        var u = this.uniforms;
+        gl.uniform3f(u.u_front, p.front[0], p.front[1], p.front[2]);
+        gl.uniform3f(u.u_back, p.back[0], p.back[1], p.back[2]);
+        gl.uniform2f(u.u_turn, p.frontTurn, p.backTurn);
+        gl.uniform1f(u.u_aspect, p.aspect);
+        gl.uniform1f(u.u_scale, p.scale);
+        gl.uniform1f(u.u_mirror, p.mirror ? 1 : 0);
+        gl.uniform1f(u.u_blend, p.blend);
+        gl.uniform3f(u.u_frontGain, p.frontGain[0], p.frontGain[1], p.frontGain[2]);
+        gl.uniform3f(u.u_backGain, p.backGain[0], p.backGain[1], p.backGain[2]);
+        gl.uniform2f(u.u_fill, p.fill[0], p.fill[1]);
+        // (What the uniforms were set for: setVideo sets them again for others.)
+        this.fisheyeFor = {fx: fx, size: width + "x" + height};
+        return true;
+    };
+
+    /* Upload the video's current frame (its lenses side by side) and draw
+       it stitched from now on (fx: see useFisheye). true when there is no
+       frame yet (the picture stays); false when it cannot be done: no
+       shader, or the browser refuses the frame (a video from another
+       origin, an export opened from disk). */
+    Panorama.prototype.setVideo = function (video, fx) {
+        var gl = this.gl;
+        if (!this.ok) {
+            return false;
+        }
+        var width = video.videoWidth;
+        var height = video.videoHeight;
+        if (!width || !height || video.readyState < 2) {
+            return true;
+        }
+        var set = this.fisheyeFor;
+        if ((this.current !== this.fisheye || !set || set.fx !== fx ||
+             set.size !== width + "x" + height) &&
+                !this.useFisheye(fx, width, height)) {
+            return false;
+        }
+        try {
+            gl.bindTexture(gl.TEXTURE_2D, this.texture);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+        } catch (error) {
+            return false;
+        }
+        if (gl.getError() !== gl.NO_ERROR) {
+            return false;
+        }
+        this.textureWidth = width;
+        return true;
+    };
 
     // The widest texture used. A pano is at most 4096 px wide (images.py
     // PANO_EDGE), but an export may name a larger picture; 8192 x 4096 is
@@ -654,6 +1015,9 @@ var VIEWER = (function () {
             source.width = Math.max(1, Math.floor(width * scale));
             source.height = Math.max(1, Math.floor(height * scale));
             source.getContext("2d").drawImage(image, 0, 0, source.width, source.height);
+        }
+        if (this.current !== this.equirect) {
+            this.use(this.equirect);
         }
         try {
             gl.bindTexture(gl.TEXTURE_2D, this.texture);
@@ -805,8 +1169,12 @@ var VIEWER = (function () {
         });
         this.canvas = null;
         this.pano = null;
+        this.drive = null;                  // the drive shown (showDrive)
         this.video = null;                  // the <video> of a video record
         this.pendingVideo = null;           // urls of a video waiting for a playable copy
+        this.copyToken = 0;                 // the show the full record said has a copy
+        this.controls = null;               // a 360 video's own controls (videoControls)
+        this.fisheyeBox = null;             // a 360 video shown flat (flat360Video)
         this.note = el("div", {className: "stage-note", hidden: true});
         this.busy = el("div", {className: "stage-busy", hidden: true, attrs: {"aria-hidden": "true"}});
         box.appendChild(this.img);
@@ -867,6 +1235,7 @@ var VIEWER = (function () {
         this.dropSharp();
         this.dropPano();
         this.dropVideo();
+        this.dropDrive();
         this.token += 1;
     };
 
@@ -876,6 +1245,14 @@ var VIEWER = (function () {
         this.video = null;
         this.pendingVideo = null;
         this.box.classList.remove("is-video");
+        this.box.classList.remove("has-controls");
+        [this.controls, this.fisheyeBox].forEach(function (node) {
+            if (node && node.parentNode) {
+                node.parentNode.removeChild(node);
+            }
+        });
+        this.controls = null;
+        this.fisheyeBox = null;
         if (!video) {
             return;
         }
@@ -892,8 +1269,12 @@ var VIEWER = (function () {
     };
 
     // Seek a video by seconds (the arrow keys while the player has the
-    // focus); false when no video is shown.
+    // focus; across the clips of a drive); false when no video is shown.
     Stage.prototype.seekBy = function (seconds) {
+        if (this.drive) {
+            this.driveSeekTo(this.drive.position + seconds);
+            return true;
+        }
         var video = this.video;
         if (!video) {
             return false;
@@ -930,6 +1311,10 @@ var VIEWER = (function () {
        copy). Otherwise the poster stays with a note saying why; urls.original
        (the admin's download of the original) is offered there. */
     Stage.prototype.showVideo = function (rec, urls) {
+        if (urls.drive && rec.p !== "360") {
+            this.showDrive(rec, urls);
+            return;
+        }
         this.mode = "video";
         this.box.classList.add("is-video");
         this.natural = {w: rec.w || 0, h: rec.hgt || 0};
@@ -998,12 +1383,316 @@ var VIEWER = (function () {
     };
 
     // The full record of the video shown has arrived: a playable copy may
-    // now let it play.
+    // now let it play (a drive: see driveDetail; a 360 video whose poster
+    // is still loading: once it is there, see show360Video).
     Stage.prototype.videoDetail = function (detail) {
+        if (this.drive) {
+            this.driveDetail(detail);
+            return;
+        }
+        if (!detail || !detail.playable_copy || !this.rec || detail.id !== this.rec.i) {
+            return;
+        }
         var urls = this.pendingVideo;
-        if (urls && detail && detail.playable_copy && this.rec && detail.id === this.rec.i) {
+        if (!urls) {
+            this.copyToken = this.token;
+        } else if (this.rec.p === "360") {
+            this.start360Video(this.rec, urls);
+        } else {
             this.startVideo(this.rec, urls);
         }
+    };
+
+    /* A 360 video (rec.mv, rec.p "360"): its poster (the preview: a
+       stitched panorama) in the 360 view at once, as a 360 photo's; then
+       the player when there is something to play (urls.video: its LRV, a
+       playable copy -- both lenses side by side -- or an original that
+       holds both in one stream) and its lens geometry (rec.fx). Its frames
+       are stitched as they play (start360Video). A record without vc has
+       nothing a browser plays but a playable copy (urls.playableCopy, or
+       the full record's playable_copy later: videoDetail). */
+    Stage.prototype.show360Video = function (rec, urls, token) {
+        var self = this;
+        this.natural = {w: rec.w || 0, h: rec.hgt || 0};
+        this.img.alt = altText(rec);
+        this.img.src = urls.thumb || urls.preview || "";
+        this.layout();
+        var probe = function (type) {
+            return document.createElement("video").canPlayType(type);
+        };
+        var geometry = rec.fx && typeof rec.fx === "object" ? rec.fx : null;
+        function player() {
+            var copy = urls.playableCopy || self.copyToken === token;
+            if (urls.video && geometry && (copy || (rec.vc && canPlayVideo(rec, probe)))) {
+                self.start360Video(rec, urls);
+            } else if (!urls.video) {
+                self.setNote(urls.videoNote || "Only a still frame of this video is shown here.");
+            } else if (!geometry) {
+                self.setNote("This 360\u00b0 video can't be played here.");
+            } else {
+                self.pendingVideo = urls;
+                self.cannotPlay360(rec, urls, false);
+            }
+            self.state();
+        }
+        if (!urls.preview) {
+            player();
+            return;
+        }
+        this.busy.hidden = false;
+        var loader = new Image();
+        loader.decoding = "async";
+        loader.onload = function () {
+            if (token !== self.token) {
+                return;
+            }
+            self.busy.hidden = true;
+            self.natural = {w: loader.naturalWidth, h: loader.naturalHeight};
+            if (!self.startPano(loader, loader.src)) {
+                self.img.src = loader.src;
+                self.layout();
+            }
+            player();
+        };
+        loader.onerror = function () {
+            if (token !== self.token) {
+                return;
+            }
+            self.busy.hidden = true;
+            player();
+        };
+        loader.src = urls.preview;
+        this.state();
+    };
+
+    /* Why a 360 video does not play. failed: the player tried and failed
+       (when the browser plays its codec: the file could not be loaded). A
+       record without vc has no LRV (see search_index.add_video): only a
+       playable copy (the proxies job) plays it. Else the browser cannot
+       play its codec (cannotPlay). */
+    Stage.prototype.cannotPlay360 = function (rec, urls, failed) {
+        var probe = function (type) {
+            return document.createElement("video").canPlayType(type);
+        };
+        if (rec && rec.vc && !(failed && canPlayVideo(rec, probe))) {
+            this.cannotPlay(rec, urls);
+        } else if (failed) {
+            this.setNote("This 360\u00b0 video could not be loaded.");
+        } else if (admin()) {
+            this.setNote("This 360\u00b0 video has no low-resolution copy (.lrv) to play. " +
+                         "Make playable copies on the Manage page to play it.");
+        } else {
+            this.setNote("Only a still frame of this video is shown here.");
+        }
+    };
+
+    /* Play a 360 video on the sphere: a <video> that is never shown plays
+       urls.video, and each of its frames is uploaded to the 360 view and
+       stitched there (Panorama.setVideo: the fisheye shader with rec.fx)
+       as the frames come (requestVideoFrameCallback, else every animation
+       frame while it plays). The stage gets controls of its own
+       (videoControls); Space works as for a video. Without WebGL, or when
+       the browser does not let the view read the frames (an export opened
+       from disk), it plays flat (flat360Video). */
+    Stage.prototype.start360Video = function (rec, urls) {
+        var self = this;
+        var token = this.token;
+        this.pendingVideo = null;
+        if (!this.pano && !this.startPano(null, null)) {
+            this.flat360Video(rec, urls, 0, false);
+            return;
+        }
+        var video = document.createElement("video");
+        video.preload = "metadata";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        var running = false;
+        function live() {
+            return token === self.token && self.video === video;
+        }
+        function failed() {
+            if (!live()) {
+                return;
+            }
+            self.dropVideo();
+            self.cannotPlay360(rec, urls, true);
+            self.state();
+        }
+        function frame() {
+            if (!live()) {
+                return false;
+            }
+            if (!self.pano || !self.pano.setVideo(video, rec.fx)) {
+                // The 360 view cannot show the frames (or it stopped): flat.
+                var at = video.currentTime || 0;
+                var playing = !video.paused && !video.ended;
+                self.dropVideo();
+                self.dropPano();
+                self.flat360Video(rec, urls, at, playing);
+                return false;
+            }
+            self.redraw();
+            return true;
+        }
+        function tick() {
+            running = false;
+            if (frame() && !video.paused && !video.ended) {
+                running = true;
+                if (typeof video.requestVideoFrameCallback === "function") {
+                    video.requestVideoFrameCallback(tick);
+                } else {
+                    window.requestAnimationFrame(tick);
+                }
+            }
+        }
+        video.addEventListener("error", failed);
+        video.addEventListener("loadedmetadata", function () {
+            if (!video.videoWidth) {
+                failed();
+            }
+        });
+        video.addEventListener("play", function () {
+            if (!running) {
+                tick();
+            }
+        });
+        // (Moved while paused: the frame there.)
+        video.addEventListener("seeked", frame);
+        video.src = urls.video;
+        this.video = video;
+        this.controls = this.videoControls(video);
+        this.box.insertBefore(this.controls, this.note);
+        this.box.classList.add("has-controls");
+        this.setNote("");
+    };
+
+    /* A 360 video played flat: its front lens's circle (the middle of the
+       panorama) fills a square, upright (a lens laid sideways in the frame
+       is turned, and then plays under the stage's own controls: the
+       browser's would turn with it), from at seconds (and playing when it
+       was). */
+    Stage.prototype.flat360Video = function (rec, urls, at, playing) {
+        var self = this;
+        var token = this.token;
+        var geometry = rec.fx && typeof rec.fx === "object" ? rec.fx : {};
+        var front = geometry.front === 0 ? 0 : 1;
+        var turn = Array.isArray(geometry.turn) ? Number(geometry.turn[front]) || 0 : 0;
+        // (Whole quarter turns: a small one does not matter here.)
+        var quarter = ((Math.round(turn / 90) % 4) + 4) % 4 * 90;
+        this.mode = "video";
+        this.box.classList.add("is-video");
+        this.box.classList.remove("is-pano");
+        var video = el("video", {className: "stage-video stage-fisheye-video",
+                                 attrs: {"aria-label": "Video: " + altText(rec)}});
+        video.controls = !quarter;
+        video.preload = "metadata";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        video.style.objectPosition = (front === 0 ? "0%" : "100%") + " 50%";
+        if (quarter) {
+            video.style.transform = "rotate(" + quarter + "deg)";
+        }
+        video.addEventListener("error", function () {
+            if (token === self.token && self.video === video) {
+                self.dropVideo();
+                self.mode = "video";
+                self.box.classList.add("is-video");
+                self.img.hidden = false;
+                self.layout();
+                self.cannotPlay360(rec, urls, true);
+            }
+        });
+        if (at || playing) {
+            video.addEventListener("loadedmetadata", function () {
+                try {
+                    video.currentTime = at || 0;
+                } catch (error) {
+                    // (Not seekable: from the start.)
+                }
+                if (playing) {
+                    var started = video.play();
+                    if (started && typeof started.catch === "function") {
+                        started.catch(function () {});
+                    }
+                }
+            });
+        }
+        video.src = urls.video;
+        var box = el("div", {className: "stage-fisheye"}, [video]);
+        this.box.insertBefore(box, this.note);
+        this.fisheyeBox = box;
+        this.video = video;
+        if (quarter) {
+            this.controls = this.videoControls(video);
+            this.box.insertBefore(this.controls, this.note);
+            this.box.classList.add("has-controls");
+        }
+        this.img.hidden = true;
+        this.layout();
+        this.setNote(window.location && window.location.protocol === "file:"
+            ? "The 360\u00b0 view needs the site to be opened from a web server; this is " +
+              "the front lens."
+            : "This browser cannot show the 360\u00b0 view here; this is the front lens.");
+        this.state();
+    };
+
+    /* The controls of a 360 video played on the sphere (its <video> is
+       not shown): play and pause, where it is, a bar to move in it, and
+       the sound on or off. */
+    Stage.prototype.videoControls = function (video) {
+        var self = this;
+        var play = el("button", {className: "stage-control stage-play", text: "\u25b6",
+                                 attrs: {type: "button", "aria-label": "Play"}});
+        var time = el("span", {className: "stage-time", text: "0:00"});
+        var seek = el("input", {className: "stage-seek",
+                                attrs: {type: "range", min: "0", max: "1000", step: "1",
+                                        value: "0", "aria-label": "Where in the video"}});
+        var sound = el("button", {className: "stage-control stage-sound", text: "Sound",
+                                  attrs: {type: "button", "aria-pressed": "true",
+                                          title: "Sound on or off"}});
+        var dragging = false;
+        function update() {
+            var length = isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+            var playing = !video.paused && !video.ended;
+            play.textContent = playing ? "\u275a\u275a" : "\u25b6";
+            play.setAttribute("aria-label", playing ? "Pause" : "Play");
+            time.textContent = durationText(video.currentTime || 0) +
+                (length ? " / " + durationText(length) : "");
+            if (!dragging && length) {
+                seek.value = String(Math.round(1000 * (video.currentTime || 0) / length));
+            }
+            sound.textContent = video.muted ? "Muted" : "Sound";
+            sound.setAttribute("aria-pressed", video.muted ? "false" : "true");
+        }
+        play.addEventListener("click", function () {
+            self.togglePlay();
+        });
+        seek.addEventListener("input", function () {
+            dragging = true;
+            if (isFinite(video.duration) && video.duration > 0) {
+                try {
+                    video.currentTime = Number(seek.value) / 1000 * video.duration;
+                } catch (error) {
+                    // (Not seekable yet.)
+                }
+            }
+        });
+        seek.addEventListener("change", function () {
+            dragging = false;
+            update();
+        });
+        sound.addEventListener("click", function () {
+            video.muted = !video.muted;
+            update();
+        });
+        ["play", "pause", "ended", "timeupdate", "durationchange", "loadedmetadata",
+         "volumechange", "seeked"].forEach(function (name) {
+            video.addEventListener(name, update);
+        });
+        update();
+        return el("div", {className: "stage-controls",
+                          attrs: {role: "group", "aria-label": "360\u00b0 video"}},
+                  [play, time, seek, sound]);
     };
 
     Stage.prototype.dropPano = function () {
@@ -1052,6 +1741,7 @@ var VIEWER = (function () {
         this.dropSharp();
         this.dropPano();
         this.dropVideo();
+        this.dropDrive();
         if (!rec) {
             this.img.removeAttribute("src");
             this.busy.hidden = true;
@@ -1065,6 +1755,10 @@ var VIEWER = (function () {
         this.box.classList.remove("is-pano");
         this.box.removeAttribute("data-texture-width");
         this.setNote("");
+        if (rec.mv && rec.p === "360") {
+            this.show360Video(rec, urls || {}, token);
+            return;
+        }
         if (rec.mv) {
             this.showVideo(rec, urls || {});
             return;
@@ -1125,16 +1819,17 @@ var VIEWER = (function () {
         this.state();
     };
 
-    /* Start the 360-degree view with a picture (an image or ImageBitmap);
-       flatUrl is that picture's address, shown flat if the view stops.
-       False when this browser cannot show the view. */
+    /* Start the 360-degree view with a picture (an image or ImageBitmap;
+       null: a 360 video's frames will come); flatUrl is that picture's
+       address, shown flat if the view stops. False when this browser
+       cannot show the view. */
     Stage.prototype.startPano = function (picture, flatUrl) {
         var self = this;
         var canvas = el("canvas", {className: "stage-pano",
                                    attrs: {"aria-label": "360\u00b0 view: drag to look around"}});
         this.box.insertBefore(canvas, this.note);
         var pano = new Panorama(canvas);
-        if (!pano.ok || !pano.setImage(picture)) {
+        if (!pano.ok || (picture && !pano.setImage(picture))) {
             pano.destroy();
             if (canvas.parentNode) {
                 canvas.parentNode.removeChild(canvas);
@@ -1147,7 +1842,9 @@ var VIEWER = (function () {
                 self.dropPano();
                 self.mode = "image";
                 self.img.hidden = false;
-                self.img.src = flatUrl;
+                if (flatUrl) {
+                    self.img.src = flatUrl;
+                }
                 self.box.classList.remove("is-pano");
                 self.layout();
                 self.setNote("The 360\u00b0 view stopped; this is the flat panorama.");
@@ -1264,6 +1961,12 @@ var VIEWER = (function () {
             return;
         }
         var size = this.size();
+        if (this.fisheyeBox) {
+            // (A square: one lens's circle.)
+            var edge = Math.max(1, Math.min(size.w, size.h));
+            this.fisheyeBox.style.width = edge + "px";
+            this.fisheyeBox.style.height = edge + "px";
+        }
         var w = this.natural.w || this.img.naturalWidth || size.w;
         var h = this.natural.h || this.img.naturalHeight || size.h;
         var original = this.rec && this.rec.w ? this.rec.w : w;
@@ -1337,6 +2040,17 @@ var VIEWER = (function () {
         return this.mode === "image" && this.zoom > 1.01;
     };
 
+    // True when the view is not as it was shown: zoomed in, or a 360-degree
+    // view turned or zoomed (0 then resets it).
+    Stage.prototype.isMoved = function () {
+        if (this.mode === "pano") {
+            var view = this.view || {};
+            return Math.abs(view.yaw || 0) > 1e-3 || Math.abs(view.pitch || 0) > 1e-3 ||
+                Math.abs((view.fov || DEFAULT_FOV) - DEFAULT_FOV) > 1e-3;
+        }
+        return this.zoom > 1.01;
+    };
+
     Stage.prototype.point = function (event) {
         var rect = this.box.getBoundingClientRect();
         return {x: event.clientX - rect.left, y: event.clientY - rect.top};
@@ -1347,7 +2061,7 @@ var VIEWER = (function () {
             return;
         }
         // (A video's player takes its own clicks and drags.)
-        if (event.target.closest && event.target.closest("button, a, video")) {
+        if (event.target.closest && event.target.closest("button, a, video, .stage-controls")) {
             return;
         }
         try {
@@ -1522,6 +2236,633 @@ var VIEWER = (function () {
 
     /* ---------- Information pane -------------------------------------------- */
 
+    /* ---------- Drives ------------------------------------------------------ */
+
+    // Seconds before the end of a drive's clip when the next one starts loading.
+    var DRIVE_PRELOAD = 12;
+    // How long (ms) a clip that cannot be played here shows its still when
+    // the drive plays on through it.
+    var DRIVE_STILL = 3000;
+    // While the sped-up preview plays, the information pane follows the clip
+    // only once the preview stays on one this long (ms), or is paused.
+    var DRIVE_PANE_DELAY = 1500;
+
+    /* A drive (urls.drive: a run of video clips recorded one after the
+       other, see drives.py and VIEWER.open's driveOf): its clips play one
+       after the other, the next one loading while the one before it plays
+       (DRIVE_PRELOAD), and a strip under the stage shows the whole drive:
+       its clips (those that match the search by themselves marked), its
+       holes (clips the camera made that are not here), how far it has
+       played; a click on it, or the arrow keys while it has the focus (10
+       s; Page Up and Page Down a clip; Home and End), go there. Space plays
+       and pauses as for any video.
+       Whether a clip plays is decided clip by clip (driveCanPlay): one
+       without a video (an export publishes some only), one this browser
+       cannot decode that has no playable copy (the full record's
+       drive.copies lists those that have one), or one that failed to load
+       (never loaded again) shows its still with a note saying why --
+       for DRIVE_STILL when the drive plays on through it.
+       With a sped-up preview (the full record's drive.preview, see
+       driveDetail) a button switches between it and the clips at the same
+       place in the drive; it is shown instead of a clip that cannot play.
+       urls.drive: {clips: [{id, rec, video, poster, original, duration,
+       hole, playable (this browser decodes its codec)}], start (the clip to
+       begin with), matched ({id: true}), onClip(index) (a clip is shown)}. */
+    Stage.prototype.showDrive = function (rec, urls) {
+        var spec = urls.drive;
+        this.mode = "video";
+        this.box.classList.add("is-video");
+        this.natural = {w: rec.w || 0, h: rec.hgt || 0};
+        this.img.hidden = false;
+        this.img.alt = altText(rec);
+        this.img.src = urls.preview || urls.thumb || "";
+        this.busy.hidden = true;
+        var timeline = driveTimeline(spec.clips.map(function (clip) {
+            return clip.duration;
+        }));
+        var copies = {};
+        if (urls.playableCopy) {
+            copies[rec.i] = true;
+        }
+        this.drive = {spec: spec, urls: urls, timeline: timeline, index: spec.start, active: 0,
+                      players: [null, null], loaded: [-1, -1], seek: [null, null],
+                      preloading: false, mode: "clips", previewUrl: null, speed: 0,
+                      position: timeline.starts[spec.start] || 0, failed: {}, copies: copies,
+                      still: null, paneTimer: null, wantPlay: false, strip: null};
+        this.buildDriveStrip();
+        this.layout();
+        this.driveClip(spec.start, 0, false);
+        this.state();
+    };
+
+    // Can the clip at index be played here (as far as is known)?
+    Stage.prototype.driveCanPlay = function (index) {
+        var drive = this.drive;
+        var clip = drive.spec.clips[index];
+        return Boolean(clip && clip.video && !drive.failed[index] &&
+                       (clip.playable || drive.copies[clip.id]));
+    };
+
+    // The <video> of a slot (0 or 1: one plays, the other loads the next clip).
+    Stage.prototype.driveVideo = function (slot) {
+        var self = this;
+        var drive = this.drive;
+        if (drive.players[slot]) {
+            return drive.players[slot];
+        }
+        var video = el("video", {className: "stage-video drive-video",
+                                 attrs: {"aria-label": "Drive: " + altText(this.rec)}});
+        video.controls = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        video.hidden = true;
+        function mine() {
+            return self.drive === drive;
+        }
+        function active() {
+            return mine() && drive.players[drive.active] === video;
+        }
+        video.addEventListener("timeupdate", function () {
+            if (active()) {
+                self.driveTick();
+            }
+        });
+        video.addEventListener("ended", function () {
+            if (active()) {
+                self.driveEnded();
+            }
+        });
+        video.addEventListener("pause", function () {
+            if (active() && drive.mode === "preview") {
+                self.drivePane();
+            }
+        });
+        video.addEventListener("error", function () {
+            if (mine()) {
+                self.driveFailed(slot);
+            }
+        });
+        video.addEventListener("loadedmetadata", function () {
+            if (!mine()) {
+                return;
+            }
+            if (!video.videoWidth) {
+                self.driveFailed(slot);
+                return;
+            }
+            if (drive.seek[slot] !== null) {
+                try {
+                    video.currentTime = drive.seek[slot];
+                } catch (error) {
+                    // (Not seekable.)
+                }
+                drive.seek[slot] = null;
+            }
+        });
+        drive.players[slot] = video;
+        this.box.insertBefore(video, this.note);
+        return video;
+    };
+
+    // The still of a clip stops waiting (timer: the next wait, or null).
+    Stage.prototype.driveWait = function (timer) {
+        var drive = this.drive;
+        if (drive.still !== null) {
+            window.clearTimeout(drive.still);
+        }
+        drive.still = timer;
+    };
+
+    // Show the clip at index, offset seconds into it (playing when play is set).
+    Stage.prototype.driveClip = function (index, offset, play) {
+        var drive = this.drive;
+        var clip = drive.spec.clips[index];
+        if (!clip) {
+            return;
+        }
+        this.driveWait(null);
+        drive.wantPlay = Boolean(play);
+        if (!this.driveCanPlay(index)) {
+            this.driveStill(index, offset, play);
+            return;
+        }
+        var slot = drive.loaded[1 - drive.active] === index ? 1 - drive.active : drive.active;
+        var video = this.driveVideo(slot);
+        var other = drive.players[1 - slot];
+        if (drive.loaded[slot] !== index) {
+            drive.seek[slot] = null;
+            video.poster = clip.poster || "";
+            video.src = clip.video;
+            drive.loaded[slot] = index;
+        }
+        drive.mode = "clips";
+        drive.active = slot;
+        drive.index = index;
+        drive.preloading = false;
+        if (offset > 0) {
+            if (video.readyState >= 1) {
+                try {
+                    video.currentTime = offset;
+                } catch (error) {
+                    drive.seek[slot] = offset;
+                }
+            } else {
+                drive.seek[slot] = offset;
+            }
+        } else if (video.readyState >= 1 && video.currentTime) {
+            try {
+                video.currentTime = 0;
+            } catch (error) {
+                // (Not seekable yet.)
+            }
+        }
+        if (other) {
+            other.pause();
+            other.hidden = true;
+        }
+        video.hidden = false;
+        this.video = video;
+        this.img.hidden = true;
+        this.setNote("");
+        if (play) {
+            var playing = video.play();
+            if (playing && typeof playing.catch === "function") {
+                playing.catch(function () {});
+            }
+        }
+        drive.position = drive.timeline.starts[index] + (offset || 0);
+        this.driveDraw();
+        this.driveShown(index);
+    };
+
+    /* The clip at index cannot be played here: its still, with a note
+       saying why (its own codec, and the admin's download of its original);
+       when play is set the drive goes on to the next clip after
+       DRIVE_STILL. */
+    Stage.prototype.driveStill = function (index, offset, play) {
+        var self = this;
+        var drive = this.drive;
+        var clip = drive.spec.clips[index];
+        if (!clip) {
+            return;
+        }
+        drive.players.forEach(function (video) {
+            if (video) {
+                video.pause();
+                video.hidden = true;
+            }
+        });
+        this.video = null;
+        drive.mode = "clips";
+        drive.index = index;
+        drive.preloading = false;
+        drive.position = drive.timeline.starts[index] +
+            clamp(offset || 0, 0, drive.timeline.lengths[index]);
+        this.img.hidden = false;
+        if (clip.poster && this.img.getAttribute("src") !== clip.poster) {
+            this.img.src = clip.poster;
+        }
+        if (!clip.video) {
+            this.setNote("Only a still frame of this clip is published here.");
+        } else {
+            this.cannotPlay(clip.rec, {original: clip.original || null});
+        }
+        this.driveDraw();
+        this.driveShown(index);
+        if (play && index + 1 < drive.spec.clips.length) {
+            this.driveWait(window.setTimeout(function () {
+                if (self.drive === drive && drive.index === index && drive.mode === "clips") {
+                    drive.still = null;
+                    self.driveClip(index + 1, 0, true);
+                }
+            }, DRIVE_STILL));
+        }
+    };
+
+    // The sped-up preview, from the moment seconds into the drive.
+    Stage.prototype.drivePreview = function (seconds, play) {
+        var drive = this.drive;
+        if (!drive.previewUrl) {
+            return;
+        }
+        this.driveWait(null);
+        var slot = drive.active;
+        var video = this.driveVideo(slot);
+        var other = drive.players[1 - slot];
+        var at = Math.max(0, seconds) / drive.speed;
+        drive.mode = "preview";
+        drive.preloading = false;
+        if (drive.loaded[slot] !== -2) {
+            video.removeAttribute("poster");
+            video.src = drive.previewUrl;
+            drive.loaded[slot] = -2;
+            drive.seek[slot] = at;
+        } else {
+            try {
+                video.currentTime = at;
+            } catch (error) {
+                drive.seek[slot] = at;
+            }
+        }
+        if (other) {
+            other.pause();
+            other.hidden = true;
+        }
+        video.hidden = false;
+        this.video = video;
+        this.img.hidden = true;
+        this.setNote("");
+        if (play) {
+            var playing = video.play();
+            if (playing && typeof playing.catch === "function") {
+                playing.catch(function () {});
+            }
+        }
+        drive.position = seconds;
+        this.driveDraw();
+    };
+
+    /* A clip is shown: the information pane follows -- while the sped-up
+       preview is shown, only once it stays on one clip (DRIVE_PANE_DELAY)
+       or is paused (drivePane), so it does not flicker past a clip a
+       second. */
+    Stage.prototype.driveShown = function (index) {
+        var self = this;
+        var drive = this.drive;
+        if (drive.paneTimer !== null) {
+            window.clearTimeout(drive.paneTimer);
+            drive.paneTimer = null;
+        }
+        if (!drive.spec.onClip) {
+            return;
+        }
+        if (drive.mode !== "preview") {
+            drive.spec.onClip(index);
+            return;
+        }
+        drive.paneTimer = window.setTimeout(function () {
+            drive.paneTimer = null;
+            if (self.drive === drive) {
+                drive.spec.onClip(drive.index);
+            }
+        }, DRIVE_PANE_DELAY);
+    };
+
+    // The sped-up preview was paused: the information pane follows now.
+    Stage.prototype.drivePane = function () {
+        var drive = this.drive;
+        if (drive.paneTimer !== null) {
+            window.clearTimeout(drive.paneTimer);
+            drive.paneTimer = null;
+        }
+        if (drive.spec.onClip) {
+            drive.spec.onClip(drive.index);
+        }
+    };
+
+    // The playing clip (or preview) moved on: the strip follows, and the
+    // next clip starts loading near the end of this one.
+    Stage.prototype.driveTick = function () {
+        var drive = this.drive;
+        var video = drive.players[drive.active];
+        if (!video) {
+            return;
+        }
+        var time = video.currentTime || 0;
+        if (drive.mode === "preview") {
+            drive.position = Math.min(drive.timeline.total, time * drive.speed);
+            var place = drivePlace(drive.timeline, drive.position);
+            if (place.index !== drive.index) {
+                drive.index = place.index;
+                this.driveShown(place.index);
+            }
+        } else {
+            drive.position = drive.timeline.starts[drive.index] + time;
+            var next = drive.index + 1;
+            // (A clip that failed once is not asked for again.)
+            if (!drive.preloading && this.driveCanPlay(next) && isFinite(video.duration) &&
+                    video.duration - time < DRIVE_PRELOAD) {
+                drive.preloading = true;
+                var spare = this.driveVideo(1 - drive.active);
+                if (drive.loaded[1 - drive.active] !== next) {
+                    var clip = drive.spec.clips[next];
+                    spare.preload = "auto";
+                    spare.poster = clip.poster || "";
+                    spare.src = clip.video;
+                    drive.loaded[1 - drive.active] = next;
+                    drive.seek[1 - drive.active] = null;
+                }
+            }
+        }
+        this.driveDraw();
+    };
+
+    Stage.prototype.driveEnded = function () {
+        var drive = this.drive;
+        if (drive.mode === "clips" && drive.index + 1 < drive.spec.clips.length) {
+            this.driveClip(drive.index + 1, 0, true);
+        }
+    };
+
+    /* A slot's clip (or the preview) could not be loaded or decoded here.
+       The clip is remembered (driveCanPlay: never loaded again); the one
+       shown gives way to its still (or, the preview, to the clips). */
+    Stage.prototype.driveFailed = function (slot) {
+        var drive = this.drive;
+        var index = drive.loaded[slot];
+        if (index >= 0) {
+            drive.failed[index] = true;
+        }
+        drive.loaded[slot] = -1;
+        if (slot !== drive.active) {
+            // (The next clip, loading: its still shows when its turn comes.)
+            drive.preloading = false;
+            return;
+        }
+        var video = drive.players[slot];
+        if (video) {
+            video.pause();
+            video.hidden = true;
+        }
+        this.video = null;
+        if (index === -2) {
+            drive.previewUrl = null;
+            drive.strip.toggle.hidden = true;
+            var place = drivePlace(drive.timeline, drive.position);
+            this.driveClip(place.index, place.offset, false);
+            return;
+        }
+        var at = index >= 0 ? index : drive.index;
+        this.driveStill(at, drive.position - drive.timeline.starts[at], drive.wantPlay);
+    };
+
+    // Go to the moment seconds into the drive (keeps playing if it was).
+    Stage.prototype.driveSeekTo = function (seconds) {
+        var drive = this.drive;
+        seconds = clamp(seconds, 0, Math.max(0, drive.timeline.total - 0.05));
+        var video = drive.players[drive.active];
+        var playing = drive.still !== null ||
+            Boolean(video && !video.paused && !video.ended && !video.hidden);
+        if (drive.mode === "preview") {
+            this.drivePreview(seconds, playing);
+            return;
+        }
+        var place = drivePlace(drive.timeline, seconds);
+        if (place.index === drive.index && video && !video.hidden &&
+                drive.loaded[drive.active] === place.index) {
+            try {
+                video.currentTime = place.offset;
+            } catch (error) {
+                drive.seek[drive.active] = place.offset;
+            }
+            drive.position = seconds;
+            this.driveDraw();
+            return;
+        }
+        this.driveClip(place.index, place.offset, playing);
+    };
+
+    // The keys of the strip: arrows 10 s, Page Up / Page Down a clip, Home, End.
+    Stage.prototype.driveKey = function (key) {
+        var drive = this.drive;
+        if (!drive) {
+            return false;
+        }
+        var starts = drive.timeline.starts;
+        if (key === "ArrowLeft" || key === "ArrowRight") {
+            this.driveSeekTo(drive.position + (key === "ArrowLeft" ? -10 : 10));
+        } else if (key === "PageUp") {
+            var back = drive.position - starts[drive.index] > 3 ? drive.index : drive.index - 1;
+            this.driveSeekTo(starts[Math.max(0, back)]);
+        } else if (key === "PageDown") {
+            if (drive.index + 1 < starts.length) {
+                this.driveSeekTo(starts[drive.index + 1]);
+            }
+        } else if (key === "Home") {
+            this.driveSeekTo(0);
+        } else if (key === "End") {
+            this.driveSeekTo(starts[starts.length - 1]);
+        } else {
+            return false;
+        }
+        return true;
+    };
+
+    // Switch between the clips and the sped-up preview at the same place.
+    Stage.prototype.driveToggle = function () {
+        var drive = this.drive;
+        var video = drive.players[drive.active];
+        var playing = drive.still !== null ||
+            Boolean(video && !video.paused && !video.ended && !video.hidden);
+        if (drive.mode === "preview") {
+            var place = drivePlace(drive.timeline, drive.position);
+            this.driveClip(place.index, place.offset, playing);
+        } else {
+            this.drivePreview(drive.position, playing || !this.driveCanPlay(drive.index));
+        }
+        this.driveDraw();
+    };
+
+    // Can any clip of the drive be played here?
+    Stage.prototype.drivePlayable = function () {
+        for (var index = 0; index < this.drive.spec.clips.length; index++) {
+            if (this.driveCanPlay(index)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    /* The full record of the clip the viewer opened has arrived: which of
+       the drive's clips have a playable copy (playable_copy, drive.copies:
+       a still of one now plays), and the sped-up preview (drive.preview,
+       speed), shown at once instead of a clip that cannot play. */
+    Stage.prototype.driveDetail = function (detail) {
+        var drive = this.drive;
+        if (!detail || !this.rec || detail.id !== this.rec.i) {
+            return;
+        }
+        var about = detail.drive && typeof detail.drive === "object" ? detail.drive : null;
+        if (detail.playable_copy) {
+            drive.copies[detail.id] = true;
+        }
+        (about && Array.isArray(about.copies) ? about.copies : []).forEach(function (id) {
+            drive.copies[id] = true;
+        });
+        var still = drive.mode === "clips" && !this.video;
+        if (still && this.driveCanPlay(drive.index)) {
+            this.driveClip(drive.index, drive.position - drive.timeline.starts[drive.index],
+                           drive.still !== null);
+            still = false;
+        }
+        var url = about && about.preview && window.SITE && SITE.drivePreviewUrl
+            ? SITE.drivePreviewUrl(this.rec) : null;
+        if (url && !drive.previewUrl) {
+            drive.previewUrl = url;
+            drive.speed = number(about.speed) || 60;
+            if (still && drive.still === null) {
+                this.drivePreview(drive.position, false);
+            }
+        }
+        this.driveDraw();
+    };
+
+    Stage.prototype.buildDriveStrip = function () {
+        var self = this;
+        var drive = this.drive;
+        var spec = drive.spec;
+        var total = drive.timeline.total || 1;
+        var strip = el("div", {className: "drive-strip"});
+        var label = el("span", {className: "drive-label"});
+        var track = el("div", {className: "drive-track",
+                               attrs: {role: "slider", "aria-label": "Where in the drive",
+                                       "aria-valuemin": "0",
+                                       "aria-valuemax": String(Math.round(total))}});
+        track.tabIndex = 0;
+        track.title = "Click to go there (arrow keys: 10 seconds; Page Up, Page Down: a clip)";
+        var pieces = [];
+        spec.clips.forEach(function (clip, index) {
+            var piece = el("span", {className: "drive-piece" +
+                                    (spec.matched[clip.id] ? " is-match" : "") +
+                                    (clip.hole > 0 && index ? " after-hole" : "")});
+            piece.style.left = (100 * drive.timeline.starts[index] / total) + "%";
+            piece.style.width = (100 * drive.timeline.lengths[index] / total) + "%";
+            track.appendChild(piece);
+            pieces.push(piece);
+        });
+        var played = el("span", {className: "drive-played"});
+        var cursor = el("span", {className: "drive-cursor"});
+        track.appendChild(played);
+        track.appendChild(cursor);
+        var toggle = el("button", {type: "button", className: "drive-mode", hidden: true});
+        toggle.addEventListener("click", function () {
+            self.driveToggle();
+        });
+        track.addEventListener("click", function (event) {
+            var rect = track.getBoundingClientRect();
+            if (rect.width > 0) {
+                self.driveSeekTo(clamp((event.clientX - rect.left) / rect.width, 0, 1) * total);
+            }
+        });
+        strip.appendChild(label);
+        strip.appendChild(track);
+        strip.appendChild(toggle);
+        if (this.box.parentNode) {
+            this.box.parentNode.insertBefore(strip, this.box.nextSibling);
+        }
+        drive.strip = {root: strip, label: label, track: track, pieces: pieces, played: played,
+                       cursor: cursor, toggle: toggle, current: -1};
+    };
+
+    Stage.prototype.driveDraw = function () {
+        var drive = this.drive;
+        var strip = drive.strip;
+        if (!strip) {
+            return;
+        }
+        var total = drive.timeline.total || 1;
+        var count = drive.spec.clips.length;
+        var fraction = clamp(drive.position / total, 0, 1);
+        strip.played.style.width = (100 * fraction) + "%";
+        strip.cursor.style.left = (100 * fraction) + "%";
+        if (strip.current !== drive.index) {
+            if (strip.pieces[strip.current]) {
+                strip.pieces[strip.current].classList.remove("is-current");
+            }
+            if (strip.pieces[drive.index]) {
+                strip.pieces[drive.index].classList.add("is-current");
+            }
+            strip.current = drive.index;
+        }
+        var where = "Clip " + (drive.index + 1) + " of " + count + " \u00b7 " +
+            durationText(drive.position) + " / " + durationText(drive.timeline.total);
+        strip.label.textContent = (drive.mode === "preview" ? "\u00d7" + drive.speed + " \u00b7 "
+            : "") + where;
+        strip.track.setAttribute("aria-valuenow", String(Math.round(drive.position)));
+        strip.track.setAttribute("aria-valuetext", where);
+        if (drive.previewUrl) {
+            strip.toggle.hidden = drive.mode === "preview" && !this.drivePlayable();
+            strip.toggle.textContent = drive.mode === "preview" ? "Full speed"
+                : "Sped up \u00d7" + drive.speed;
+            strip.toggle.title = drive.mode === "preview" ? "Play the clips themselves"
+                : "Play the whole drive " + drive.speed + " times faster";
+            strip.toggle.setAttribute("aria-pressed", drive.mode === "preview" ? "true" : "false");
+        }
+    };
+
+    // Take the drive's players, timers and strip away.
+    Stage.prototype.dropDrive = function () {
+        var drive = this.drive;
+        if (!drive) {
+            return;
+        }
+        this.driveWait(null);
+        if (drive.paneTimer !== null) {
+            window.clearTimeout(drive.paneTimer);
+            drive.paneTimer = null;
+        }
+        this.drive = null;
+        drive.players.forEach(function (video) {
+            if (!video) {
+                return;
+            }
+            try {
+                video.pause();
+                video.removeAttribute("src");
+                video.load();
+            } catch (error) {
+                // (Already gone.)
+            }
+            if (video.parentNode) {
+                video.parentNode.removeChild(video);
+            }
+        });
+        if (drive.strip && drive.strip.root.parentNode) {
+            drive.strip.root.parentNode.removeChild(drive.strip.root);
+        }
+    };
+
     function altText(rec) {
         if (!rec) {
             return "";
@@ -1574,6 +2915,27 @@ var VIEWER = (function () {
             }
         }
         return urls;
+    }
+
+    /* The drive a clip belongs to, for the information pane: its own title
+       and description (when it was described), and where the clip is in it.
+       drive: {cover (the record of its first clip), index, count, start,
+       length} (seconds). */
+    function driveSection(drive, context) {
+        var cover = drive.cover || {};
+        var body = el("div", {className: "info-drive-body"});
+        var facts = "Clip " + (drive.index + 1) + " of " + drive.count + " \u00b7 " +
+            durationText(drive.start) + " into a drive of " + durationText(drive.length);
+        if (cover.dvt) {
+            body.appendChild(el("p", {className: "info-drive-title"},
+                                [highlighted(cover.dvt, context.query, "dvt")]));
+        }
+        if (cover.dvd) {
+            body.appendChild(el("p", {className: "info-description"},
+                                [highlighted(cover.dvd, context.query, "dvd")]));
+        }
+        body.appendChild(el("p", {className: "info-small", text: facts}));
+        return section("Drive", body, "info-drive");
     }
 
     function section(title, body, className) {
@@ -1742,7 +3104,117 @@ var VIEWER = (function () {
         });
     }
 
-    function adminActions(rec, context) {
+    /* ---------- The GPS check (the admin's; see gps_check.py) ----------------
+
+       detail.location_check (/api/image, the admin's): {ignored, reason
+       (words), choice ("use", "ignore" or ""), place (of the position set
+       aside), estimated}, or null for a picture without a position. */
+
+    // The record keys a position changes (gps_check.RECORD_KEYS).
+    var LOCATION_KEYS = ["gp", "ci", "rg", "co", "cc", "km", "pe", "gx"];
+
+    /* Use (true) or ignore (false) the picture's GPS position. The server
+       keeps the choice (for every copy of the shot) and checks the positions
+       again; the place keys of the record -- and of the other records whose
+       position the check changed (answer.others, found with context.get) --
+       change in place, the pane is drawn again (unless it shows another
+       picture by now) and context.onEdited(id, detail) is told (the search
+       sees the change). */
+    function chooseLocation(box, rec, detail, context, use, button) {
+        function patch(target, keys) {
+            LOCATION_KEYS.forEach(function (key) {
+                var value = keys ? keys[key] : undefined;
+                if (value === undefined) {
+                    delete target[key];
+                } else {
+                    target[key] = value;
+                }
+            });
+        }
+        return busy(button, SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/location",
+                                        {use: use}))
+            .then(function (answer) {
+                patch(rec, answer ? answer.record : null);
+                var others = answer && answer.others && typeof answer.others === "object"
+                    ? answer.others : {};
+                var changed = 0;
+                Object.keys(others).forEach(function (id) {
+                    var other = context.get ? context.get(Number(id)) : null;
+                    if (other && other !== rec) {
+                        patch(other, others[id]);
+                    }
+                    changed += 1;
+                });
+                var shown = {};
+                Object.keys(detail || {}).forEach(function (key) {
+                    shown[key] = detail[key];
+                });
+                shown.location_check = answer ? answer.location_check || null : null;
+                var ignored = Boolean(shown.location_check && shown.location_check.ignored);
+                var copies = answer && answer.copies > 0 ? answer.copies : 0;
+                var more = changed - copies + (answer && answer.more > 0 ? answer.more : 0);
+                var said = ignored ? "The picture's position is ignored: it has no place, " +
+                    "is not on the map and is not found by place."
+                    : "The picture's position is used: its place shows again.";
+                if (copies) {
+                    said += " The same goes for " + plural(copies, "copy", "copies") + " of it.";
+                }
+                if (more > 0) {
+                    said += " The check changed " + plural(more, "other picture") + " too.";
+                }
+                toast(said, "ok");
+                // (A button pressed and then disabled while the request ran
+                // has dropped the focus to the page.)
+                var focused = document.activeElement;
+                var hadFocus = !focused || focused === document.body || box.contains(focused);
+                if (box.infoId === rec.i) {
+                    renderInfo(box, rec, shown, context);
+                    var next = box.querySelector(ignored ? ".info-location-use"
+                                                         : ".info-location-ignore") ||
+                        box.querySelector(".info-title");
+                    if (hadFocus && next) {
+                        if (next.tabIndex === undefined || next.tabIndex < 0) {
+                            next.tabIndex = -1;
+                        }
+                        next.focus({preventScroll: true});
+                    }
+                }
+                if (context.onEdited) {
+                    context.onEdited(rec.i, shown);
+                }
+            }, function () {});
+    }
+
+    // Why the position was set aside (or kept against the check), for the admin.
+    function locationNote(box, rec, detail, context) {
+        var check = admin() && detail ? detail.location_check : null;
+        if (!check || typeof check !== "object" || (!check.ignored && !check.reason)) {
+            return null;
+        }
+        var note = el("div", {className: "info-location-check" +
+                                          (check.ignored ? " is-ignored" : "")});
+        if (!check.ignored) {
+            note.appendChild(el("p", {className: "info-location-why",
+                                      text: "Location used as you chose; the GPS check would " +
+                                            "ignore it: " + check.reason + "."}));
+            return note;
+        }
+        note.appendChild(el("p", {className: "info-location-why",
+                                  text: "Location ignored: " + check.reason + "."}));
+        if (check.place) {
+            note.appendChild(el("p", {className: "info-small",
+                                      text: "Ignored place: " + check.place}));
+        }
+        var use = actionButton(check.choice === "ignore" ? "Use this location"
+            : "Use this location anyway", function (button) {
+            chooseLocation(box, rec, detail, context, true, button);
+        }, "info-location-use");
+        use.title = "Show the picture at the position its file gives (kept across scans)";
+        note.appendChild(use);
+        return note;
+    }
+
+    function adminActions(rec, context, box, detail) {
         var id = rec.i;
         var row = el("div", {className: "info-actions info-admin"});
         row.appendChild(actionButton("Copy path", function (button) {
@@ -1794,7 +3266,585 @@ var VIEWER = (function () {
                           "the job is done and the page is reloaded.", "ok");
                 }, function () {});
         }));
+        var check = detail ? detail.location_check : null;
+        if (check && typeof check === "object" && !check.ignored) {
+            var ignore = actionButton("Ignore location", function (button) {
+                chooseLocation(box, rec, detail, context, false, button);
+            }, "info-location-ignore");
+            ignore.title = "The GPS position is wrong: no place, not on the map (kept across " +
+                "scans)";
+            row.appendChild(ignore);
+        }
         return row;
+    }
+
+    /* ---------- Marks: favorites, ratings and albums ------------------------ */
+
+    var STAR = "\u2605";
+    var HOLLOW_STAR = "\u2606";
+    // Pictures one request names at most (albums.MARK_LIMIT).
+    var MARK_CHUNK = 10000;
+
+    function chunked(list, size) {
+        var out = [];
+        for (var k = 0; k < list.length; k += size) {
+            out.push(list.slice(k, k + size));
+        }
+        return out;
+    }
+
+    function numeric(a, b) {
+        return a - b;
+    }
+
+    function idOf(key) {
+        return /^\d+$/.test(key) ? Number(key) : key;
+    }
+
+    function stars(count) {
+        var text = "";
+        for (var k = 1; k <= 5; k++) {
+            text += k <= count ? STAR : HOLLOW_STAR;
+        }
+        return text;
+    }
+
+    // The albums (of the page's list) a record is in, in the list's order.
+    function albumsOfRecord(rec, albums) {
+        var ids = rec && Array.isArray(rec.al) ? rec.al : [];
+        return (albums || []).filter(function (album) {
+            return album && album.kind !== "smart" && ids.indexOf(album.id) >= 0;
+        });
+    }
+
+    // A record (or id, when the page has no record of it) put in an album
+    // or taken out: its al and the album's items change in place.
+    function placeInAlbum(id, rec, album, on) {
+        if (rec) {
+            var list = Array.isArray(rec.al) ? rec.al.slice() : [];
+            var at = list.indexOf(album.id);
+            if (on && at < 0) {
+                list.push(album.id);
+                list.sort(numeric);
+            } else if (!on && at >= 0) {
+                list.splice(at, 1);
+            }
+            if (list.length) {
+                rec.al = list;
+            } else {
+                delete rec.al;
+            }
+        }
+        if (!Array.isArray(album.items)) {
+            album.items = [];
+        }
+        var place = album.items.indexOf(id);
+        if (on && place < 0) {
+            album.items.push(id);
+        } else if (!on && place >= 0) {
+            album.items.splice(place, 1);
+        }
+    }
+
+    /* Make pictures favorites (or not), or rate them: change is {favorite}
+       or {rating} (0: none). The records (get(id)) change in place;
+       resolves to how many changed (rejects after a message). */
+    function sendMarks(ids, change, get) {
+        var changed = 0;
+        var chain = Promise.resolve();
+        chunked(ids, MARK_CHUNK).forEach(function (part) {
+            chain = chain.then(function () {
+                var body = {ids: part};
+                Object.keys(change).forEach(function (key) {
+                    body[key] = change[key];
+                });
+                return SHELL.admin("/marks", body).then(function (reply) {
+                    changed += reply.changed || 0;
+                    Object.keys(reply.marks || {}).forEach(function (key) {
+                        var rec = get ? get(idOf(key)) : null;
+                        var mark = reply.marks[key] || {};
+                        if (!rec) {
+                            return;
+                        }
+                        if (mark.favorite) {
+                            rec.fav = 1;
+                        } else {
+                            delete rec.fav;
+                        }
+                        if (mark.rating) {
+                            rec.rt = mark.rating;
+                        } else {
+                            delete rec.rt;
+                        }
+                    });
+                });
+            });
+        });
+        return chain.then(function () {
+            return changed;
+        });
+    }
+
+    // Put pictures in a manual album (at its end) and take others out;
+    // resolves to {added, removed}.
+    function sendAlbumItems(album, add, remove, get) {
+        var parts = [];
+        chunked(add || [], MARK_CHUNK).forEach(function (part) {
+            parts.push({add: part});
+        });
+        chunked(remove || [], MARK_CHUNK).forEach(function (part) {
+            parts.push({remove: part});
+        });
+        var done = {added: 0, removed: 0};
+        var chain = Promise.resolve();
+        parts.forEach(function (body) {
+            chain = chain.then(function () {
+                return SHELL.admin("/albums/" + encodeURIComponent(album.id) + "/items", body)
+                    .then(function (reply) {
+                        done.added += reply.added || 0;
+                        done.removed += reply.removed || 0;
+                        (body.add || []).forEach(function (id) {
+                            placeInAlbum(id, get ? get(id) : null, album, true);
+                        });
+                        (body.remove || []).forEach(function (id) {
+                            placeInAlbum(id, get ? get(id) : null, album, false);
+                        });
+                    });
+            });
+        });
+        return chain.then(function () {
+            return done;
+        });
+    }
+
+    // A new manual album with the pictures ids; resolves to it (added to albums).
+    function createAlbum(name, ids, get, albums) {
+        var first = ids.slice(0, MARK_CHUNK);
+        return SHELL.admin("/albums", {name: name, kind: "manual", ids: first})
+            .then(function (reply) {
+                var album = {id: reply.album.id, name: reply.album.name, kind: "manual",
+                             cover: null, items: []};
+                albums.push(album);
+                albums.sort(function (a, b) {
+                    var x = String(a.name).toLowerCase();
+                    var y = String(b.name).toLowerCase();
+                    return x < y ? -1 : x > y ? 1 : a.id - b.id;
+                });
+                first.forEach(function (id) {
+                    placeInAlbum(id, get ? get(id) : null, album, true);
+                });
+                var rest = ids.slice(MARK_CHUNK);
+                return (rest.length ? sendAlbumItems(album, rest, [], get) : Promise.resolve())
+                    .then(function () {
+                        return album;
+                    });
+            });
+    }
+
+    /* The album picker (admin): a dialog to put pictures in an album (or,
+       with mode "remove", take them out of one). options: {ids, get,
+       albums (the page's list), mode, onChange (called after each change),
+       onClose}. Typing finds an album. Enter only ever adds (with mode
+       "remove": takes out) -- to the album of that name, or the only one
+       listed -- and makes a new album only when no album matches what
+       was typed; the New album button makes one whatever is listed.
+       Clicking an album that holds the pictures already takes them out. */
+    function albumPicker(options) {
+        var ids = (options.ids || []).slice();
+        var albums = options.albums || [];
+        var get = options.get || function () {
+            return null;
+        };
+        var removing = options.mode === "remove";
+        var count = plural(ids.length, "picture");
+        var box = SHELL.modal({
+            title: removing ? "Take " + count + " out of an album"
+                : ids.length === 1 ? "Add to album" : "Add " + count + " to an album",
+            onClose: options.onClose
+        });
+        var input = el("input", {type: "text", className: "input album-picker-find",
+                                 autocomplete: "off", spellcheck: false, maxLength: 100,
+                                 placeholder: removing ? "Find an album"
+                                     : "Find an album, or type a new name",
+                                 attrs: {"aria-label": "Album name"}});
+        var create = el("button", {type: "button", className: "button small album-picker-new",
+                                   hidden: true});
+        var list = el("ul", {className: "album-picker-list", attrs: {"aria-label": "Albums"}});
+        var note = el("p", {className: "field-hint album-picker-note"});
+        box.body.appendChild(input);
+        box.body.appendChild(create);
+        box.body.appendChild(list);
+        box.body.appendChild(note);
+        var working = false;
+        var hint = "";              // what Enter did not do, until the next key
+        var refocus = null;         // after a change: an album id, or "input"
+
+        function inside(album) {
+            var count = 0;
+            ids.forEach(function (id) {
+                var rec = get(id);
+                if (rec ? Array.isArray(rec.al) && rec.al.indexOf(album.id) >= 0
+                    : Array.isArray(album.items) && album.items.indexOf(id) >= 0) {
+                    count += 1;
+                }
+            });
+            return count;
+        }
+
+        function wanted() {
+            return String(input.value || "").replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+        }
+
+        function exact() {
+            var name = wanted().toLowerCase();
+            return albums.filter(function (album) {
+                return album.kind !== "smart" && String(album.name).toLowerCase() === name;
+            })[0] || null;
+        }
+
+        // The albums listed for what was typed.
+        function listed() {
+            var lower = wanted().toLowerCase();
+            return albums.filter(function (album) {
+                return album.kind !== "smart" && (!removing || inside(album) > 0) &&
+                    (!lower || String(album.name).toLowerCase().indexOf(lower) >= 0);
+            });
+        }
+
+        function focusAgain() {
+            var target = null;
+            if (refocus !== null && refocus !== "input") {
+                target = list.querySelector('[data-album="' + String(refocus) + '"]');
+            }
+            refocus = null;
+            (target && !target.disabled ? target : input).focus();
+        }
+
+        function finish(promise, message) {
+            working = true;
+            draw();
+            promise.then(function (text) {
+                working = false;
+                SHELL.toast(text || message, "ok");
+                if (options.onChange) {
+                    options.onChange();
+                }
+                draw();
+                focusAgain();
+            }, function () {
+                working = false;
+                draw();
+                focusAgain();
+            });
+        }
+
+        // Put the pictures in album (take: take them out of it).
+        function change(album, take, focusAfter) {
+            var have = inside(album);
+            var chosen = take ? ids.filter(function (id) {
+                var rec = get(id);
+                return !rec || (Array.isArray(rec.al) && rec.al.indexOf(album.id) >= 0);
+            }) : ids;
+            refocus = focusAfter;
+            hint = "";
+            finish(sendAlbumItems(album, take ? [] : chosen, take ? chosen : [], get)
+                .then(function (done) {
+                    return take ? plural(done.removed, "picture") + " taken out of " +
+                        album.name + "." : plural(done.added, "picture") + " added to " +
+                        album.name + "." + (have ? " " + have + " " +
+                                            (have === 1 ? "was" : "were") + " in it already." : "");
+                }));
+        }
+
+        // An album row was clicked: add; take out when it holds them all already.
+        function rowClicked(album) {
+            if (!working) {
+                change(album, removing || inside(album) === ids.length, album.id);
+            }
+        }
+
+        // Enter in the box: adds (or takes out), never the other way round.
+        function enter() {
+            if (working) {
+                return;
+            }
+            var rows = listed();
+            var found = exact() || (rows.length === 1 ? rows[0] : null);
+            if (found && removing && !inside(found)) {
+                hint = "None of them is in " + found.name + ".";
+            } else if (found && !removing && inside(found) === ids.length) {
+                hint = (ids.length === 1 ? "It is" : "They are all") + " in " + found.name +
+                    " already (click the album to take " + (ids.length === 1 ? "it" : "them") +
+                    " out).";
+            } else if (found) {
+                change(found, removing, "input");
+                return;
+            } else if (!removing && wanted() && !rows.length) {
+                make();
+                return;
+            } else if (rows.length > 1) {
+                hint = rows.length + " albums match: choose one" + (removing ? "."
+                    : ", or press the New album button for a new one.");
+            } else {
+                return;
+            }
+            draw();
+        }
+
+        function make() {
+            var name = wanted();
+            if (!name || exact() || working) {
+                return;
+            }
+            refocus = "input";
+            hint = "";
+            finish(createAlbum(name, ids, get, albums).then(function (album) {
+                input.value = "";
+                return "Made the album " + album.name + " with " + count + ".";
+            }));
+        }
+
+        function draw() {
+            clear(list);
+            var name = wanted();
+            var shown = 0;
+            listed().forEach(function (album) {
+                var have = inside(album);
+                shown += 1;
+                var full = have === ids.length;
+                var state = full ? "true" : have ? "mixed" : "false";
+                var button = el("button", {type: "button", className: "album-picker-item",
+                                           disabled: working,
+                                           attrs: {"aria-pressed": removing ? null : state,
+                                                   "data-album": String(album.id)}}, [
+                    el("span", {className: "album-picker-check", attrs: {"aria-hidden": "true"},
+                                text: removing ? "\u2212" : full ? "\u2713" : have ? "\u2013" : "+"}),
+                    el("span", {className: "album-picker-name", text: album.name}),
+                    el("span", {className: "album-picker-count",
+                                text: have ? (ids.length > 1 ? have + " of " + ids.length + " in it"
+                                    : "in it") : ""})
+                ]);
+                button.title = removing ? "Take them out of " + album.name
+                    : full ? "In " + album.name + " (click to take " +
+                      (ids.length === 1 ? "it" : "them") + " out)" : "Add to " + album.name;
+                button.addEventListener("click", function () {
+                    rowClicked(album);
+                });
+                list.appendChild(el("li", null, [button]));
+            });
+            var canMake = !removing && name && !exact();
+            create.hidden = !canMake;
+            create.disabled = working;
+            create.textContent = canMake ? "New album \u201c" + name + "\u201d with " + count : "";
+            note.textContent = hint || (shown ? "" : removing
+                ? "None of the albums holds these pictures."
+                : albums.some(function (album) {
+                    return album.kind !== "smart";
+                }) ? (name ? "No album has that name yet: Enter makes it." : "") :
+                    "There are no albums yet: type a name for the first one.");
+        }
+
+        input.addEventListener("input", function () {
+            hint = "";
+            draw();
+        });
+        input.addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.isComposing) {
+                event.preventDefault();
+                enter();
+            }
+        });
+        create.addEventListener("click", make);
+        box.button("Done", "primary", function () {
+            box.close();
+        });
+        draw();
+        window.setTimeout(function () {
+            input.focus();
+        }, 0);
+        return box;
+    }
+
+    /* The marks row of the information pane: the favorite star and the
+       rating (buttons for the admin, else shown when set), and the
+       picture's albums as chips (with "Add to album..." for the admin). */
+    function marksRow(rec, context) {
+        var editable = admin();
+        var albums = context.albums ? context.albums() || [] : [];
+        var inAlbums = albumsOfRecord(rec, albums);
+        var rating = typeof rec.rt === "number" ? rec.rt : 0;
+        if (!editable && !rec.fav && !rating && !inAlbums.length) {
+            return null;
+        }
+        var row = el("div", {className: "info-marks"});
+        if (editable) {
+            var favorite = el("button", {
+                type: "button", className: "info-mark-favorite" + (rec.fav ? " is-on" : ""),
+                text: (rec.fav ? STAR : HOLLOW_STAR) + " Favorite",
+                title: rec.fav ? "A favorite (F takes the star away)" : "Make it a favorite (F)",
+                attrs: {"aria-pressed": rec.fav ? "true" : "false"}
+            });
+            favorite.addEventListener("click", function () {
+                markPicture(rec, context, {favorite: !rec.fav}, favorite);
+            });
+            row.appendChild(favorite);
+            var group = el("span", {className: "info-rating", attrs: {role: "group",
+                                                                   "aria-label": "Rating"}});
+            for (var n = 1; n <= 5; n++) {
+                (function (value) {
+                    var star = el("button", {
+                        type: "button", className: "info-mark-star" + (value <= rating ? " is-on" : ""),
+                        text: value <= rating ? STAR : HOLLOW_STAR,
+                        title: value === rating ? "Rated " + plural(value, "star") +
+                            " (click again, or 0, to clear)" : "Rate " + plural(value, "star") +
+                            " (" + value + ")",
+                        attrs: {"aria-label": "Rate " + plural(value, "star"),
+                                "aria-pressed": value === rating ? "true" : "false",
+                                "data-stars": String(value)}
+                    });
+                    star.addEventListener("click", function () {
+                        markPicture(rec, context, {rating: value === rating ? 0 : value}, star);
+                    });
+                    group.appendChild(star);
+                })(n);
+            }
+            var clearButton = el("button", {type: "button", className: "info-mark-clear",
+                                            hidden: !rating, text: "\u00d7",
+                                            title: "Clear the rating (0)",
+                                            attrs: {"aria-label": "Clear the rating"}});
+            clearButton.addEventListener("click", function () {
+                markPicture(rec, context, {rating: 0}, clearButton);
+            });
+            group.appendChild(clearButton);
+            row.appendChild(group);
+        } else {
+            if (rec.fav) {
+                row.appendChild(badge(STAR + " Favorite", "is-favorite"));
+            }
+            if (rating) {
+                row.appendChild(el("span", {className: "info-rating-text", text: stars(rating),
+                                            title: "Rated " + plural(rating, "star"),
+                                            attrs: {"aria-label": "Rated " +
+                                                    plural(rating, "star")}}));
+            }
+        }
+        if (inAlbums.length || editable) {
+            var chips = el("div", {className: "info-chips info-albums"});
+            inAlbums.forEach(function (album) {
+                // (By its id when its name could name another album.)
+                var term = window.SearchCore && SearchCore.albumTerm
+                    ? SearchCore.albumTerm(albums, album) : "album:" + quote(album.name);
+                chips.appendChild(chip(album.name, "q", term, context,
+                                       "Show the album " + album.name));
+            });
+            if (editable) {
+                var add = el("button", {type: "button", className: "button small info-album-add",
+                                        text: "Add to album\u2026",
+                                        title: "Put this picture in an album (A)"});
+                add.addEventListener("click", function () {
+                    openPicker(rec, context);
+                });
+                chips.appendChild(add);
+            }
+            row.appendChild(chips);
+        }
+        return row;
+    }
+
+    /* The marks control that has the focus ({name: its class, stars}), so
+       that it gets it back once the controls are drawn again; or null. */
+    var MARK_CONTROLS = ["info-mark-favorite", "info-mark-star", "info-mark-clear",
+                         "info-album-add", "viewer-star", "viewer-rate"];
+
+    function markFocus() {
+        var node = document.activeElement;
+        if (!node || !node.classList) {
+            return null;
+        }
+        for (var k = 0; k < MARK_CONTROLS.length; k++) {
+            if (node.classList.contains(MARK_CONTROLS[k])) {
+                return {name: MARK_CONTROLS[k], stars: node.getAttribute("data-stars")};
+            }
+        }
+        return null;
+    }
+
+    function restoreMarkFocus(saved) {
+        if (!saved) {
+            return;
+        }
+        var target = document.querySelector("." + saved.name + (saved.stars
+            ? '[data-stars="' + saved.stars + '"]' : ""));
+        if (target && target.hidden) {
+            // (The clear button goes with the rating: its first star then.)
+            target = document.querySelector(saved.name === "info-mark-clear"
+                ? ".info-mark-star" : ".viewer-rate");
+        }
+        if (target && !target.hidden) {
+            target.focus({preventScroll: true});
+        }
+    }
+
+    // Change the marks of the picture shown (change: {favorite} or {rating}).
+    function markPicture(rec, context, change, button) {
+        var focused = markFocus();
+        if (button) {
+            button.disabled = true;
+        }
+        var get = function (id) {
+            return id === rec.i ? rec : context.get ? context.get(id) : null;
+        };
+        sendMarks([rec.i], change, get).then(function () {
+            if (change.favorite !== undefined) {
+                toast(change.favorite ? STAR + " A favorite now." : "No longer a favorite.", "ok");
+            } else {
+                toast(change.rating ? "Rated " + plural(change.rating, "star") + "."
+                    : "The rating was cleared.", "ok");
+            }
+            if (context.onMarked) {
+                context.onMarked([rec.i]);
+            }
+            restoreMarkFocus(focused);
+        }, function () {
+            if (button) {
+                button.disabled = false;
+            }
+            restoreMarkFocus(focused);
+        });
+    }
+
+    /* A key of the marks (admin) for the picture rec: F, 1-5, 0 (clear)
+       and A (the album picker), by its marks rather than by buttons (so
+       they work while the pane shows the edit form). True when it was one. */
+    function markByKey(rec, context, key) {
+        var rating = typeof rec.rt === "number" ? rec.rt : 0;
+        if (key === "f" || key === "F") {
+            markPicture(rec, context, {favorite: !rec.fav}, null);
+        } else if (/^[1-5]$/.test(key)) {
+            if (Number(key) !== rating) {           // (a key never clears it)
+                markPicture(rec, context, {rating: Number(key)}, null);
+            }
+        } else if (key === "0") {
+            if (rating) {
+                markPicture(rec, context, {rating: 0}, null);
+            }
+        } else if (key === "a" || key === "A") {
+            openPicker(rec, context);
+        } else {
+            return false;
+        }
+        return true;
+    }
+
+    // "Add to album..." for the picture rec.
+    function openPicker(rec, context) {
+        var albums = context.albums ? context.albums() || [] : [];
+        albumPicker({ids: [rec.i], get: context.get, albums: albums, mode: "add",
+                     onChange: function () {
+                         if (context.onMarked) {
+                             context.onMarked([rec.i]);
+                         }
+                     }});
     }
 
     /* ---------- Editing (admin) --------------------------------------------- */
@@ -2155,6 +4205,7 @@ var VIEWER = (function () {
             editing = null;                 // another picture: the edit is dropped
         }
         clear(box);
+        box.infoId = rec ? rec.i : null;    // (whose information the box shows)
         if (!rec) {
             box.appendChild(el("p", {className: "muted", text: "This picture is not available."}));
             return;
@@ -2164,7 +4215,7 @@ var VIEWER = (function () {
                             [highlighted(rec.t || rec.n || "Untitled picture", context.query, "t")]));
         var badges = el("div", {className: "info-badges"});
         if (rec.p === "360") {
-            badges.appendChild(badge("360\u00b0 photo", "is-360"));
+            badges.appendChild(badge(rec.mv ? "360\u00b0" : "360\u00b0 photo", "is-360"));
         }
         if (rec.mv) {
             var length = durationText(rec.dr);
@@ -2186,6 +4237,13 @@ var VIEWER = (function () {
             head.appendChild(badges);
         }
         box.appendChild(head);
+        var marks = marksRow(rec, context);
+        if (marks) {
+            box.appendChild(marks);
+        }
+        if (context.drive) {
+            box.appendChild(driveSection(context.drive, context));
+        }
 
         var size = "";
         if (rec.w && rec.hgt) {
@@ -2213,6 +4271,10 @@ var VIEWER = (function () {
         ]);
         if (factList) {
             box.appendChild(factList);
+        }
+        var located = locationNote(box, rec, detail, context);
+        if (located) {
+            box.appendChild(located);
         }
 
         if (rec.d) {
@@ -2392,7 +4454,7 @@ var VIEWER = (function () {
             box.appendChild(actions);
         }
         if (admin()) {
-            var adminRow = adminActions(rec, context);
+            var adminRow = adminActions(rec, context, box, detail);
             adminRow.insertBefore(actionButton("Edit", function () {
                 startEdit(box, rec, detail, context);
             }, "info-edit-button"), adminRow.firstChild);
@@ -2498,10 +4560,14 @@ var VIEWER = (function () {
         var zoomIn = iconButton("viewer-zoom-in", "Zoom in (+)", "+");
         var reset = iconButton("viewer-reset", "Reset the view (0)", "\u27f2");
         var info = iconButton("viewer-info-toggle", "Information (i)", "i");
+        // The favorite star and the rating: buttons for the admin (they
+        // press those of the information pane), else shown when set.
+        var marks = el("span", {className: "viewer-marks"});
         bar.appendChild(close);
         bar.appendChild(counter);
         bar.appendChild(title);
         bar.appendChild(el("span", {className: "viewer-spacer"}));
+        bar.appendChild(marks);
         bar.appendChild(zoomOut);
         bar.appendChild(zoomIn);
         bar.appendChild(reset);
@@ -2524,7 +4590,8 @@ var VIEWER = (function () {
             root: root, close: close, counter: counter, title: title, zoomIn: zoomIn,
             zoomOut: zoomOut, reset: reset, info: info, prev: prev, next: next, pane: pane,
             stack: stack, stageBox: stageBox, options: null, ids: [], index: 0, id: null,
-            detailToken: 0, returnFocus: null
+            detailToken: 0, returnFocus: null, marks: marks, driveSpec: null,
+            driveIndex: 0, paneId: null, clipToken: 0, shownDetail: null
         };
         box.stage = new Stage(stageBox, {
             onSwipe: function (direction) {
@@ -2566,6 +4633,57 @@ var VIEWER = (function () {
         return box;
     }
 
+    // The bar's favorite star and rating for the picture shown (rec).
+    function showBarMarks(rec) {
+        var box = lightbox.marks;
+        clear(box);
+        if (!rec) {
+            return;
+        }
+        var rating = typeof rec.rt === "number" ? rec.rt : 0;
+        if (!admin()) {
+            if (rec.fav || rating) {
+                box.appendChild(el("span", {
+                    className: "viewer-marks-text",
+                    text: (rec.fav ? STAR : "") + (rating ? (rec.fav ? " " : "") + rating +
+                                                   "/5" : ""),
+                    title: (rec.fav ? "A favorite" : "") + (rec.fav && rating ? "; " : "") +
+                        (rating ? "rated " + plural(rating, "star") : "")}));
+            }
+            return;
+        }
+        var star = iconButton("viewer-star" + (rec.fav ? " is-on" : ""),
+                              rec.fav ? "A favorite (F)" : "Make it a favorite (F)",
+                              rec.fav ? STAR : HOLLOW_STAR);
+        star.setAttribute("aria-pressed", rec.fav ? "true" : "false");
+        star.addEventListener("click", function () {
+            markPicture(rec, infoContext(rec), {favorite: !rec.fav}, star);
+        });
+        box.appendChild(star);
+        var group = el("span", {className: "viewer-rating", attrs: {role: "group",
+                                                                 "aria-label": "Rating"}});
+        for (var n = 1; n <= 5; n++) {
+            (function (value) {
+                var button = el("button", {type: "button", className: "viewer-rate" +
+                                           (value <= rating ? " is-on" : ""),
+                                           text: value <= rating ? STAR : HOLLOW_STAR,
+                                           title: "Rate " + plural(value, "star") + " (" + value +
+                                               ")",
+                                           attrs: {"aria-label": "Rate " + plural(value, "star"),
+                                                   "aria-pressed": value === rating ? "true"
+                                                       : "false",
+                                                   "data-stars": String(value)}});
+                button.addEventListener("click", function () {
+                    // (Again on the rating it has: no rating.)
+                    markPicture(rec, infoContext(rec), {rating: value === rating ? 0 : value},
+                                button);
+                });
+                group.appendChild(button);
+            })(n);
+        }
+        box.appendChild(group);
+    }
+
     function setInfo(open, remember) {
         lightbox.root.classList.toggle("info-open", open);
         lightbox.info.setAttribute("aria-pressed", open ? "true" : "false");
@@ -2577,10 +4695,30 @@ var VIEWER = (function () {
         }, 0);
     }
 
+    // A slider (such as a 360 video's seek bar) is no place to type: the
+    // viewer's letters, digits and Space work there (see sliderKey).
     function typing(target) {
         var tag = target && target.tagName;
-        return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
-            (target && target.isContentEditable);
+        return (tag === "INPUT" && !isSlider(target)) || tag === "TEXTAREA" ||
+            tag === "SELECT" || Boolean(target && target.isContentEditable);
+    }
+
+    function isSlider(target) {
+        return Boolean(target && target.tagName === "INPUT" &&
+                       String(target.type).toLowerCase() === "range");
+    }
+
+    // The keys a focused slider uses itself (it moves with them).
+    function sliderKey(target, key) {
+        return isSlider(target) &&
+            /^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End|PageUp|PageDown)$/.test(key);
+    }
+
+    /* The record of the picture the viewer's marks are for: the one in the
+       information pane, which in a drive is the clip on show (it follows
+       the clip that plays), else the picture shown. */
+    function paneRecord() {
+        return record(lightbox.paneId || lightbox.id);
     }
 
     /* Does Space play and pause the video shown, with the focus on target?
@@ -2593,6 +4731,9 @@ var VIEWER = (function () {
         }
         var own = [lightbox.close, lightbox.zoomIn, lightbox.zoomOut, lightbox.reset,
                    lightbox.info, lightbox.prev, lightbox.next];
+        if (lightbox.marks.contains(target)) {
+            return true;
+        }
         return own.indexOf(target) >= 0 ||
             !/^(BUTTON|A|SUMMARY)$/.test(target.tagName || "");
     }
@@ -2600,6 +4741,9 @@ var VIEWER = (function () {
     function keydown(event) {
         if (!lightbox || lightbox.root.hidden || event.ctrlKey || event.metaKey || event.altKey) {
             return;
+        }
+        if (event.target && event.target.closest && event.target.closest("dialog")) {
+            return;         // (a dialog over the viewer, such as the album picker, has them)
         }
         var key = event.key;
         var handled = true;
@@ -2612,19 +4756,27 @@ var VIEWER = (function () {
         } else if (key === "Tab") {
             trapFocus(event);
             return;
-        } else if (typing(event.target) || isEditing(lightbox.pane)) {
+        } else if (typing(event.target) || isEditing(lightbox.pane) ||
+                   sliderKey(event.target, key)) {
             // (While the edit form is open the keys work in it: an arrow on
-            // its Save button never leaves the picture.)
+            // its Save button never leaves the picture. A slider keeps its
+            // arrows, Home and End.)
             return;
+        } else if (event.target && /(^| )drive-track( |$)/.test(event.target.className || "") &&
+                   lightbox.stage.driveKey(key)) {
+            // The strip of a drive has the focus: the arrows, Page Up, Page
+            // Down, Home and End move in the drive.
+            event.preventDefault();
         } else if (event.target && event.target.tagName === "VIDEO" &&
                    (key === "ArrowLeft" || key === "ArrowRight")) {
             // The player has the keyboard focus: the arrows seek (5 s).
             event.preventDefault();
             lightbox.stage.seekBy(key === "ArrowLeft" ? -5 : 5);
         } else if (event.target && event.target.tagName === "VIDEO" &&
-                   !/^[iIeEmMlL]$/.test(key)) {
-            // (Space, Home, End and the rest: the player's own; I, E, M and L
-            // are the viewer's, as the players use none of them.)
+                   !/^[iIeEmMlLfFaA0-5]$/.test(key)) {
+            // (Space, Home, End and the rest: the player's own; I, E, M, L
+            // and the marks' keys are the viewer's, as the players use none
+            // of them.)
             return;
         } else if (key === " " && lightbox.stage.video && viewerSpace(event.target)) {
             event.preventDefault();
@@ -2654,8 +4806,13 @@ var VIEWER = (function () {
             lightbox.stage.zoomBy(1.5);
         } else if (key === "-" || key === "_") {
             lightbox.stage.zoomBy(1 / 1.5);
-        } else if (key === "0") {
+        } else if (key === "0" && (!admin() || lightbox.stage.isMoved())) {
+            // (The admin's 0 clears the rating, once the view is as it was.)
             lightbox.stage.reset();
+        } else if (/^[fFaA0-5]$/.test(key) && admin() && paneRecord()) {
+            // (In a drive: the clip on show, as the pane and the bar's marks.)
+            event.preventDefault();
+            markByKey(paneRecord(), infoContext(paneRecord()), key);
         } else {
             handled = false;
         }
@@ -2701,6 +4858,69 @@ var VIEWER = (function () {
     }
 
     var preloaded = [];
+
+    /* What Stage.showDrive wants for a drive (options.driveOf), starting at
+       the clip id: its clips' records and addresses, and onClip, which makes
+       the information pane follow the clip that plays. */
+    function driveUrls(drive, id) {
+        var clips = [];
+        var start = 0;
+        var tester = document.createElement("video");
+        var probe = function (type) {
+            return tester.canPlayType(type);
+        };
+        var place = null;
+        (drive.clips || []).forEach(function (clipId) {
+            var rec = record(clipId);
+            if (!rec) {
+                return;
+            }
+            if (clipId === id) {
+                start = clips.length;
+            }
+            // A hole: seconds missing (dh), or clips of the drive that are
+            // not here (its place, dx, skips some: an album's clips).
+            var at = typeof rec.dx === "number" ? rec.dx : 0;
+            var hole = rec.dh || (place !== null && at > place + 1 ? 1 : 0);
+            place = at;
+            clips.push({id: clipId, rec: rec, video: SITE.videoUrl ? SITE.videoUrl(rec) : null,
+                        poster: SITE.previewUrl(rec) || SITE.thumbUrl(rec),
+                        original: admin() ? SITE.imageUrl(rec) : null,
+                        playable: canPlayVideo(rec, probe),
+                        duration: rec.dr > 0 ? rec.dr : null, hole: hole});
+        });
+        var shownId = id;
+        // cover: the record with the drive's own title and description.
+        var spec = {clips: clips, start: start, matched: drive.matched || {},
+                    cover: drive.text !== null && drive.text !== undefined
+                        ? record(drive.text) : null};
+        spec.onClip = function (index) {
+            if (!lightbox || lightbox.id !== shownId || !spec.clips[index]) {
+                return;
+            }
+            lightbox.driveIndex = index;
+            var clip = spec.clips[index];
+            if (lightbox.paneId === clip.id || isEditing(lightbox.pane)) {
+                return;
+            }
+            lightbox.paneId = clip.id;
+            renderPane(clip.rec, null);
+            // (The bar's star and rating, and the mark keys, go with it.)
+            showBarMarks(clip.rec);
+            var token = ++lightbox.clipToken;
+            if (clip.id !== shownId && window.SITE && SITE.loadRecord) {
+                SITE.loadRecord(clip.id, function (detail) {
+                    if (lightbox && token === lightbox.clipToken && detail &&
+                            lightbox.paneId === clip.id) {
+                        renderPane(clip.rec, detail);
+                    }
+                });
+            } else if (lightbox.shownDetail) {
+                renderPane(clip.rec, lightbox.shownDetail);
+            }
+        };
+        return spec;
+    }
 
     function preload(id) {
         var rec = record(id);
@@ -2757,22 +4977,63 @@ var VIEWER = (function () {
                 if (options.onHidden) {
                     options.onHidden(ids, hidden);
                 }
-                renderPane(rec, lightbox.detail);
+                // (lightbox.detail is that of the picture in the pane.)
+                if ((lightbox.paneId || lightbox.id) === rec.i) {
+                    renderPane(rec, lightbox.detail);
+                }
             },
             onEdited: function (id, detail) {
-                lightbox.detail = detail;
+                // (The pane may show another picture by now: an answer that
+                // came late keeps its detail to itself.)
+                if (lightbox.paneId === id) {
+                    lightbox.detail = detail;
+                }
                 if (lightbox.id === id) {
-                    lightbox.title.textContent = rec.t || rec.n || "";
+                    lightbox.title.textContent = titleOf(rec);
                 }
                 if (options.onEdited) {
                     options.onEdited(id);
+                }
+            },
+            albums: options.albums,
+            onMarked: function (ids) {
+                // The picture in the pane (in a drive: the clip on show),
+                // drawn again with its own details (lightbox.detail).
+                if ((lightbox.paneId || lightbox.id) === rec.i) {
+                    renderPane(rec, lightbox.detail);
+                    showBarMarks(rec);
+                }
+                if (options.onMarked) {
+                    options.onMarked(ids);
                 }
             },
             get: options.get,
             detailUrl: options.detailUrl,
             inPage: true
         };
+        var drive = lightbox.driveSpec;
+        if (drive && rec) {
+            var at = -1;
+            drive.clips.forEach(function (clip, index) {
+                if (clip.id === rec.i) {
+                    at = index;
+                }
+            });
+            if (at >= 0) {
+                var timeline = driveTimeline(drive.clips.map(function (clip) {
+                    return clip.duration;
+                }));
+                context.drive = {cover: drive.cover, index: at, count: drive.clips.length,
+                                 start: timeline.starts[at], length: timeline.total};
+            }
+        }
         return context;
+    }
+
+    // The title bar: a drive's own title while a drive is shown.
+    function titleOf(rec) {
+        var cover = lightbox.driveSpec ? lightbox.driveSpec.cover : null;
+        return (cover && cover.dvt) || rec.t || rec.n || "";
     }
 
     function renderPane(rec, detail) {
@@ -2784,11 +5045,26 @@ var VIEWER = (function () {
         }
     }
 
+    /* The note under the stage of a folded stack (or drive): how many
+       pictures (clips) it holds, and a button that opens it in the grid. */
     function showStackNote(rec) {
         var options = lightbox.options;
         var members = options.stackOf ? options.stackOf(rec.i) : null;
         var note = lightbox.stack;
         clear(note);
+        var drive = !members && rec.mv && options.driveOf ? options.driveOf(rec.i) : null;
+        if (drive && drive.folded && options.onExpandDrive && drive.clips.length > 1) {
+            note.appendChild(document.createTextNode("A drive of " + plural(drive.clips.length,
+                                                                            "clip") + " "));
+            var open = el("button", {type: "button", className: "button small",
+                                     text: "Show its clips in the grid"});
+            open.addEventListener("click", function () {
+                options.onExpandDrive(rec.i);
+            });
+            note.appendChild(open);
+            note.hidden = false;
+            return;
+        }
         if (!members || members.length < 2) {
             note.hidden = true;
             return;
@@ -2827,18 +5103,33 @@ var VIEWER = (function () {
         lightbox.counter.textContent = inList
             ? (lightbox.index + 1).toLocaleString() + " of " + lightbox.ids.length.toLocaleString()
             : detour || "Not in these results";
-        lightbox.title.textContent = rec.t || rec.n || "";
         lightbox.prev.disabled = inList ? lightbox.index <= 0 : false;
         lightbox.next.disabled = inList ? lightbox.index >= lightbox.ids.length - 1 : false;
-        lightbox.stage.show(rec, stageUrls(rec, null));
+        var urls = stageUrls(rec, null);
+        var drive = rec.mv && lightbox.options.driveOf ? lightbox.options.driveOf(id) : null;
+        lightbox.driveSpec = drive ? driveUrls(drive, id) : null;
+        lightbox.shownDetail = null;
+        lightbox.paneId = id;
+        lightbox.clipToken += 1;
+        if (lightbox.driveSpec && lightbox.driveSpec.clips.length > 1) {
+            urls.drive = lightbox.driveSpec;
+        } else {
+            lightbox.driveSpec = null;
+        }
+        lightbox.title.textContent = titleOf(rec);
         renderPane(rec, null);
+        lightbox.stage.show(rec, urls);
+        showBarMarks(rec);
         showStackNote(rec);
         var token = ++lightbox.detailToken;
         if (window.SITE && SITE.loadRecord) {
             SITE.loadRecord(id, function (detail) {
                 if (lightbox && token === lightbox.detailToken && detail) {
-                    renderPane(rec, detail);
-                    // (A video may have a playable copy.)
+                    lightbox.shownDetail = detail;
+                    if (lightbox.paneId === id) {
+                        renderPane(rec, detail);
+                    }
+                    // (A video may have a playable copy; a drive a sped-up preview.)
                     lightbox.stage.videoDetail(detail);
                 }
             });
@@ -2973,20 +5264,32 @@ var VIEWER = (function () {
         keepFocus();
     }
 
-    // The information pane of the picture shown, drawn again (not while
-    // an edit is open in it).
+    // The information pane of the picture shown (of a drive: the clip it
+    // follows), drawn again (not while an edit is open in it).
     function refreshInfo() {
         if (!lightbox || lightbox.root.hidden || isEditing(lightbox.pane)) {
             return;
         }
-        var rec = record(lightbox.id);
+        var rec = record(lightbox.paneId || lightbox.id);
         if (rec) {
             renderPane(rec, lightbox.detail);
+            showBarMarks(rec);
         }
     }
 
     return {
         format: format,
+        marks: {
+            favorite: function (ids, on, get) {
+                return sendMarks(ids, {favorite: Boolean(on)}, get);
+            },
+            rate: function (ids, value, get) {
+                return sendMarks(ids, {rating: value}, get);
+            },
+            picker: albumPicker,
+            byKey: markByKey,
+            stars: stars
+        },
         Stage: Stage,
         stageUrls: stageUrls,
         renderInfo: renderInfo,
