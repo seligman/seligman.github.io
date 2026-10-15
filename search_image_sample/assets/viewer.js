@@ -11,12 +11,17 @@
        moreLikeThis(id)          "More like this" (or M): search similar:<id>
                                  in the page (without it, the button is a
                                  link to the search page)
+       hasVector(id)             the picture's meaning vector is there:
+                                 "More like this" is left out when its strip
+                                 (similar) is empty, as the search would find
+                                 the picture alone
        hasLook(id), looksLike(id) -> [ids], onLooksLike(id)  "Looks like
                                  this" (or L): the button shows for a
-                                 picture with a look vector and searches
-                                 look:<id> (in the page with onLooksLike),
-                                 and a strip of the pictures that look most
-                                 like it
+                                 picture with a look vector that others
+                                 look like (its strip is not empty) and
+                                 searches look:<id> (in the page with
+                                 onLooksLike), and a strip of the pictures
+                                 that look most like it
        onShow(id, position)      a picture is shown (the page keeps #id=)
        onClose(id)               the lightbox closed on picture id
        onHidden(ids, hidden)     pictures were hidden or shown again (admin)
@@ -131,7 +136,10 @@
        get no boxes, a strip of its faces in the pane instead. A box (or a
        face of the strip; Tab reaches them, Enter opens) opens a small
        popover by it, a sheet at the foot of a phone's screen, to say who
-       the face is: type a few letters of a name and Enter (see
+       the face is: the named people it most likely is first (the
+       server's suggestions, people_suggest.py; one clearly ahead is
+       marked and Enter takes it; for a face of an unnamed person, "Name
+       Person 12 as X"), type a few letters of a name and Enter (see
        format.faceChoices and openNaming), "Not <name>" or "Not a face";
        each change can be undone (Undo in its message, or Ctrl+Z while it
        shows), and the pane and the boxes follow it. Of a
@@ -491,8 +499,20 @@ var VIEWER = (function () {
        is the name spelled with a sharp s): the text as a new name -- of the
        face's person when it has none ("name": all its faces), and of a new
        person of this face alone ("new"). Once something is typed, the first
-       one is what Enter takes. */
-    function faceChoices(people, face, text) {
+       one is what Enter takes.
+       suggested, when given, is the server's answer for this face (GET
+       /api/admin/people/suggest, people_suggest.suggest): the named people
+       it most likely is, closest first. With nothing typed they come first,
+       each with "suggested" (the server's item: score, words, in_picture...):
+       for a face in no person {kind: "person"} (this face goes to them; not
+       listed again below), for a face of an unnamed person {kind: "merge",
+       person, from: the face's person, faces: how many it has} ("Name
+       Person 12 as X": all its faces; the people below still take this
+       face alone). Typing filters them as the others: the people whose name
+       matches best come first as without suggestions, a suggested one first
+       of those that match as well; "Name Person 12 as X" only after every
+       person, so the letters typed never take the whole person. */
+    function faceChoices(people, face, text, suggested) {
         var typed = String(text === null || text === undefined ? "" : text)
             .replace(/\s+/g, " ").replace(/^ | $/g, "");
         var key = nameKey(typed);
@@ -501,28 +521,61 @@ var VIEWER = (function () {
         var numbered = /[0-9]/.test(key);
         var exact = false;
         var found = [];
-        (Array.isArray(people) ? people : []).forEach(function (person, order) {
+        var listed = Array.isArray(people) ? people : [];
+        var rankOf = function (person) {
+            var label = nameKey(person.label || person.name || "");
+            return !key ? 3 : label === key ? 0 : label.indexOf(key) === 0 ? 1
+                : (" " + label).indexOf(" " + key) >= 0 ? 2 : -1;
+        };
+        var offered = suggestedPeople(people, face, suggested);
+        var merging = offered.length && suggested.basis === "person";
+        var taken = {};
+        offered.forEach(function (item, order) {
+            if (key && serverNameKey(item.person.label || item.person.name || "") === server) {
+                exact = true;
+            }
+            var rank = rankOf(item.person);
+            if (rank >= 0) {
+                found.push({rank: rank, order: order, person: item.person, suggested: item.item,
+                            first: true});
+            }
+            if (!merging) {
+                taken[item.person.id] = true;
+            }
+        });
+        listed.forEach(function (person, order) {
             if (!person || typeof person.id !== "number") {
                 return;
             }
-            var label = nameKey(person.label || person.name || "");
             if (key && serverNameKey(person.label || person.name || "") === server) {
                 exact = true;
             }
-            if (person.id === own || (!person.name && (!key || !numbered))) {
+            if (person.id === own || taken[person.id] ||
+                    (!person.name && (!key || !numbered))) {
                 return;
             }
-            var rank = !key ? 3 : label === key ? 0 : label.indexOf(key) === 0 ? 1
-                : (" " + label).indexOf(" " + key) >= 0 ? 2 : -1;
+            var rank = rankOf(person);
             if (rank >= 0) {
-                found.push({rank: rank, order: order, person: person});
+                found.push({rank: rank, order: order, person: person, first: false});
             }
         });
+        var merges = function (item) {
+            return item.first && merging ? 1 : 0;
+        };
         found.sort(function (a, b) {
-            return a.rank - b.rank || a.order - b.order;
+            // (Nothing typed: the suggestions in their order, then the others. Typed:
+            // the people by how well they match -- a suggestion first of those that
+            // match as well --, then the whole people: "Name Person 12 as".)
+            return (key ? merges(a) - merges(b) : 0) || a.rank - b.rank ||
+                (a.first ? 0 : 1) - (b.first ? 0 : 1) || a.order - b.order;
         });
         var choices = found.map(function (item) {
-            return {kind: "person", person: item.person};
+            if (item.first && merging) {
+                return {kind: "merge", person: item.person, from: own,
+                        faces: suggested.person.faces, suggested: item.suggested};
+            }
+            return item.first ? {kind: "person", person: item.person, suggested: item.suggested}
+                : {kind: "person", person: item.person};
         });
         // ("Person 12" is how people without a name are shown: no name.)
         if (key && !exact && !/^person [0-9]+$/.test(key)) {
@@ -532,6 +585,66 @@ var VIEWER = (function () {
             choices.push({kind: "new", name: typed});
         }
         return choices;
+    }
+
+    /* The suggestions of the server's answer suggested that fit face ({person,
+       named}): [{person (the page's own person: /api/people's name, cover and
+       faces; the server's while the page has none -- once it has, a person it
+       does not list, of the libraries not shown, is left out), item (the
+       server's)}], or []: an answer for a face in no person only for such a
+       face, one for a face of an unnamed person only for that person's faces,
+       never the face's own person, nor anything for a face of a named
+       person. */
+    function suggestedPeople(people, face, suggested) {
+        if (!suggested || !Array.isArray(suggested.people) || (face && face.named)) {
+            return [];
+        }
+        var own = face && typeof face.person === "number" ? face.person : null;
+        if (suggested.basis === "face" ? own !== null : suggested.basis !== "person" ||
+                own === null || !suggested.person || suggested.person.id !== own) {
+            return [];
+        }
+        var known = {};
+        (Array.isArray(people) ? people : []).forEach(function (person) {
+            if (person && typeof person.id === "number") {
+                known[person.id] = person;
+            }
+        });
+        var offered = [];
+        suggested.people.forEach(function (item) {
+            if (!item || typeof item.id !== "number" || item.id === own ||
+                    typeof item.score !== "number") {
+                return;
+            }
+            var person = known[item.id] || (Array.isArray(people) ? null : {
+                id: item.id, name: item.name || "", label: item.label || item.name || "",
+                cover: item.cover, faces: item.faces, hidden: Boolean(item.hidden)});
+            if (person && (person.name || person.label)) {
+                offered.push({person: person, item: item});
+            }
+        });
+        return offered;
+    }
+
+    /* How close a suggested person is (people_suggest.suggest's item): its words
+       and the closeness to two places ("very like \u00b7 0.62"; never under 0), and
+       whether a face of them is in this picture -- for a "Name Person 12 as"
+       (kind "merge"), in how many of that person's pictures. */
+    function closenessText(item, kind) {
+        if (!item || typeof item.score !== "number") {
+            return "";
+        }
+        var text = (item.words ? item.words + " \u00b7 " : "") + closeness(item.score);
+        if (!item.in_picture) {
+            return text;
+        }
+        return text + " \u00b7 " + (kind !== "merge" ? "also in this picture"
+            : typeof item.shared === "number" ? "also in " + item.shared + " of its pictures"
+                : "also in its pictures");
+    }
+
+    function closeness(score) {
+        return Math.max(0, score).toFixed(2);
     }
 
     // A name as the server tells names apart (people_groups.name_key: NFKC and
@@ -1353,9 +1466,17 @@ var VIEWER = (function () {
         return rec && typeof rec.np === "string" ? rec.np : "";
     }
 
-    // The kinds of named places, in words (others: the kind with spaces).
+    // The kinds of named places, in words (others: the kind with spaces); the
+    // shops named only for a picture that shows one (named_places.py
+    // SHOWN_SHOPS) by what they sell.
     var KIND_WORDS = {aerodrome: "airport", place_of_worship: "place of worship",
-                      fast_food: "fast food"};
+                      fast_food: "fast food", clothes: "clothes shop", shoes: "shoe shop",
+                      car: "car dealer", furniture: "furniture shop", bed: "bed shop",
+                      wholesale: "warehouse store", jewelry: "jewellery shop",
+                      electronics: "electronics shop", toys: "toy shop",
+                      sports: "sports shop", outdoor: "outdoor shop", music: "music shop",
+                      cosmetics: "cosmetics shop", doityourself: "DIY store",
+                      hardware: "hardware store", mobile_phone: "phone shop"};
 
     /* "aquarium, 40 m away", "zoo, taken inside it": what a named place is
        (nk) and how far it is (nd, or ni inside it), or "". An approximate
@@ -1425,6 +1546,7 @@ var VIEWER = (function () {
         durationText: durationText,
         personMoment: personMoment,
         faceChoices: faceChoices,
+        closenessText: closenessText,
         readingOrder: readingOrder,
         searchedQuery: searchedQuery,
         momentText: momentText,
@@ -4783,15 +4905,25 @@ var VIEWER = (function () {
 
     /* Tell the server the owner's choice about the picture's place (body:
        {choice: "accept" | "set" | "reject" | "clear", lat, lon}); the place
-       and time keys of the record change in place, the pane is drawn again
-       (unless it shows another picture by now) and context.onEdited(id,
-       detail) is told. */
+       and time keys of the record -- and of the other records whose
+       position, place or time changed (answer.others, found with
+       context.get: the other pictures of its visit may take its named
+       place) -- change in place, the pane is drawn again (unless it shows
+       another picture by now) and context.onEdited(id, detail) is told. */
     function choosePlace(box, rec, detail, context, body, button, said) {
         box.placeForm = null;
         return busy(button, SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/place", body))
             .then(function (answer) {
                 var released = releaseSheet(box);
                 patchPlaceKeys(rec, answer ? answer.record : null);
+                var others = answer && answer.others && typeof answer.others === "object"
+                    ? answer.others : {};
+                Object.keys(others).forEach(function (id) {
+                    var other = context.get ? context.get(Number(id)) : null;
+                    if (other && other !== rec) {
+                        patchPlaceKeys(other, others[id]);
+                    }
+                });
                 var shown = {};
                 Object.keys(detail || {}).forEach(function (key) {
                     shown[key] = detail[key];
@@ -6125,6 +6257,7 @@ var VIEWER = (function () {
        is the full record when it has arrived (server: /api/image), else
        null. context: query, libraryName(id), chipUrl, onChip, similar(id),
        similarUrl(id), onSimilar(id), moreLikeThisUrl(id), onMoreLikeThis(id),
+       hasVector(id),
        hasLook(id), looksLike(id), looksLikeUrl(id), onLooksLike(id), onLook(id) (a
        picture of the Looks like this strip opens),
        onHidden, detailUrl(id), inPage (true in the lightbox), expandedText,
@@ -6387,6 +6520,14 @@ var VIEWER = (function () {
         }
         var likeUrl = context.moreLikeThisUrl && (rec.ds || rec.t)
             ? context.moreLikeThisUrl(rec.i) : null;
+        var similar = context.similar ? context.similar(rec.i) : [];
+        if (likeUrl && context.similar && context.hasVector && context.hasVector(rec.i) &&
+                !(similar && similar.length)) {
+            // (Nothing else is like it by meaning -- its strip below is empty: the
+            // search would find only this picture. Without its vector, the button
+            // stays: the vectors may be on their way, or it searches by words.)
+            likeUrl = null;
+        }
         if (likeUrl) {
             var like = el("a", {className: "button small info-like", href: likeUrl,
                                 text: "More like this",
@@ -6403,6 +6544,12 @@ var VIEWER = (function () {
         }
         var lookUrl = context.looksLikeUrl && context.hasLook && context.hasLook(rec.i)
             ? context.looksLikeUrl(rec.i) : null;
+        var alike = context.looksLike ? context.looksLike(rec.i) : [];
+        if (lookUrl && context.looksLike && !(alike && alike.length)) {
+            // (Nothing else looks like it -- its strip below is empty: the search
+            // would find only this picture.)
+            lookUrl = null;
+        }
         if (lookUrl) {
             var look = el("a", {className: "button small info-look", href: lookUrl,
                                 text: "Looks like this",
@@ -6429,7 +6576,6 @@ var VIEWER = (function () {
             box.appendChild(adminRow);
         }
 
-        var similar = context.similar ? context.similar(rec.i) : [];
         if (similar && similar.length) {
             var strip = el("div", {className: "info-similar"});
             similar.forEach(function (id) {
@@ -6451,7 +6597,6 @@ var VIEWER = (function () {
             });
             box.appendChild(section("More like this", strip, "info-similar-section"));
         }
-        var alike = context.looksLike ? context.looksLike(rec.i) : [];
         if (alike && alike.length) {
             box.appendChild(section("Looks like this", lookStrip(alike, context),
                                     "info-similar-section info-looks-section"));
@@ -7076,7 +7221,9 @@ var VIEWER = (function () {
        them, Enter or a click takes one), "Not <name>" and "Not a face"; Esc,
        x or a press elsewhere closes it (Esc gives the keyboard back to the
        box). On a narrow upright screen it is a sheet at the foot of the
-       screen (above the on-screen keyboard). */
+       screen (above the on-screen keyboard). The named people the face most
+       likely is come first once the server has said (loadSuggestions), one
+       of them marked when it is clearly ahead: Enter takes it. */
     function openNaming(spec) {
         if (!admin() || !hasDocument || !spec || !spec.face) {
             return;
@@ -7130,7 +7277,7 @@ var VIEWER = (function () {
                        node: node, input: input, list: list, hint: hint, error: error,
                        now: now, actions: actions, ids: ids, choices: [], active: -1,
                        busy: false, anchor: spec.anchor, gap: spec.gap || 6,
-                       onBox: Boolean(spec.onBox), cleanup: [],
+                       onBox: Boolean(spec.onBox), cleanup: [], suggested: null, moved: null,
                        pane: peoplePane && peoplePane.rec.i === spec.rec.i ? peoplePane.box
                            : null};
         naming = current;
@@ -7140,6 +7287,7 @@ var VIEWER = (function () {
         input.addEventListener("input", function () {
             error.hidden = true;
             current.enterWaiting = false;
+            current.moved = null;
             drawChoices(current);
             placeNaming(current);       // (a shorter list: it stays by its face)
         });
@@ -7209,6 +7357,7 @@ var VIEWER = (function () {
         }
         placeNaming(current);
         input.focus();
+        loadSuggestions(current);
         loadKnownPeople(function () {
             if (naming !== current) {
                 return;
@@ -7218,12 +7367,42 @@ var VIEWER = (function () {
             drawChoices(current);
             placeNaming(current);
             // (Enter pressed while the people came: it takes a person the letters name,
-            // never a new name made of them -- that one is chosen by hand.)
+            // for this face -- never a new name made of them, nor the whole person: those
+            // are chosen by hand.)
             var first = current.enterWaiting && current.active === 0 ? current.choices[0] : null;
             current.enterWaiting = false;
             if (first && first.kind === "person") {
                 take(current, first);
             }
+        });
+    }
+
+    /* The named people the popover's face most likely is (GET
+       /api/admin/people/suggest, people_suggest.py): asked for at once, and
+       the choices drawn again when they come (the browser keeps the answer
+       and asks again by its ETag) -- the line chosen now stays chosen. None
+       for a face of a named person: it has its name. */
+    function loadSuggestions(current) {
+        var face = current.face;
+        if (!window.SHELL || !SHELL.admin || (face.person && !/^Person [0-9]+$/.test(face.label))) {
+            return;
+        }
+        SHELL.admin("/people/suggest?face=" + encodeURIComponent(face.id), undefined,
+                    {quiet: true}).then(function (answer) {
+            if (naming !== current || !answer || !Array.isArray(answer.people) ||
+                    answer.face !== face.id) {
+                return;
+            }
+            current.suggested = answer;
+            // (What Enter takes does not change under the letters being typed.)
+            if (current.active >= 0 && current.choices[current.active] &&
+                    /\S/.test(current.input.value)) {
+                current.moved = choiceKey(current.choices[current.active]);
+            }
+            drawChoices(current);
+            placeNaming(current);
+        }, function () {
+            return null;           // (no suggestions: the people as before)
         });
     }
 
@@ -7313,10 +7492,23 @@ var VIEWER = (function () {
         var named = face.person ? (own ? Boolean(own.name) : !/^Person [0-9]+$/.test(face.label))
             : false;
         current.choices = faceChoices(knownPeople, {person: face.person || null, named: named},
-                                      current.input.value);
+                                      current.input.value, current.suggested);
         clear(current.list);
+        var lastSuggested = -1;
+        var merges = false;
         current.choices.forEach(function (choice, index) {
-            current.list.appendChild(choiceNode(current, choice, index, own));
+            // (A line under the suggestions when they lead the list.)
+            if (choice.suggested && lastSuggested === index - 1) {
+                lastSuggested = index;
+            }
+            merges = merges || choice.kind === "merge";
+        });
+        current.choices.forEach(function (choice, index) {
+            var node = choiceNode(current, choice, index, own, merges);
+            if (index === lastSuggested && index < current.choices.length - 1) {
+                node.classList.add("is-last-suggested");
+            }
+            current.list.appendChild(node);
         });
         current.list.hidden = !current.choices.length;
         current.input.setAttribute("aria-expanded", current.choices.length ? "true" : "false");
@@ -7325,7 +7517,39 @@ var VIEWER = (function () {
         // them, see openNaming, rather than take a new name made of those letters.)
         var listed = knownPeople !== null;
         var hint = "";
-        if (!listed) {
+        // (Nothing typed: the suggestion clearly ahead is marked, and Enter takes it.)
+        var preselect = -1;
+        var pick = current.suggested ? current.suggested.preselect : null;
+        if (!typed && typeof pick === "number") {
+            current.choices.forEach(function (choice, index) {
+                if (preselect < 0 && choice.suggested && choice.person.id === pick) {
+                    preselect = index;
+                }
+            });
+        }
+        // (Enter takes the first choice once something is typed and the people are
+        // there; before, none: the arrows choose -- and a choice the arrows came to
+        // stays chosen when the choices are drawn again.)
+        var active = current.choices.length && typed && listed ? 0 : preselect;
+        if (current.moved) {
+            current.choices.forEach(function (choice, index) {
+                if (choiceKey(choice) === current.moved) {
+                    active = index;
+                }
+            });
+        }
+        current.preselectAt = preselect;
+        current.preselectHint = "";
+        if (preselect >= 0) {
+            var chosen = current.choices[preselect];
+            current.preselectHint = "Enter: " + (chosen.kind === "merge"
+                ? "name " + (own ? own.label : face.label) + " as " + chosen.person.label +
+                    " (all " + plural(chosen.faces, "face") + ")"
+                : chosen.person.label) + ", clearly the closest.";
+        }
+        if (preselect >= 0 && active === preselect) {
+            hint = current.preselectHint;
+        } else if (!listed) {
             hint = current.loaded ? "The people could not be loaded: choose a line with the " +
                 "arrows or a click." : "Loading the people\u2026";
         } else if (!current.choices.length) {
@@ -7337,18 +7561,24 @@ var VIEWER = (function () {
         }
         current.hint.textContent = hint;
         current.hint.hidden = !hint;
-        // (Enter takes the first choice once something is typed and the people are
-        // there; before, none: the arrows choose.)
-        setActive(current, current.choices.length && typed && listed ? 0 : -1);
+        setActive(current, active);
     }
 
-    function choiceNode(current, choice, index, own) {
-        var node = el("li", {className: "face-pop-option" + (choice.kind === "person" ? ""
+    function choiceKey(choice) {
+        return choice.kind + ":" + (choice.person && typeof choice.person === "object"
+            ? choice.person.id : choice.person) + ":" + (choice.name || "");
+    }
+
+    // merges: "Name Person 12 as" lines are listed too (a person's line then says that
+    // it takes this face alone).
+    function choiceNode(current, choice, index, own, merges) {
+        var node = el("li", {className: "face-pop-option" + (choice.kind === "person" ||
+                                                             choice.kind === "merge" ? ""
                                                              : " is-new"),
                              id: current.ids + "-option-" + index,
                              attrs: {role: "option", "aria-selected": "false"}});
         var small = "";
-        if (choice.kind === "person") {
+        if (choice.kind === "person" || choice.kind === "merge") {
             var person = choice.person;
             var url = person.cover !== null && person.cover !== undefined && window.SITE &&
                 SITE.faceUrl ? SITE.faceUrl(person.cover) : null;
@@ -7356,10 +7586,42 @@ var VIEWER = (function () {
                                               decoding: "async"})
                 : el("span", {className: "face-pop-plus", text: "?",
                               attrs: {"aria-hidden": "true"}}));
-            node.appendChild(el("span", {className: "face-pop-name", text: person.label}));
-            // (Faces, as the popover's head and the messages count them.)
-            small = (typeof person.faces === "number" ? plural(person.faces, "face")
-                     : picturesOf(person)) + (person.hidden ? ", hidden" : "");
+            var ownName = own ? own.label : current.face.label;
+            var name = el("span", {className: "face-pop-name",
+                                   text: choice.kind === "merge" ? "Name " + ownName + " as " +
+                                       person.label : person.label});
+            if (choice.suggested) {
+                // (A suggestion: how close, under its name.)
+                node.classList.add("is-suggested");
+                var item = choice.suggested;
+                node.title = "How like " + person.label + "'s faces " +
+                    (choice.kind === "merge" ? ownName + "'s faces are, on average"
+                     : "this face is") + ": " + closeness(item.score) +
+                    " (1 would be the same face)" +
+                    (item.in_picture ? (choice.kind === "merge" ? "; " + person.label +
+                                        " is in pictures of " + ownName + " too"
+                                        : "; " + person.label + " is in this picture too")
+                     : "");
+                node.appendChild(el("span", {className: "face-pop-text"}, [
+                    name,
+                    el("span", {className: "face-pop-close",
+                                text: closenessText(item, choice.kind)})
+                ]));
+            } else {
+                node.appendChild(name);
+            }
+            // (The faces that go: as the popover's head and the messages count them; a
+            // person's own count while no line takes the whole person.)
+            small = choice.kind === "merge" ? "all " + plural(choice.faces, "face")
+                : merges ? "just this face"
+                    : typeof person.faces === "number" ? plural(person.faces, "face")
+                        : picturesOf(person);
+            if (merges && choice.kind === "person") {
+                node.title = "Just this face goes to " + person.label;
+            }
+            if (person.hidden) {
+                small += ", hidden";
+            }
         } else {
             node.appendChild(el("span", {className: "face-pop-plus", text: "+",
                                          attrs: {"aria-hidden": "true"}}));
@@ -7401,19 +7663,30 @@ var VIEWER = (function () {
         });
         if (index >= 0 && nodes[index]) {
             current.input.setAttribute("aria-activedescendant", nodes[index].id);
-            var list = current.list;
-            var item = nodes[index];
-            // (In sight in the list, which scrolls.)
-            if (typeof item.offsetTop === "number" && typeof list.scrollTop === "number") {
-                if (item.offsetTop < list.scrollTop) {
-                    list.scrollTop = item.offsetTop;
-                } else if (item.offsetTop + item.offsetHeight >
-                           list.scrollTop + list.clientHeight) {
-                    list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
-                }
-            }
+            keepInSight(current.list, nodes[index]);
         } else {
             current.input.removeAttribute("aria-activedescendant");
+        }
+    }
+
+    /* The chosen line in sight in the list, which scrolls: measured where both are on
+       the screen (a line's offsetTop is not measured from the list but from the
+       popover, the first box around it that is placed, and so counts the head and
+       the field above the list). */
+    function keepInSight(list, item) {
+        if (typeof list.scrollTop !== "number" || typeof list.getBoundingClientRect !==
+                "function" || typeof item.getBoundingClientRect !== "function") {
+            return;
+        }
+        var box = list.getBoundingClientRect();
+        var line = item.getBoundingClientRect();
+        var top = box.top + (list.clientTop || 0);
+        var bottom = top + list.clientHeight;
+        if (line.top < top) {
+            list.scrollTop -= top - line.top;
+        } else if (line.bottom > bottom) {
+            // (A line taller than the list: its top.)
+            list.scrollTop += Math.min(line.bottom - bottom, line.top - top);
         }
     }
 
@@ -7451,6 +7724,13 @@ var VIEWER = (function () {
                 var step = key === "ArrowDown" ? 1 : -1;
                 setActive(current, ((current.active < 0 ? (step > 0 ? -1 : 0) : current.active) +
                                     step + count) % count);
+                current.moved = choiceKey(current.choices[current.active]);
+                if (current.preselectAt >= 0) {
+                    // (The marked suggestion's "Enter: ..." only while it is chosen.)
+                    var on = current.active === current.preselectAt;
+                    current.hint.textContent = on ? current.preselectHint : "";
+                    current.hint.hidden = !on;
+                }
             } else if (key === "Enter" && !event.isComposing) {
                 event.preventDefault();
                 if (current.active >= 0 && current.choices[current.active]) {
@@ -7475,6 +7755,25 @@ var VIEWER = (function () {
             said = function () {
                 return "This face is " + choice.person.label + " now.";
             };
+        } else if (choice.kind === "merge") {
+            var was = (knownPerson(choice.from) || {label: face.label}).label;
+            // (Every face of the face's person goes to that person, as Merge on the People
+            // page; with the face: refused when a grouping moved it to another person since.)
+            send(current, "/people/" + encodeURIComponent(choice.from) + "/merge",
+                 {into: choice.person.id, face: face.id, undo: true}, function (reply) {
+                     var person = reply && reply.person ? reply.person : choice.person;
+                     // (How many faces moved, and how many the person has now.)
+                     var counts = [];
+                     if (typeof choice.faces === "number") {
+                         counts.push("its " + plural(choice.faces, "face"));
+                     }
+                     if (typeof person.faces === "number") {
+                         counts.push(plural(person.faces, "face") + " in all");
+                     }
+                     return was + " is " + person.label + " now" +
+                         (counts.length ? " (" + counts.join("; ") + ")" : "") + ".";
+                 });
+            return;
         } else if (choice.kind === "name") {
             var before = (knownPerson(choice.person) || {label: face.label}).label;
             // (With the face: refused when a grouping moved it to another person since.)
@@ -8542,6 +8841,7 @@ var VIEWER = (function () {
                 options.onChip(group, value);
             } : null,
             similar: options.similar,
+            hasVector: options.hasVector,
             similarUrl: function (id) {
                 return options.detailUrl ? options.detailUrl(id) : "#";
             },

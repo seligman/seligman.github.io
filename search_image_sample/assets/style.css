@@ -3168,7 +3168,9 @@ button.facet-title::after {
 /* The credit in a corner of a map (streets.js creditNode): the world
    image's (NASA's Blue Marble) while it shows, and OpenStreetMap's while
    street maps show -- the map page's (above the GeoNames credit of an
-   export), a trip's map's and the viewer's map of a drive */
+   export), a trip's map's and the viewer's map of a drive. Placed here for an
+   export's corner credit of one line; map.js (stackCredits) moves this
+   credit and the note up when that corner takes more lines. */
 
 #map-credit ~ #map-streets-credit {
     bottom: 34px;
@@ -4520,6 +4522,17 @@ html.viewer-open body {
     line-height: 1.4;
 }
 
+/* (A column whose list gives way when the room is short: the hint and the
+   buttons under it stay in sight.) */
+.face-popover[open] {
+    display: flex;
+    flex-direction: column;
+}
+
+.face-popover > * {
+    flex: none;
+}
+
 .face-popover.is-busy {
     cursor: progress;
 }
@@ -4599,6 +4612,8 @@ html.viewer-open body {
 }
 
 .face-pop-list {
+    flex: 0 1 auto;
+    min-height: 40px;
     max-height: 264px;
     margin: 8px 0 0;
     padding: 0;
@@ -4653,6 +4668,39 @@ html.viewer-open body {
     flex: none;
     color: var(--text-muted);
     font-size: 12px;
+}
+
+/* The named people the face most likely is, first (viewer.js faceChoices'
+   suggestions): how close under the name, a line after the last one. */
+.face-pop-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.face-pop-close {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.face-pop-option.is-active .face-pop-close {
+    color: var(--text);
+}
+
+.face-pop-option.is-last-suggested {
+    position: relative;
+    margin-bottom: 9px;
+}
+
+.face-pop-option.is-last-suggested::after {
+    position: absolute;
+    right: 8px;
+    bottom: -5px;
+    left: 8px;
+    border-bottom: 1px solid var(--border);
+    content: "";
 }
 
 .face-pop-hint {
@@ -6200,6 +6248,13 @@ body.map-panel-open #map-area-tools {
     border-radius: 4px;
     background: var(--surface);
     font-size: 11px;
+}
+
+/* (An export's link to its photo credits, export.py PHOTO_CREDITS_LINK: where the
+   corner's lines wrap on a narrow phone, it goes to the next line whole.) */
+
+.map-photo-credits {
+    white-space: nowrap;
 }
 
 /* Search by an example picture (looks): the picture button in the search box,

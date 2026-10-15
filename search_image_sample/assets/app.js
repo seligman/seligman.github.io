@@ -5620,6 +5620,9 @@
                 wantVectors();      // (an export loads them when first wanted)
                 return SearchCore.similar(data.index, other, 8, visibility());
             },
+            hasVector: function (other) {
+                return data.index.hasVector(other);
+            },
             moreLikeThis: function (other) {
                 whenSettled(function () {
                     // (Best match: the closest pictures first, whatever the
@@ -5799,10 +5802,25 @@
             }
             setData(loaded);
             run();
+            // (An export's map page links to its credits line, at the foot: there, once
+            // the pictures above it are laid out. The address keeps the search only.)
+            var credits = window.location.hash === "#credits" ? byId("credits") : null;
             openFromHash();
             writeUrl({id: hashId()});
             restoreWhenSettled();
+            if (credits) {
+                showCredits(credits);
+            }
         });
+    }
+
+    /* The credits line in sight for the map page's link to it: its start just below
+       the search bar, which sticks at the top. (A short line at the foot simply comes
+       into sight at the bottom, as the page goes no further; a long one on a small
+       phone, taller than the window, reads from its start.) */
+    function showCredits(node) {
+        var top = node.getBoundingClientRect().top;
+        window.scrollBy(0, top - barHeight() - 8);
     }
 
     // Pick up new descriptions (or hidden pictures) when coming back to the tab.

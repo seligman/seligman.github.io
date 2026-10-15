@@ -631,6 +631,10 @@ var MAP = (function () {
         var FIT_ZOOM = streets ? Math.max(TILE_ZOOM, FIT_STREETS) : TILE_ZOOM;
         // The note shows while this share of the view or more has no street map.
         var NOTE_SHARE = 0.25;
+        // Between an export's corner credit and the street maps' credit above it, and
+        // between the credits and the note (px; style.css's for a corner of one line).
+        var CREDIT_GAP = 5;
+        var NOTE_GAP = 11;
         var OCEAN = "#1a2c3d";
         var PANEL_PAGE = 120;
         var MOUSE_SLACK = 4;
@@ -650,6 +654,8 @@ var MAP = (function () {
         var messageBox = document.getElementById("map-message");
         var detailNote = document.getElementById("map-note");
         var streetsCredit = document.getElementById("map-streets-credit");
+        // (An export's: export.py render_page.)
+        var cornerCredit = document.getElementById("map-credit");
         var streetsLicence = document.getElementById("map-streets-licence");
         var zoomButtons = document.getElementById("map-zoom");
         var targetNote = document.getElementById("map-target");
@@ -892,8 +898,43 @@ var MAP = (function () {
                 dpr = ratio;
                 watchRatio();
             }
+            stackCredits();
             clampView();
             scheduleDraw();
+        }
+
+        /* An export's credit in the corner (#map-credit, export.py render_page: the
+           GeoNames and named places credits, the link to the photo credits) can take
+           two or three lines on a narrow screen: the street maps' credit and the note
+           go above it, however tall it is (style.css places them for a corner of one
+           line; the same gaps). Returns true when either moved. */
+        function stackCredits() {
+            if (!cornerCredit || cornerCredit.hidden) {
+                return false;
+            }
+            var corner = cornerCredit.getBoundingClientRect();
+            if (!corner.height) {
+                return false;
+            }
+            var moved = false;
+            function place(node, bottom) {
+                var value = Math.round(bottom) + "px";
+                if (node && node.style.bottom !== value) {
+                    node.style.bottom = value;
+                    moved = true;
+                }
+            }
+            // (Its top, measured from the foot of the map.)
+            var edge = Math.ceil(canvas.getBoundingClientRect().bottom - corner.top);
+            var below = edge;
+            if (streetsCredit) {
+                place(streetsCredit, edge + CREDIT_GAP);
+                if (!streetsCredit.hidden) {
+                    below = edge + CREDIT_GAP + streetsCredit.getBoundingClientRect().height;
+                }
+            }
+            place(detailNote, below + NOTE_GAP);
+            return moved;
         }
 
         /* Tiles */
@@ -907,7 +948,10 @@ var MAP = (function () {
             detailNote.hidden = drawn.stretch < 2 ||
                 (drawn.streets > 0 && drawn.missing < NOTE_SHARE * drawn.tiles);
             // (The credit: the world image's, the street maps', or both.)
-            if (STREETS.showCredit(streetsCredit, drawn) ||
+            var creditShown = STREETS.showCredit(streetsCredit, drawn);
+            // (The corner of an export: the note goes above the street maps' credit
+            // while that shows.)
+            if (stackCredits() || creditShown ||
                     (noteWas && !detailNote.hidden && drawn.streets)) {
                 // (Shown just now: the names are placed clear of it again.)
                 scheduleDraw();

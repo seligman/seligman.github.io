@@ -151,6 +151,9 @@
             similar: index ? function (id) {
                 return SearchCore.similar(index, id, 8, visibility);
             } : null,
+            hasVector: index ? function (id) {
+                return index.hasVector(id);
+            } : null,
             similarUrl: function (id) {
                 return SITE.detailUrl(id, search);
             },

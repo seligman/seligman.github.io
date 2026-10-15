@@ -2000,9 +2000,9 @@ var STREETS = (function () {
     // The road kinds that are streets (railways and ferries are not offered).
     var STREET_KINDS = ["highway", "major_road", "medium_road", "minor_road", "other", "path"];
     // How far a named place of the street maps names the pictures taken around
-    // it, by its kind (metres: named_places.py KINDS, which a test keeps the same),
-    // and the accuracy named_places.py gives a position taken indoors (see
-    // placeWithin).
+    // it, by its kind (metres: named_places.py KINDS and SHOWN_SHOPS, which a test
+    // keeps the same), and the accuracy named_places.py gives a position taken
+    // indoors (see placeWithin).
     var PLACE_REACH = {
         aerodrome: 300, airport: 300, alpine_hut: 60, amusement_arcade: 40, antiques: 15,
         aquarium: 150, archaeological_site: 150, art: 15, arts_centre: 60, attraction: 150,
@@ -2023,7 +2023,12 @@ var STREETS = (function () {
         scrub: 100, ski: 300, sports_centre: 80, stadium: 200, station: 150, theatre: 50,
         theme_park: 250, tower: 80, townhall: 80, university: 200, viewpoint: 150,
         village_green: 80, volcano: 1000, water_park: 100, waterfall: 150, wetland: 150,
-        wine: 15, wine_bar: 30, winery: 150, winter_sports: 300, wood: 150, zoo: 200
+        wine: 15, wine_bar: 30, winery: 150, winter_sports: 300, wood: 150, zoo: 200,
+        // (SHOWN_SHOPS: shops named only for a picture that shows one)
+        bed: 20, car: 30, clothes: 15, cosmetics: 15, doityourself: 30, electronics: 20,
+        florist: 15, furniture: 25, hardware: 20, jewelry: 15, mobile_phone: 15, music: 15,
+        outdoor: 20, shoes: 15, sports: 20, supermarket: 30, toys: 15, variety_store: 20,
+        wholesale: 40
     };
     var PLACE_INDOOR_M = 65;
     // How a road's kind and kind_detail read (else "street").
@@ -2163,10 +2168,12 @@ var STREETS = (function () {
         return String(kind || "").replace(/_/g, " ");
     }
 
-    /* The circle (metres around it) that holds the pictures a point of interest
-       of this kind (its props.kind) names on the viewer's Place line: its reach
-       and half the accuracy of a position taken indoors, as named_places.py
-       allows (rounded up to 5 m); null for a kind it does not name. */
+    /* The circle (metres around it) that holds most of the pictures a point of
+       interest of this kind (its props.kind) names on the viewer's Place line:
+       its reach and half the accuracy of a position taken indoors, as
+       named_places.py allows (rounded up to 5 m) -- a picture taken in its
+       building further from its point, or named by the other pictures of its
+       visit, may be outside it; null for a kind it does not name. */
     function placeWithin(kind) {
         if (!Object.prototype.hasOwnProperty.call(PLACE_REACH, kind)) {
             return null;

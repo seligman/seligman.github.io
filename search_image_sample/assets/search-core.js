@@ -216,7 +216,8 @@
      that starts so; "quoted" when it has spaces: album:"Summer 2024";
      album:#12 names the album with id 12, see albumTerm),
      similar: (a picture id: "More like this", the pictures closest in
-     meaning to that one, best first; without meaning vectors, those
+     meaning to that one, best first, after it and the other pictures of
+     its duplicate stack; without meaning vectors, those
      sharing tags, the scene or the time, as similar() finds them) and
      look: (a picture id: "Looks like this", the pictures that look most
      like that one by their look vectors, see "Looks" below).
@@ -292,7 +293,8 @@
      MEANING_MIN_Z. similar: shows the
      pictures at least SIMILAR_MIN_Z close to that picture, or when fewer
      than SIMILAR_FEW are, the closest SIMILAR_FEW if they are close in
-     the model's own terms (Index.similarCut). No threshold is a cosine as
+     the model's own terms (Index.similarCut; the picture's own duplicate
+     stack comes right after it and takes no part). No threshold is a cosine as
      such: models differ in how close their cosines run (one model's
      typical query cosine is 0.28, another's 0.19), so every threshold is
      in standard deviations of the cosines at hand, or of the cosines of
@@ -417,9 +419,15 @@
    SearchCore.suggest(records, query, options)
        -> {text, changes: [{from, to}]} | null
      A corrected query for words that match nothing ("did you mean"), from
-     the words of the tags first (edit distance up to 2; 1 for short words).
-     Skipped words are never corrected, and a correction that would find
-     nothing either (with options, as for search) is not offered.
+     the words of the tags first (one edit; two for words of six letters or
+     more; the first letter of a short word, and of any word two edits
+     away, stays or swaps with the second; when the closest word would
+     change it, there is no suggestion). Skipped words are never
+     corrected, nor words of the language (SearchCore.isWord(word):
+     static/english-words.js, the global ENGLISH_WORDS, when the page
+     loads it; SearchCore.setWords(list or filter) sets another, null
+     none), and a correction that would find nothing either (with
+     options, as for search) is not offered.
 
    Areas on the map
      index.setPlaces(points, routes) gives the index where its pictures
@@ -1093,8 +1101,8 @@ var SearchCore = (function () {
 
     /* The kinds of place where pictures were taken: the kind of a record's
        named place on the street maps (nk: the kind of the point of interest
-       or area that carries the name, named_places.py KINDS), by the words
-       people use for them. One line per kind of place: "key: label | words
+       or area that carries the name, named_places.py KINDS and SHOWN_SHOPS),
+       by the words people use for them. One line per kind of place: "key: label | words
        | kinds" -- key is what kind: writes for it (kind:beach), label what
        the chip of plain-language search says ("Kind of place: beaches"),
        words the words and phrases that name it, singular (a plural finds
@@ -1188,6 +1196,29 @@ var SearchCore = (function () {
         "market: markets | ~market, marketplace | marketplace",
         "gift: gift shops | gift shop, souvenir shop | gift",
         "books: bookshops | bookshop, bookstore, book shop, book store | books",
+        // (Shops named only for a picture that shows one: named_places.py
+        // SHOWN_SHOPS, by the words the viewer says them in.)
+        "clothes: clothes shops | clothes shop, clothes store, clothing store, ~boutique | " +
+            "clothes",
+        "shoes: shoe shops | shoe shop, shoe store | shoes",
+        "car: car dealers | car dealer, car dealership, car showroom | car",
+        "furniture: furniture shops | furniture shop, furniture store | furniture bed",
+        "bed: bed shops | bed shop, mattress shop, mattress store | bed",
+        "wholesale: warehouse stores | warehouse store, warehouse club | wholesale",
+        "supermarket: supermarkets | supermarket, grocery store | supermarket",
+        "jewelry: jewellery shops | jewellery shop, jewelry shop, jewellery store, " +
+            "jewelry store | jewelry",
+        "electronics: electronics shops | electronics shop, electronics store | electronics",
+        "mobile_phone: phone shops | phone shop, phone store, mobile phone shop | mobile_phone",
+        "toys: toy shops | toy shop, toy store | toys",
+        "sports: sports shops | sports shop, sports store, sporting goods store | sports",
+        "outdoor: outdoor shops | outdoor shop, outdoor store, outfitter | outdoor",
+        "music: music shops | music shop, music store, record shop, record store | music",
+        "florist: florists | florist, flower shop | florist",
+        "cosmetics: cosmetics shops | cosmetics shop, cosmetics store | cosmetics",
+        "doityourself: DIY stores | DIY store, home improvement store | doityourself",
+        "hardware: hardware stores | hardware store, hardware shop | hardware",
+        "variety_store: variety stores | variety store, dollar store | variety_store",
         "marina: marinas | marina, yacht harbor, yacht harbour | marina",
         "pier: piers | ~pier | pier",
         "ferry_terminal: ferry terminals | ferry terminal, ferry port, ferry dock | " +
@@ -6728,7 +6759,18 @@ var SearchCore = (function () {
        from a pond; over random sets of 19, 30 and 63, 0.7 found a tenth
        more of the right pictures than 0.5 (256 of 529, against 233), for
        one more wrong one in about fifty searches (in the bundled sample of
-       19 the cups now come with a bowl of fruit salad 0.7 below them). */
+       19 the cups now come with a bowl of fruit salad 0.7 below them).
+       A word no picture has gets the closest few too, even a name
+       ("Maplebrook" in a set without it, which then shows near misses):
+       offline such a name cannot be told from a word that descriptions
+       seldom use, many of which the words of the language "did you mean"
+       knows lack ("feline", "cutlery", "footwear"). Leaving the words
+       outside that list out of the closest few lost 6 to 27 of the right
+       pictures of those 24 one-word searches in sets of 19 to 150 (up to
+       18% of them), though in the same sets without planted answers it
+       also left out 40% to 56% of the pictures not asked for in sets of 19
+       to 49 (30% in 63, 22% in 100), for 2 to 9 of the right ones. A fuller
+       offline word list, with such words in it, would make it worth doing. */
     var MEANING_FEW_Z = 2.2;
     var MEANING_FEW_SET = 50;
     var MEANING_FEW_GROWTH = 0.25;
@@ -7209,6 +7251,12 @@ var SearchCore = (function () {
             this.setLooks(null);
         }
         return this.looks;
+    };
+
+    // True when record id has a meaning vector (they are loaded).
+    Index.prototype.hasVector = function (id) {
+        var r = this.position[String(id)];
+        return Boolean(this.vectors && r !== undefined && this.vectorAt(r));
     };
 
     // True when record id has a look vector.
@@ -7839,13 +7887,23 @@ var SearchCore = (function () {
             }
         }
         if (plan.mode === "similar") {
+            // The picture first, then the other pictures of its duplicate
+            // stack, which take no part in judging what is close (as in
+            // similar()'s strip): a near twin would set "closest" and its
+            // margin would leave out everything else.
+            var groupOf = this.groupOf;
+            var stack = plan.origin >= 0 ? groupOf[plan.origin] : -1;
             var close = this.similarCut(plan.origin, stats, function (row) {
-                return alive[row];
+                return alive[row] && (stack < 0 || groupOf[row] !== stack);
             });
             for (r = 0; r < n; r++) {
                 if (alive[r]) {
-                    if (cos[r] >= close || r === plan.origin) {
-                        score[r] = r === plan.origin ? 2 : cos[r];
+                    if (r === plan.origin) {
+                        score[r] = 4;
+                    } else if (stack >= 0 && groupOf[r] === stack) {
+                        score[r] = 2 + Math.max(cos[r], 0);
+                    } else if (cos[r] > -2 && cos[r] >= close) {
+                        score[r] = cos[r];
                     } else {
                         alive[r] = 0;
                     }
@@ -8303,9 +8361,106 @@ var SearchCore = (function () {
         return false;
     };
 
+    /* Did you mean: a word that is itself a word of the language is meant
+       as typed, and never corrected to another one ("cold" is not "old",
+       "words" not "woods"). The words of the language are a Bloom filter
+       ({size, hashes, data}: static/english-words.js, ENGLISH_WORDS, made
+       by english_words.py from about 21,000 words of everyday English and
+       common names; any page that loads it has it), or a list given to
+       SearchCore.setWords. A correction is one edit (two for a word of
+       SUGGEST_TWO letters or more), and never changes, adds or drops the
+       first letter of a word of SUGGEST_SHORT letters or fewer, nor of any
+       word in two edits ("Maplebrook" is not "Tablebrook"), except to swap
+       it with the second ("ogld" is "gold"). When the closest word would
+       change it, there is no suggestion: the next closest that keeps it was
+       right for under a third of the typos that came to it ("ome" is "home"
+       misspelled, not "one"). Measured on a library of thousands of
+       pictures and on a published one of 63: of 30 misspellings each, as
+       many were put right as before (29); of 30 real words each that no
+       picture has, 4 and none got a suggestion, against 20 and 19 before;
+       of 10 names of places, 4 and none, against 5 and 5; of every one-edit
+       typo of their most used tag words, 3.5% and 1.4% got a wrong word,
+       against 4.5% and 2.2% before. The price: 2.5 and 5 points fewer of
+       those typos got the right word (93.0% and 92.7%, against 95.5% and
+       97.7%) -- they got none instead.
+       The list has names and abbreviations too, so "blu" or "san" gets no
+       suggestion either; checking only words of four letters or more would
+       correct them, but also 23 more of 100 real short words the set of 63
+       lacks ("bat" to "boat", "pie" to "pine"). */
+    var SUGGEST_SHORT = 4;
+    var SUGGEST_TWO = 6;
+    var WORDS_ALPHABET = "0123456789bcdfghjklmnpqrstvwxz-_";
+    var languageWords;              // undefined: ENGLISH_WORDS, if a page loaded it
+    var languageSet = null;         // a list's words as a set, made when first needed
+
+    function setWords(words) {
+        languageWords = words === undefined ? null : words;
+        languageSet = null;
+    }
+
+    // FNV-1a of a word of letters a to z, from seed (english_words.py's _fnv).
+    function wordHash(word, seed) {
+        var value = seed;
+        for (var k = 0; k < word.length; k++) {
+            value = Math.imul(value ^ word.charCodeAt(k), 16777619) >>> 0;
+        }
+        return value;
+    }
+
+    // True when a word passes a Bloom filter (english_words.py's contains).
+    function inWordFilter(filter, word) {
+        if (!/^[a-z]+$/.test(word)) {
+            return false;
+        }
+        var first = wordHash(word, 2166136261);
+        var step = (wordHash(word, 1540483477) | 1) >>> 0;
+        for (var k = 0; k < filter.hashes; k++) {
+            var bit = (first + k * step) % filter.size;
+            var value = WORDS_ALPHABET.indexOf(filter.data.charAt(Math.floor(bit / 5)));
+            if (value < 0 || !((value >> (bit % 5)) & 1)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // The words of the language as given (setWords, else ENGLISH_WORDS), or null.
+    function languageList() {
+        if (languageWords === undefined) {
+            languageWords = typeof ENGLISH_WORDS !== "undefined" ? ENGLISH_WORDS : null;
+        }
+        return languageWords || null;
+    }
+
+    // True when a normalized word (or its singular) is a word of the language.
+    function languageWord(word) {
+        var words = languageList();
+        if (!words) {
+            return false;
+        }
+        var filter = typeof words === "object" && !Array.isArray(words) &&
+            words.size > 0 && words.hashes > 0 && typeof words.data === "string";
+        if (!filter && languageSet === null) {
+            languageSet = Object.create(null);
+            (Array.isArray(words) ? words : String(words).split(/\s+/)).forEach(function (entry) {
+                if (entry) {
+                    languageSet[String(entry).toLowerCase()] = true;
+                }
+            });
+        }
+        var forms = wordForms(word);
+        for (var k = 0; k < forms.length; k++) {
+            if (filter ? inWordFilter(words, forms[k]) : languageSet[forms[k]] === true) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     // The most likely word meant by a word that matches nothing, or null.
     Index.prototype.closestWord = function (word) {
-        var limit = word.length <= 4 ? 1 : 2;
+        var limit = word.length >= SUGGEST_TWO ? 2 : 1;
+        var keepFirst = word.length <= SUGGEST_SHORT;
         var marks = this.tagWordMarks();
         var best = null;
         var bestTag = false;
@@ -8332,6 +8487,14 @@ var SearchCore = (function () {
                 bestCount = count;
             }
         }
+        // The closest word decides. When it would change the first letter
+        // of a short word, or of a word two edits away, nothing is offered:
+        // the next closest one that keeps it is seldom what was meant.
+        // (A swap of the first two letters keeps it: "ogld" is "gold".)
+        if (best && (keepFirst || bestDistance > 1) && best.charAt(0) !== word.charAt(0) &&
+                !(best.charAt(0) === word.charAt(1) && best.charAt(1) === word.charAt(0))) {
+            return null;
+        }
         return best;
     };
 
@@ -8346,7 +8509,8 @@ var SearchCore = (function () {
                 return;
             }
             var word = term.words[0];
-            if (word.length < 3 || /\d/.test(word) || self.knowsWord(word, term.prefix)) {
+            if (word.length < 3 || /\d/.test(word) || self.knowsWord(word, term.prefix) ||
+                    languageWord(word)) {
                 return;
             }
             var better = self.closestWord(word);
@@ -8579,6 +8743,10 @@ var SearchCore = (function () {
         },
         suggest: function (records, query, options) {
             return indexOf(records).suggest(query, options);
+        },
+        setWords: setWords,
+        isWord: function (word) {
+            return languageWord(normalize(word));
         },
         interpret: function (records, query, options) {
             return indexOf(records).interpret(query, options);
