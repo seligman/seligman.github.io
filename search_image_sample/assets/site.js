@@ -16,6 +16,10 @@
                                    albums option; albums.index_albums on
                                    the server, an export's manifest.albums
                                    with its "marks" option, else []).
+                                   An export also gives names: the names of
+                                   people it publishes (its "people_names"
+                                   option, manifest.names), for SearchCore's
+                                   interpret; null without them.
      SITE.loadRecord(id, callback) the full record of one picture (server:
                                    /api/image/<id>, with info, exif,
                                    provenance, ...; an export: what it
@@ -23,6 +27,17 @@
                                    anything), or null. The pages show the
                                    compact record first and add this.
      SITE.loadLocations(callback)  [{id, lat, lon}] or null.
+     SITE.loadPlaces(callback, fresh)  where the pictures were taken, for an
+                                   area of the map (SearchCore's
+                                   index.setPlaces): {points (loadLocations'),
+                                   routes (loadRoutes')}, or null when they
+                                   could not be loaded (loaded once; asked
+                                   again after a failure, and with fresh).
+                                   An export without locations has none:
+                                   {points: [], routes: []}
+     SITE.hasAreas()               an area of the map can be searched here
+                                   (the server; an export that publishes
+                                   locations: SITE.mapUrl is not null)
      SITE.loadRoutes(callback)     the routes of drives (the GPS tracks of
                                    videos, see tracks.py and routes.js:
                                    [{d, l, c: [{i, o, p}]}]; server:
@@ -30,6 +45,16 @@
                                    with its "routes" option, else []), or
                                    null when they cannot be loaded. Loaded
                                    once per page.
+     SITE.loadTrips(callback)      the trips (trips.py): {enabled,
+                                   best_per_day, trips: [{id, title, start,
+                                   end, days: [{date, ids, places}], other,
+                                   places, ...}]} (server: /api/trips; an
+                                   export: data/trips.js, SEARCH_DATA.trips,
+                                   when manifest.trips names it), or null.
+     SITE.loadTripStory(id, callback)  a trip's story (trip_stories.py) from
+                                   the server, /api/trips/<id>/story: {trip,
+                                   days: [{date, text}], ...}, or null (an
+                                   export's is on its trip's days: story).
      SITE.compactRecord(detail)    a full record as a compact search record.
      SITE.loadVectors(callback)    the meaning vectors of the pictures, as
                                    SearchCore.decodeVectors makes them
@@ -43,7 +68,11 @@
                                    they changed, callback(null) when not.
      SITE.queryVector(text, callback, progress)  the meaning vector of
                                    what was typed: callback({state: "ready",
-                                   model, dims, vec (base64)}) or callback({
+                                   model, dims, vec (base64)}); text may be
+                                   a list (a query and its words,
+                                   SearchCore.meaningTexts): then also vecs,
+                                   one per text (one request to the server);
+                                   or callback({
                                    state: "starting" (ask again soon) | "off"
                                    | "unavailable" | "busy", error}). The
                                    server asks /api/embed. An export with the
@@ -63,6 +92,37 @@
                                    server again, as refreshVectors does;
                                    SITE.attachLooks(index, callback) sets
                                    them on a SearchCore index (setLooks).
+     SITE.loadPeople(callback, hidden)  the people in the pictures (people
+                                   found by their faces, see people_groups.py):
+                                   {people: [{id, name, label, cover, faces,
+                                   ids}]} from the server's /api/people (the
+                                   admin's; others' only when the server
+                                   shows them people), or null: none, or an
+                                   export (exports never hold them). hidden
+                                   (the admin's): hidden people too. Asked
+                                   for anew every time.
+     SITE.peopleForSearch(onLoaded, hidden)  the people a page's searches
+                                   need for person: (also in the smart
+                                   albums they name): an object whose
+                                   want(text, words) loads them (loadPeople,
+                                   once) when text has a person: term, or
+                                   with words true any word (plain-language
+                                   search may find a name in it), and calls
+                                   onLoaded(people) when they have come
+                                   (never before want returns);
+                                   options(opts) sets SearchCore.search's
+                                   people and peoplePending options;
+                                   pending() is true while they are on
+                                   their way. hidden (the admin's): hidden
+                                   people too (person: names them, but
+                                   never by a part of a name, nor with
+                                   person:any). After
+                                   SITE.peopleChanged() (the admin named a
+                                   face in the viewer) they are asked for
+                                   again the next time want needs them,
+                                   and onLoaded is told again.
+     SITE.faceUrl(id)              a square picture of one face (/face/<id>),
+                                   null in an export
      SITE.lookQuery(blob, callback)  the look vector of an example picture
                                    (a File or Blob), made by the server's
                                    image model (admin only, POST
@@ -77,26 +137,39 @@
 
    Addresses (state: a search state, see below; may be left out)
      SITE.searchUrl(state, id)     the search page (with the viewer open on id)
-     SITE.homeUrl()                the search page
+     SITE.homeUrl()                the first page: the search page (a trip's
+                                   export: the trip's page, see trip_export.py)
      SITE.detailUrl(id, state)     the page of one picture
      SITE.mapUrl(state)            the map, following that search (null: no map)
      SITE.thumbUrl(record or id)   the small square-ish thumbnail
      SITE.previewUrl(record)       the screen-sized (2048 px) picture, or null
      SITE.panoUrl(record)          the large (4096 px) panorama of a 360-degree
-                                   photo for the 360 view, or null (not a 360
-                                   photo, or an export without panoramas)
+                                   photo for the 360 view, or the larger
+                                   (1600 px tall) picture of a wide photo for
+                                   the viewer's pan view; or null (neither,
+                                   or an export without it)
      SITE.imageUrl(record)         the original (or what an export ships), or null
      SITE.videoUrl(record)         a video (rec.mv) to play: /video/<id> (its
                                    playable copy when there is one, else the
                                    original), or an export's videos/<id>.mp4
                                    (rec.vf); null for pictures and for videos
                                    an export holds only the poster of
+     SITE.tripsUrl(), SITE.tripUrl(id)  the Trips page, the page of a trip
+                                   (tripsUrl: null in an export without trips,
+                                   and with trips turned off)
      SITE.drivePreviewUrl(record)  the sped-up preview of the drive a clip
                                    (rec.dv) belongs to: /drive-preview/<id>
                                    (the full record says whether there is
                                    one: detail.drive.preview); null in an
                                    export
      SITE.tileUrl(z, x, y), SITE.tilesMax(), SITE.tileSize()   map tiles
+                                   (on the server with the tiles' version,
+                                   "?v=...": see serve.tiles_version)
+     SITE.streets()                the street maps ({url, v}: where their
+                                   index and tile scripts are, see
+                                   streets.js and street_maps.py; /maps/ on
+                                   the server, maps/ in an export with them),
+                                   or null
 
    SITE.shuffleSeed(renew) is the seed of the "shuffle" sort: one per
    browser tab (a new one with renew).
@@ -129,20 +202,29 @@
    Search state in the address (SITE.searchState)
      read(search)  -> {q, lib, sort, filters: {group: [values]}, group,
                        size, hidden, junk, sensitive, ids, view, from, to,
-                       by, drives}
+                       by, drives, typed, area, aname}
                        from a query string (default: the page's)
      params(state) -> the query string for a state ("" when all default)
      The facet selections use the group names of SearchCore.FACETS as
      parameter names, one per value: ?q=beach&type=photo&tags=sunset.
      ids holds the pictures picked on the map ("Show these in the grid"),
-     written by SITE.idList.encode; view the map's centre and zoom
+     written by SITE.idList.encode, and pick what to call them instead
+     ("Trip: Name", a trip page's "Open in search"; only with ids); view
+     the map's centre and zoom
      ("lat,lon,zoom"), so the search page can lead back to the same place.
      The map itself never takes ids (mapUrl leaves them out). from and to
      are the timeline's choice of dates (SearchCore's range option:
      "YYYY", "YYYY-MM" or "YYYY-MM-DD"). by is how words are looked for:
      "words", "meaning", or "" (words and meaning, SearchCore's meaning
      option). drives is false when the clips of drives are shown one by
-     one ("Fold drives" off: drives=0).
+     one ("Fold drives" off: drives=0). typed lists the parts of q that
+     plain-language search leaves as typed words (SearchCore.interpret's
+     typed option: "*" for all of them, else keys joined by commas).
+     area is an area drawn or picked on the map (SearchCore's area
+     option: its text, see search-core.js "Areas on the map"; only its
+     form is checked here), aname its name ("Main Street": only with
+     area). Both are location data: the server's request log never shows
+     them (serve.py quiet_request_line).
 
    SITE.idList.encode(ids, records) -> the ids value for a list of picture
      ids; SITE.idList.decode(text, records) -> {ids: [...], stale} (stale:
@@ -164,7 +246,8 @@
    opened from disk. The details of a picture are in the detail shard
    detailShard() names, which is loaded when they are first wanted. An
    exported picture is images/<id>.jpg, or images/<id>.<rec.ix>; one with
-   rec.pn has a large panorama in panos/<id>.jpg, one with rec.vf a video in
+   rec.pn has a large panorama (a 360-degree photo's, or a wide photo's for
+   the pan view) in panos/<id>.jpg, one with rec.vf a video in
    videos/<id>.mp4. The data files are asked
    for with the hash of their contents (manifest.versions, and the page's
    dataVersion for manifest.js), so a browser never mixes files of two
@@ -210,18 +293,40 @@ var SITE = (function () {
     // At most this many values per facet group are taken from an address.
     var MAX_VALUES = 50;
 
-    // The longest ids value read from an address (see idList).
+    // The longest ids value read from an address (see idList), and the longest pick.
     var MAX_IDS_TEXT = 200000;
+    var MAX_PICK_TEXT = 160;
     var IDS_RE = /^[0-9a-z]+(?:[._-][0-9a-z]+)*$/;
     // A date of the timeline's range: "YYYY", "YYYY-MM" or "YYYY-MM-DD".
     var DATE_KEY_RE = /^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
     // "lat,lon,zoom" of the map (see readView).
     var VIEW_RE = /^(-?\d{1,3}(?:\.\d{1,8})?),(-?\d{1,3}(?:\.\d{1,8})?),(\d{1,2})$/;
+    // The most texts embedded at once (SearchCore.MEANING_TEXTS; the
+    // server's /api/embed takes as many: embeddings.QUERY_TEXTS).
+    var MEANING_TEXTS = 9;
+    // The parts of a query left as typed (SearchCore.interpret): "*", or
+    // keys (lower-case words) joined by commas.
+    var TYPED_RE = /^(?:\*|[0-9a-z\u00c0-\uffff ]{1,80}(?:,[0-9a-z\u00c0-\uffff ]{1,80}){0,19})$/;
+    // An area of the map (SearchCore.areas reads it all), and its name.
+    var AREA_RE = /^[bpl](?:[1-9]\d{0,3})?(?:\.[0-9A-Za-z_-]+)+$/;
+    var MAX_AREA_TEXT = 6000;
+    var MAX_AREA_NAME = 100;
 
     function emptyState() {
         return {q: "", lib: "", sort: "", filters: {}, group: true, size: "",
                 hidden: false, junk: false, sensitive: "", ids: "", view: "", from: "", to: "",
-                by: "", drives: true};
+                by: "", drives: true, pick: "", typed: "", area: "", aname: ""};
+    }
+
+    // An area's text when it has the form of one ("" if not), and its name.
+    function readArea(value) {
+        value = typeof value === "string" ? value : "";
+        return value.length <= MAX_AREA_TEXT && AREA_RE.test(value) ? value : "";
+    }
+
+    function readAreaName(value) {
+        return typeof value === "string" ? value.replace(/[\x00-\x1f\x7f]+/g, " ")
+            .replace(/^\s+|\s+$/g, "").slice(0, MAX_AREA_NAME) : "";
     }
 
     // A map view from an address: "lat,lon,zoom" with the latitude within
@@ -269,6 +374,8 @@ var SITE = (function () {
         state.sensitive = SENSITIVE.indexOf(sensitive) >= 0 ? sensitive : "";
         var ids = params.get("ids") || "";
         state.ids = ids.length <= MAX_IDS_TEXT && IDS_RE.test(ids) ? ids : "";
+        state.pick = state.ids ? (params.get("pick") || "").replace(/[\x00-\x1f\x7f]+/g, " ")
+            .slice(0, MAX_PICK_TEXT) : "";
         state.view = readView(params.get("view"));
         ["from", "to"].forEach(function (key) {
             var value = params.get(key) || "";
@@ -276,6 +383,10 @@ var SITE = (function () {
         });
         var by = params.get("by");
         state.by = BY.indexOf(by) >= 0 ? by : "";
+        var typed = params.get("typed") || "";
+        state.typed = state.q && TYPED_RE.test(typed) ? typed : "";
+        state.area = readArea(params.get("area"));
+        state.aname = state.area ? readAreaName(params.get("aname")) : "";
         return state;
     }
 
@@ -319,6 +430,9 @@ var SITE = (function () {
         }
         if (typeof state.ids === "string" && state.ids && IDS_RE.test(state.ids)) {
             params.set("ids", state.ids);
+            if (typeof state.pick === "string" && state.pick) {
+                params.set("pick", state.pick.slice(0, MAX_PICK_TEXT));
+            }
         }
         var view = readView(state.view);
         if (view) {
@@ -331,6 +445,17 @@ var SITE = (function () {
         });
         if (state.by && BY.indexOf(state.by) >= 0) {
             params.set("by", state.by);
+        }
+        if (state.q && typeof state.typed === "string" && TYPED_RE.test(state.typed)) {
+            params.set("typed", state.typed);
+        }
+        var area = readArea(state.area);
+        if (area) {
+            params.set("area", area);
+            var name = readAreaName(state.aname);
+            if (name) {
+                params.set("aname", name);
+            }
         }
         return params.toString();
     }
@@ -540,7 +665,9 @@ var SITE = (function () {
     }
 
     function searchUrl(state, id) {
-        var url = withQuery(isStatic ? "index.html" : "/", searchParams(state));
+        // (A trip's export has its search page beside the trip's: cfg.searchPage.)
+        var url = withQuery(isStatic ? cfg.searchPage || "index.html" : "/",
+                            searchParams(state));
         if (id !== undefined && id !== null && id !== "") {
             url += "#id=" + encodeURIComponent(id);
         }
@@ -602,21 +729,70 @@ var SITE = (function () {
 
     // The preview's long edge (images.PREVIEW_EDGE).
     var PREVIEW_EDGE = 2048;
+    // The larger picture of a wide photo, for the viewer's pan view: the
+    // same numbers as images.WIDE_ASPECT, WIDE_PANO_HEIGHT,
+    // WIDE_PANO_MAX_WIDTH and WIDE_PANO_GAIN.
+    var WIDE_ASPECT = 2.2;
+    var WIDE_PANO_HEIGHT = 1600;
+    var WIDE_PANO_MAX_WIDTH = 16384;
+    var WIDE_PANO_GAIN = 1.25;
 
-    // The large panorama of a 360-degree photo (rec.p "360"); null for
-    // other pictures, for a 360-degree photo no larger than its preview
-    // (which is then the whole picture), and in an export for a picture
-    // without one (rec.pn: it has panos/<id>.jpg).
+    // [width, height] of the larger picture a flat picture width x height
+    // gets for the pan view (images.wide_pano_size), or null.
+    function widePanoSize(width, height) {
+        width = Number(width) || 0;
+        height = Number(height) || 0;
+        if (width <= 0 || height <= 0 || width < WIDE_ASPECT * height - 1e-9) {
+            return null;
+        }
+        var previewHeight = width > PREVIEW_EDGE
+            ? Math.max(1, Math.round(height * PREVIEW_EDGE / width)) : height;
+        var tall = Math.min(height, WIDE_PANO_HEIGHT);
+        var across = Math.max(1, Math.round(width * tall / height));
+        if (across > WIDE_PANO_MAX_WIDTH) {
+            across = WIDE_PANO_MAX_WIDTH;
+            tall = Math.max(1, Math.round(height * WIDE_PANO_MAX_WIDTH / width));
+        }
+        return tall >= previewHeight * WIDE_PANO_GAIN ? [across, tall] : null;
+    }
+
+    // Does a flat picture width x height get a larger picture for the pan
+    // view (images.wide_pano_size)?
+    function hasWidePano(width, height) {
+        return widePanoSize(width, height) !== null;
+    }
+
+    // [width, height] of the picture previewUrl gives of a flat picture:
+    // the picture itself in an export of the originals, else fitted into
+    // PREVIEW_EDGE (never enlarged); [0, 0] when its size is not known.
+    function previewSize(rec) {
+        var width = Number(rec && rec.w) || 0;
+        var height = Number(rec && rec.hgt) || 0;
+        var edge = Math.max(width, height);
+        if (!width || !height || edge <= PREVIEW_EDGE ||
+                (isStatic && capabilities.originals === true)) {
+            return [width, height];
+        }
+        return [Math.max(1, Math.round(width * PREVIEW_EDGE / edge)),
+                Math.max(1, Math.round(height * PREVIEW_EDGE / edge))];
+    }
+
+    // The large panorama of a 360-degree photo (rec.p "360"), or the larger
+    // picture of a wide photo (hasWidePano); null for other pictures, for a
+    // 360-degree photo no larger than its preview (which is then the whole
+    // picture), and in an export for a picture without one (rec.pn: it has
+    // panos/<id>.jpg).
     function panoUrl(rec) {
-        // (A 360 video has none: it plays.)
-        if (!rec || typeof rec !== "object" || rec.p !== "360" || rec.mv) {
+        // (A video has none: it plays.)
+        if (!rec || typeof rec !== "object" || rec.mv ||
+                (rec.p !== "360" && !hasWidePano(rec.w, rec.hgt))) {
             return null;
         }
         if (isStatic && rec._pano) {
             return rec._pano;
         }
         var edge = Math.max(rec.w || 0, rec.hgt || 0);
-        if (edge && edge <= PREVIEW_EDGE) {
+        if (rec.p === "360" && edge && edge <= PREVIEW_EDGE) {
             return null;
         }
         if (isStatic) {
@@ -839,7 +1015,7 @@ var SITE = (function () {
             if (place.estimated === true) {
                 rec.pe = 1;     // (place_estimates.py: no position of its own)
             }
-            var sources = {copy: "c", time: "t", area: "a", owner: "o"};
+            var sources = {copy: "c", time: "t", area: "a", owner: "o", file: "f"};
             if (sources[place.source]) {
                 rec.ps = sources[place.source];
             }
@@ -964,6 +1140,7 @@ var SITE = (function () {
     var staticScripts = {};       // data script name -> promise of it being loaded
     var staticLocations = null;   // [{id, lat, lon}] once data/locations.js has run
     var staticRoutes = null;      // the routes once data/routes.js has run
+    var staticTrips = null;       // the trips once data/trips.js has run
 
     // The address of a data script: with the hash of its contents when
     // the manifest has one (export.py, "versions").
@@ -1030,6 +1207,9 @@ var SITE = (function () {
             },
             routes: function (list) {
                 staticRoutes = Array.isArray(list) ? list : [];
+            },
+            trips: function (value) {
+                staticTrips = value && typeof value === "object" ? value : null;
             }
         };
         var ready = root.SEARCH_DATA_MANIFEST ? Promise.resolve()
@@ -1051,6 +1231,9 @@ var SITE = (function () {
                     generated: manifest.generated || null,
                     libraries: manifest.libraries || (manifest.library ? [manifest.library] : []),
                     albums: Array.isArray(manifest.albums) ? manifest.albums : [],
+                    names: Array.isArray(manifest.names) ? manifest.names.filter(function (name) {
+                        return typeof name === "string" && name !== "";
+                    }) : null,
                     records: records,
                     manifest: manifest
                 };
@@ -1232,6 +1415,100 @@ var SITE = (function () {
         });
     }
 
+    var placesPromise = null;     // where the pictures were taken (null again after a failure)
+
+    function loadPlaces(callback, fresh) {
+        if (!placesPromise || fresh) {
+            placesPromise = new Promise(function (resolve, reject) {
+                loadLocations(function (points) {
+                    if (!points) {
+                        reject(new Error("no locations"));
+                        return;
+                    }
+                    loadRoutes(function (routes) {
+                        // (Without routes the clips count by their own positions.)
+                        resolve({points: points, routes: routes || []});
+                    });
+                });
+            });
+            placesPromise.catch(function () {
+                placesPromise = null;
+            });
+        }
+        placesPromise.then(callback, function () {
+            callback(null);
+        });
+    }
+
+    function loadPeople(callback, hidden) {
+        if (isStatic || !capabilities.people || !cfg.api) {
+            callback(null);
+            return;
+        }
+        getJson(cfg.api + "/people" + (hidden ? "?hidden=1" : "")).then(function (answer) {
+            callback(answer && Array.isArray(answer.people) ? answer : null);
+        }, function () {
+            callback(null);
+        });
+    }
+
+    var PERSON_TERM = /(^|\s)-?person:/i;
+    var peopleEpoch = 0;        // raised by peopleChanged: the people loaded before are old
+
+    function peopleChanged() {
+        peopleEpoch += 1;
+    }
+
+    function peopleForSearch(onLoaded, hidden) {
+        var list = null;
+        var asked = false;
+        var settled = false;
+        var epoch = peopleEpoch;
+        return {
+            // (words: plain-language search may find a person's name in any word.)
+            want: function (text, words) {
+                text = String(text || "");
+                if (asked && settled && epoch !== peopleEpoch) {
+                    // (A face was named since: asked for again when needed.)
+                    asked = false;
+                    settled = false;
+                    list = null;
+                }
+                if (asked || !(PERSON_TERM.test(text) || (words === true && /\S/.test(text)))) {
+                    return false;
+                }
+                asked = true;
+                epoch = peopleEpoch;
+                var waiting = true;
+                loadPeople(function (answer) {
+                    settled = true;
+                    list = answer && Array.isArray(answer.people) ? answer.people : null;
+                    if (!onLoaded) {
+                        return;
+                    }
+                    if (waiting) {
+                        // (Not while the caller is still in want: it is searching.)
+                        window.setTimeout(function () {
+                            onLoaded(list);
+                        }, 0);
+                    } else {
+                        onLoaded(list);
+                    }
+                }, hidden);
+                waiting = false;
+                return true;
+            },
+            options: function (opts) {
+                opts.people = list;
+                opts.peoplePending = asked && !settled;
+                return opts;
+            },
+            pending: function () {
+                return asked && !settled;
+            }
+        };
+    }
+
     var routesPromise = null;     // the routes, once asked for (null again after a failure)
 
     function loadRoutes(callback) {
@@ -1256,6 +1533,54 @@ var SITE = (function () {
             });
         }
         routesPromise.then(callback, function () {
+            callback(null);
+        });
+    }
+
+    var tripsPromise = null;      // the trips, once asked for (null again after a failure)
+
+    function loadTrips(callback) {
+        if (!tripsPromise) {
+            if (isStatic) {
+                tripsPromise = loadStaticIndex().then(function (data) {
+                    var manifest = data && data.manifest;
+                    if (!manifest || typeof manifest.trips !== "string" || !manifest.trips) {
+                        return null;
+                    }
+                    return loadDataScript(manifest.trips).then(function () {
+                        return staticTrips;
+                    });
+                });
+            } else {
+                tripsPromise = getJson(cfg.api + "/trips");
+            }
+            tripsPromise.catch(function () {
+                tripsPromise = null;
+            });
+        }
+        tripsPromise.then(function (value) {
+            callback(value && typeof value === "object" && Array.isArray(value.trips)
+                ? value : null);
+        }, function () {
+            callback(null);
+        });
+    }
+
+    // Forget the trips loaded, so the next loadTrips asks again (after a change).
+    function refreshTrips(callback) {
+        tripsPromise = null;
+        loadTrips(callback);
+    }
+
+    function loadTripStory(id, callback) {
+        if (isStatic || !cfg.api) {
+            callback(null);
+            return;
+        }
+        getJson(cfg.api + "/trips/" + encodeURIComponent(id) + "/story").then(function (value) {
+            callback(value && typeof value === "object" && Array.isArray(value.days) ? value
+                : null);
+        }, function () {
             callback(null);
         });
     }
@@ -1574,15 +1899,31 @@ var SITE = (function () {
             : typeof btoa === "function" ? btoa(text) : Buffer.from(bytes).toString("base64");
     }
 
-    function embedNow(meaning, text, callback) {
-        var answer;
-        try {
-            var vector = browserMeaning.engine.query(text);
-            answer = {state: "ready", model: meaning.id, dims: vector.length, vec: base64(vector)};
-        } catch (error) {
-            answer = {state: "unavailable", error: "Search by meaning could not run."};
+    /* (texts: one text, or several: then vecs too, see queryVector -- at
+       most SearchCore.MEANING_TEXTS, as the server takes; each is a pass of
+       the model, so the page gets a turn between them.) */
+    function embedNow(meaning, texts, callback) {
+        var list = (Array.isArray(texts) ? texts : [texts]).slice(0, MEANING_TEXTS);
+        var vectors = [];
+        function next() {
+            try {
+                vectors.push(browserMeaning.engine.query(list[vectors.length]));
+            } catch (error) {
+                callback({state: "unavailable", error: "Search by meaning could not run."});
+                return;
+            }
+            if (vectors.length < list.length) {
+                setTimeout(next, 0);
+                return;
+            }
+            var answer = {state: "ready", model: meaning.id, dims: vectors[0].length,
+                          vec: base64(vectors[0])};
+            if (Array.isArray(texts)) {
+                answer.vecs = vectors.map(base64);
+            }
+            callback(answer);
         }
-        callback(answer);
+        next();
     }
 
     function meaningFailed(state, message) {
@@ -1696,7 +2037,11 @@ var SITE = (function () {
             }, 0);
             return;
         }
-        fetch(cfg.api + "/embed?q=" + encodeURIComponent(text), {credentials: "same-origin"})
+        var asked = (Array.isArray(text) ? text.slice(0, MEANING_TEXTS) : [text])
+            .map(function (one) {
+                return "q=" + encodeURIComponent(one);
+            }).join("&");
+        fetch(cfg.api + "/embed?" + asked, {credentials: "same-origin"})
             .then(function (response) {
                 return response.json().catch(function () {
                     return {};
@@ -1767,9 +2112,23 @@ var SITE = (function () {
         thumbUrl: thumbUrl,
         imageUrl: imageUrl,
         previewUrl: previewUrl,
+        previewSize: previewSize,
         panoUrl: panoUrl,
+        widePanoSize: widePanoSize,
         videoUrl: videoUrl,
         drivePreviewUrl: drivePreviewUrl,
+        tripsUrl: function () {
+            // (capabilities.trips false: trips are turned off in config.json.)
+            return isStatic ? (cfg.tripsPage || null)
+                : capabilities.trips === false ? null : "/trips";
+        },
+        tripUrl: function (id) {
+            if (isStatic) {
+                return cfg.tripsPage ? withQuery(cfg.tripsPage, "trip=" +
+                                                 encodeURIComponent(id)) : null;
+            }
+            return "/trip/" + encodeURIComponent(id);
+        },
         tileUrl: function (zoom, x, y) {
             var prefix = cfg.tiles;
             if (!prefix) {
@@ -1778,7 +2137,11 @@ var SITE = (function () {
             if (isStatic) {
                 return prefix + zoom + "/" + x + "/" + y + ".jpg";
             }
-            return prefix + "/" + zoom + "/" + x + "/" + y + ".jpg";
+            // (A browser keeps tiles a day: with the version, never those from
+            // before the tile pyramid was made, or made again.)
+            var version = typeof cfg.tilesVersion === "string" && cfg.tilesVersion
+                ? "?v=" + encodeURIComponent(cfg.tilesVersion) : "";
+            return prefix + "/" + zoom + "/" + x + "/" + y + ".jpg" + version;
         },
         tilesMax: function () {
             return typeof cfg.tilesMax === "number" ? cfg.tilesMax : null;
@@ -1786,11 +2149,21 @@ var SITE = (function () {
         tileSize: function () {
             return cfg.tileSize || 256;
         },
+        streets: function () {
+            var info = cfg.streets;
+            return info && typeof info === "object" && typeof info.url === "string" && info.url
+                ? {url: info.url, v: typeof info.v === "string" ? info.v : ""} : null;
+        },
         loadIndex: loadIndex,
         refreshIndex: refreshIndex,
         loadRecord: loadRecord,
         loadLocations: loadLocations,
         loadRoutes: loadRoutes,
+        loadPlaces: loadPlaces,
+        hasAreas: hasMap,
+        loadTrips: loadTrips,
+        refreshTrips: refreshTrips,
+        loadTripStory: loadTripStory,
         loadVectors: loadVectors,
         refreshVectors: refreshVectors,
         attachVectors: attachVectors,
@@ -1798,6 +2171,12 @@ var SITE = (function () {
         refreshLooks: refreshLooks,
         attachLooks: attachLooks,
         lookQuery: lookQuery,
+        loadPeople: loadPeople,
+        peopleForSearch: peopleForSearch,
+        peopleChanged: peopleChanged,
+        faceUrl: function (id) {
+            return isStatic ? null : "/face/" + encodeURIComponent(id);
+        },
         queryVector: queryVector,
         meaningInBrowser: meaningInBrowser,
         allowMeaningDownload: allowMeaningDownload,

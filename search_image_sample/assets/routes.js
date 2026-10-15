@@ -7,7 +7,8 @@
    as lines (map.js) and the viewer shows the route of the drive it plays
    in a small map in its information pane, with a dot where the clip that
    plays is (MiniMap). Neither needs anything but the map's tiles
-   (SITE.tileUrl), so both work offline and in an export.
+   (SITE.tileUrl, and the street maps, SITE.streets: see streets.js), so
+   both work offline and in an export.
 
    ROUTES.decode(text)          [[at, lat, lon, speed or null]] of a clip's
                                 points (at: seconds into the clip; [] when
@@ -36,15 +37,22 @@
                                 nearest the screen point x, y, within slack
                                 pixels: {clip, at (seconds into it),
                                 distance, sx, sy}, or null
+   ROUTES.strokeLines(ctx, lines, width, colour)  draws lines of screen
+                                points ([[{sx, sy}]]) on a canvas, round
+                                ended (a line of one point is a dot)
    ROUTES.fitZoom(box, w, h, tile, pad, maxZoom)  the (fractional) zoom
                                 that shows a box {south, north, west,
                                 east} in w x h pixels with pad around it
+                                (Web Mercator, as the map page)
    ROUTES.MiniMap(options)      a small map of one route: .node (append it
                                 where it goes), .show(route, clipId),
                                 .at(clipId, seconds) -> the speed there
                                 (km/h) or null, .hide(). options: {tileUrl
-                                (z, x, y), tileSize, tilesMax}; the map is
-                                the equirectangular one of map.js.
+                                (z, x, y), tileSize, tilesMax, streets
+                                (SITE.streets())}; the map is the map
+                                page's (Web Mercator, STREETS.Basemap: the
+                                world image, and the street maps where
+                                there are any, credited while they show).
 
    Pages are built with DOM calls only (never innerHTML). Loads under Node
    for the tests (tests/js/routes_test.js).
@@ -57,15 +65,21 @@ var ROUTES = (function () {
     // A clip has a place this many seconds before its first point and after
     // its last (a fix a second; tracks.simplify keeps both), and none further.
     var FIX_SLACK = 2;
-    // The colours of a route (any theme: drawn on the map's tiles).
+    // The colours of a route (any theme: drawn on the map's tiles), and of the
+    // clip that plays or is under the pointer: a bright line on a dark casing
+    // (seen on the dark world image and the light street maps alike).
     var LINE = "rgba(255, 162, 31, 0.98)";
     var HALO = "rgba(20, 16, 10, 0.6)";
+    var CURRENT = "#ffd84d";
+    var CASING = "rgba(20, 16, 10, 0.85)";
     var SEA = "#1a2c3d";
     var MINI_HEIGHT = 170;
     var MINI_PAD = 14;
     // The mini map zooms in at most this far (about 2 m a pixel); past the
-    // tiles' own detail they are stretched, fainter the further.
+    // tiles' own detail they are stretched, fainter the further (where
+    // there are no street maps).
     var MAX_ZOOM = 16;
+    var MAX_LAT = 85.0511287798;
 
     function isNumber(value) {
         return typeof value === "number" && isFinite(value);
@@ -247,14 +261,45 @@ var ROUTES = (function () {
         return best;
     }
 
+    function strokeLines(ctx, lineList, width, colour) {
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.lineWidth = width;
+        ctx.strokeStyle = colour;
+        (lineList || []).forEach(function (line) {
+            if (!line.length) {
+                return;
+            }
+            ctx.beginPath();
+            line.forEach(function (point, index) {
+                if (index) {
+                    ctx.lineTo(point.sx, point.sy);
+                } else {
+                    ctx.moveTo(point.sx, point.sy);
+                }
+            });
+            if (line.length === 1) {
+                ctx.lineTo(line[0].sx + 0.1, line[0].sy);
+            }
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+
+    // 0 at the map's north edge to 1 at its south edge (Web Mercator).
+    function mercatorY(lat) {
+        var r = Math.max(-MAX_LAT, Math.min(MAX_LAT, lat)) * Math.PI / 180;
+        return (1 - Math.log(Math.tan(Math.PI / 4 + r / 2)) / Math.PI) / 2;
+    }
+
     function fitZoom(box, w, h, tile, pad, maxZoom) {
         var lonSpan = Math.max(box.east - box.west, 1e-9);
-        var latSpan = Math.max(box.north - box.south, 1e-9);
+        var ySpan = Math.max(mercatorY(box.south) - mercatorY(box.north), 1e-12);
         var free = {w: Math.max(1, w - 2 * pad), h: Math.max(1, h - 2 * pad)};
-        // World width at zoom z: tile * 2^(z + 1) for 360 degrees; height
-        // half of it for 180.
+        // World width (and height) at zoom z: tile * 2^(z + 1) for 360 degrees.
         var byWidth = Math.log(free.w * 360 / (lonSpan * tile)) / Math.LN2 - 1;
-        var byHeight = Math.log(free.h * 180 * 2 / (latSpan * tile)) / Math.LN2 - 1;
+        var byHeight = Math.log(free.h / (ySpan * tile)) / Math.LN2 - 1;
         return Math.max(0, Math.min(maxZoom, byWidth, byHeight));
     }
 
@@ -281,7 +326,8 @@ var ROUTES = (function () {
         this.options = options || {};
         this.tile = this.options.tileSize || 256;
         this.tilesMax = isNumber(this.options.tilesMax) ? this.options.tilesMax : 3;
-        this.tiles = {};
+        this.basemap = null;
+        this.credit = null;
         this.route = null;
         this.clipId = null;
         this.seconds = 0;
@@ -299,9 +345,18 @@ var ROUTES = (function () {
             this.node.className = "route-map";
             this.node.hidden = true;
             this.node.appendChild(this.canvas);
+            var self = this;
+            this.credit = STREETS.creditNode("span", "map-streets-credit route-map-credit",
+                                             this.options.streets || null);
+            this.node.appendChild(this.credit);
+            this.basemap = new STREETS.Basemap({tileUrl: this.options.tileUrl,
+                                                tileSize: this.tile, tileZoom: this.tilesMax,
+                                                ocean: SEA, streets: this.options.streets || null,
+                                                onLoad: function () {
+                                                    self.schedule();
+                                                }});
             // Drawn again whenever its size changes: the pane that holds it
             // opened (it had none while closed), the phone turned.
-            var self = this;
             if (typeof ResizeObserver === "function") {
                 new ResizeObserver(function () {
                     self.schedule();
@@ -355,26 +410,6 @@ var ROUTES = (function () {
         });
     };
 
-    MiniMap.prototype.tileImage = function (z, x, y) {
-        var self = this;
-        var key = z + "/" + x + "/" + y;
-        if (this.tiles[key]) {
-            return this.tiles[key];
-        }
-        var url = this.options.tileUrl ? this.options.tileUrl(z, x, y) : null;
-        if (!url) {
-            return null;
-        }
-        var entry = {img: new Image(), loaded: false};
-        entry.img.onload = function () {
-            entry.loaded = true;
-            self.schedule();
-        };
-        entry.img.src = url;
-        this.tiles[key] = entry;
-        return entry;
-    };
-
     MiniMap.prototype.draw = function () {
         var canvas = this.canvas;
         if (!this.route || !this.box || !canvas || !canvas.isConnected) {
@@ -397,7 +432,7 @@ var ROUTES = (function () {
         var zoom = fitZoom(this.box, w, h, tile, MINI_PAD, MAX_ZOOM);
         var world = tile * Math.pow(2, zoom + 1);
         function project(lat, lon) {
-            return {x: (lon + 180) / 360 * world, y: (90 - lat) / 180 * world / 2};
+            return {x: (lon + 180) / 360 * world, y: mercatorY(lat) * world};
         }
         var middle = project((this.box.south + this.box.north) / 2,
                              (this.box.west + this.box.east) / 2);
@@ -407,26 +442,15 @@ var ROUTES = (function () {
             var at = project(lat, lon);
             return {x: at.x - left, y: at.y - top};
         }
-        // Tiles: the most detailed there are, stretched past that.
+        // The ground: the world image (stretched past its detail) and the
+        // street maps where there are any.
         ctx.fillStyle = SEA;
         ctx.fillRect(0, 0, w, h);
-        var tz = Math.max(0, Math.min(Math.floor(zoom), this.tilesMax));
-        var size = tile * Math.pow(2, zoom - tz);
-        var stretch = zoom - tz;
-        ctx.globalAlpha = stretch <= 1 ? 1 : Math.max(0.35, 1 - 0.2 * (stretch - 1));
-        var cols = Math.pow(2, tz + 1);
-        var rows = Math.pow(2, tz);
-        for (var ty = Math.max(0, Math.floor(top / size));
-            ty <= Math.min(rows - 1, Math.floor((top + h) / size)); ty++) {
-            for (var tx = Math.floor(left / size); tx <= Math.floor((left + w) / size); tx++) {
-                var entry = this.tileImage(tz, ((tx % cols) + cols) % cols, ty);
-                if (entry && entry.loaded) {
-                    ctx.drawImage(entry.img, tx * size - left, ty * size - top, size + 0.5,
-                                  size + 0.5);
-                }
-            }
+        var clear = STREETS.clearOf(this.credit, canvas);
+        var drawn = this.basemap.draw(ctx, zoom, left, top, w, h, clear ? [clear] : []);
+        if (STREETS.showCredit(this.credit, drawn)) {
+            this.schedule();            // (names placed clear of it next time)
         }
-        ctx.globalAlpha = 1;
         // The route, the clip that plays over it, and where it is.
         var self = this;
         var all = lines(this.route, null);
@@ -457,7 +481,8 @@ var ROUTES = (function () {
         var current = lines(this.route, function (id) {
             return id === self.clipId;
         });
-        stroke(current, 5, "rgba(255, 235, 180, 0.98)");
+        stroke(current, 7.5, CASING);
+        stroke(current, 4, CURRENT);
         var where = this.where(this.clipId, this.seconds);
         if (where) {
             var dot = toScreen(where.lat, where.lon);
@@ -476,12 +501,15 @@ var ROUTES = (function () {
         FIX_SLACK: FIX_SLACK,
         LINE: LINE,
         HALO: HALO,
+        CURRENT: CURRENT,
+        CASING: CASING,
         decode: decode,
         prepare: prepare,
         positionAt: positionAt,
         placeOf: placeOf,
         lines: lines,
         nearest: nearest,
+        strokeLines: strokeLines,
         fitZoom: fitZoom,
         boxOf: boxOf,
         MiniMap: MiniMap

@@ -62,6 +62,18 @@
    VIEWER.Stage(box, options)  a zoomable picture (wheel, pinch,
        double-click, drag) or, for 360-degree photos, an interactive
        panorama (WebGL; the flat picture when WebGL is not available).
+       A wide picture (format.isWide: a flat panorama) with a preview, on
+       a stage much narrower than itself (an upright phone; a landscape
+       stage only when it has the pixels, format.panFill) opens in its pan
+       view: zoomed to fill the stage's height at its middle (the zoom
+       going by its most detailed picture to come), panned by a drag
+       (or a sideways scroll), with a minimap at the foot of the stage that
+       frames the part in view (a tap or a drag there moves the view; the
+       arrow keys when it has the focus); a double tap (or zooming out)
+       shows it whole, and back. A swipe that pushes on beyond the end the
+       pan has reached changes picture (format.panSwipe); its larger
+       picture (urls.pano, see SITE.panoUrl) replaces the preview once it
+       is zoomed in.
        options: onSwipe(direction) (a sideways swipe changes picture),
        onState(state), scrollPage (the stage is part of a page that
        scrolls: the wheel scrolls it unless Ctrl is held or the picture
@@ -86,7 +98,9 @@
        controls turns that off and on (remembered in this browser).
        A 360 photo or video opens at its opening view (rec.ov, see
        opening_views.py and format.openingView; the front without one), and
-       stage.reset() returns there.
+       stage.reset() returns there. stage.seekTo(seconds, soft) moves a
+       video (not a drive) to that moment, now or once its player can (soft:
+       only while it has not been played or moved yet).
    VIEWER.stageUrls(rec, detail) the addresses stage.show wants.
    VIEWER.renderInfo(box, record, detail, context)  the information pane:
        title, date, place, camera, description and text with the search words
@@ -108,6 +122,24 @@
        resets a view that was zoomed or turned) and the albums of the
        picture with "Add to album..." (A) -- the admin's to change
        (context.onMarked(ids) is told), shown to others when set.
+       People (the full record's people, see people_groups.picture_view):
+       the names of the people in it, each searching person:"Name"; the
+       admin's pane also has "Show faces", which draws the boxes of its
+       faces over the picture (a layer of its own over context.stage's
+       picture, following its place and zoom; each box names its person),
+       kept on for the next pictures -- of a video or a 360 picture, which
+       get no boxes, a strip of its faces in the pane instead. A box (or a
+       face of the strip; Tab reaches them, Enter opens) opens a small
+       popover by it, a sheet at the foot of a phone's screen, to say who
+       the face is: type a few letters of a name and Enter (see
+       format.faceChoices and openNaming), "Not <name>" or "Not a face";
+       each change can be undone (Undo in its message, or Ctrl+Z while it
+       shows), and the pane and the boxes follow it. Of a
+       video, each name is followed by the moments that person was seen at
+       (its frames looked at), which move the video there (stage.seekTo);
+       a video opened by a search that names one of its people (person:,
+       or the name's words: format.personMoment) starts at that person's
+       first moment, and one opened with startAt {id, seconds} there.
    VIEWER.marks: favorite(ids, on, get), rate(ids, stars, get) (each
        resolves when the server has them; the records are changed in
        place), picker({ids, get, albums, mode ("add" or "remove"),
@@ -187,6 +219,45 @@ var VIEWER = (function () {
         return out;
     }
 
+    // Why a picture's time is the local time of its place (local_times.py:
+    // detail.clock.kind).
+    var CLOCK_REASONS = {
+        track: "by the video's GPS track",
+        gps: "by its GPS time",
+        gps_date: "by its GPS date",
+        like: "as for another picture from the same camera"
+    };
+
+    // What a picture's camera clock said when its time (taken) is the local
+    // time of its place (clock: detail.clock, see local_times.py): "Camera
+    // clock 08:11 (UTC+01:00); shown in the local time of its place
+    // (Europe/Paris), by the video's GPS track." -- with the date when
+    // the clock was on another day, and "the UTC offset is its place's" when
+    // only the offset changed. "" without a clock.
+    function clockText(taken, clock) {
+        var date = clock && typeof clock === "object" ? parseDate(clock.taken_at) : null;
+        if (!date || date.hour === null) {
+            return "";
+        }
+        var shown = parseDate(taken);
+        var sameDay = Boolean(shown) && shown.year === date.year &&
+            shown.month === date.month && shown.day === date.day;
+        var text = "Camera clock " + (sameDay ? "" : shortDate(clock.taken_at) + " at ") +
+            two(date.hour) + ":" + two(date.minute);
+        var offset = typeof clock.tz_offset === "string" ? clock.tz_offset : "";
+        if (/^[+-][0-9]{2}:[0-9]{2}$/.test(offset)) {
+            text += " (UTC" + offset + ")";
+        }
+        var moved = !sameDay || shown.hour !== date.hour || shown.minute !== date.minute;
+        text += moved ? "; shown in the local time of its place" :
+            "; the UTC offset is its place's";
+        if (typeof clock.zone === "string" && /^[A-Za-z][\w+\-\/]*$/.test(clock.zone)) {
+            text += " (" + clock.zone.replace(/_/g, " ") + ")";
+        }
+        var reason = CLOCK_REASONS[clock.kind];
+        return text + (reason ? ", " + reason : "") + ".";
+    }
+
     function number(value) {
         return typeof value === "number" && isFinite(value) ? value : null;
     }
@@ -241,6 +312,279 @@ var VIEWER = (function () {
             unit += 1;
         }
         return (unit === 0 ? String(bytes) : bytes.toFixed(bytes < 10 ? 1 : 0)) + " " + units[unit];
+    }
+
+    // A picture's camera RAW file (detail.raw: see raw_photos.view on the
+    // server, export.raw_detail in a published site), in words: its RAW
+    // original, "DSC01234.ARW (24 MB)" (", the same camera and second" when
+    // it was paired by camera and time; without a name when the site leaves
+    // file names out: "ARW file (16 MB)"), or, for a picture that is a RAW
+    // file, how it is shown: "ARW file, shown by the camera's preview in it;
+    // the RAW file holds 6000 x 4000" (its sensor data, which only a RAW
+    // converter shows). "" without one.
+    function rawText(raw) {
+        if (!raw || typeof raw !== "object") {
+            return "";
+        }
+        var kind = typeof raw.format === "string" && /^[A-Z0-9]{2,5}$/.test(raw.format)
+            ? raw.format + " file" : "RAW file";
+        if (raw.how === "alone") {
+            var sensor = Array.isArray(raw.sensor) && raw.sensor.length === 2 &&
+                number(raw.sensor[0]) && number(raw.sensor[1])
+                ? "; the RAW file holds " + raw.sensor[0] + " \u00d7 " + raw.sensor[1] : "";
+            return kind + ", shown by the camera's preview in it" + sensor;
+        }
+        var size = fileSize(raw.size);
+        var text = (typeof raw.name === "string" && raw.name ? raw.name : kind) +
+            (size ? " (" + size + ")" : "");
+        return raw.how === "time" ? text + ", the same camera and second" : text;
+    }
+
+    // Where a picture's RAW file can be downloaded (detail.raw.url): the
+    // server's /raw/<id> (for the owner), or a published site's
+    // raws/<id>.<ext>; "" for anything else.
+    function rawUrl(raw) {
+        var url = raw && typeof raw === "object" && typeof raw.url === "string" ? raw.url : "";
+        return /^\/raw\/[0-9]+$/.test(url) || /^raws\/[a-z0-9]+\.[a-z0-9]+$/.test(url) ? url : "";
+    }
+
+    /* Where a video found by a search for one of its people starts: the first
+       moment (its "at", see people_groups.picture_view) of the first of its
+       people (names: the full record's people.names) that the query names, or
+       null. A person: term names one as search finds people (SearchCore.
+       findPerson): person:#<id>, its name or "Person 12" (any case, accents
+       and punctuation aside), or the start of the name of only one of the
+       video's named people; and a named one's words as they stand in the
+       query do too (not an unnamed one's "person 12"). query: the text, or
+       SearchCore.parse()'s result (its person: terms, not negated ones). */
+    function personMoment(names, query) {
+        var text = query;
+        var values = null;
+        if (query && typeof query === "object") {
+            text = query.text;
+            if (Array.isArray(query.terms)) {
+                values = [];
+                query.terms.forEach(function (term) {
+                    if (term && term.filter && term.filter.kind === "person" && !term.neg &&
+                            typeof term.filter.value === "string") {
+                        values.push(term.filter.value);
+                    }
+                });
+            }
+        }
+        if (!Array.isArray(names) || typeof text !== "string" || !text) {
+            return null;
+        }
+        if (values === null) {
+            values = personValues(text);
+        }
+        var seen = names.filter(function (person) {
+            return person && Array.isArray(person.at) && person.at.length &&
+                typeof person.at[0] === "number" && typeof person.label === "string";
+        });
+        var chosen = {};
+        values.forEach(function (value) {
+            var wanted = nameKey(value);
+            var byId = /^#(\d{1,18})$/.exec(String(value).replace(/^\s+|\s+$/g, ""));
+            var exact = seen.filter(function (person) {
+                return byId ? String(person.id) === byId[1] : nameKey(person.label) === wanted;
+            });
+            var starts = byId || !wanted ? [] : seen.filter(function (person) {
+                return person.named && nameKey(person.label).indexOf(wanted) === 0;
+            });
+            var found = exact.length ? exact[0] : starts.length === 1 ? starts[0] : null;
+            if (found) {
+                chosen[String(found.id)] = true;
+            }
+        });
+        // (The words besides the person: terms, which say who they name above.)
+        var words = " " + nameKey(text.replace(personPattern(), "$1 ")) + " ";
+        for (var k = 0; k < seen.length; k++) {
+            var person = seen[k];
+            if (chosen[String(person.id)] || (person.named && nameKey(person.label) &&
+                    words.indexOf(" " + nameKey(person.label) + " ") >= 0)) {
+                return person.at[0];
+            }
+        }
+        return null;
+    }
+
+    // A name as personMoment compares it: lower case, without accents, quotes
+    // and punctuation ("D'Arcy" and "d arcy", "J. R. Smith" and "j r smith"
+    // are the same), single spaces.
+    function nameKey(text) {
+        text = String(text === null || text === undefined ? "" : text).toLowerCase();
+        if (text.normalize) {
+            text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        }
+        return text.replace(/["'`,;:.!?()\[\]{}\u2018\u2019\u201c\u201d]+/g, " ")
+            .replace(/\s+/g, " ").replace(/^ | $/g, "");
+    }
+
+    // The person: terms of a query's text (person:Name, person:"Full name",
+    // person:#12; -person:... leaves out): 2, the minus; 3 to 5, the value.
+    function personPattern() {
+        return /(^|[\s(])(-?)person:(?:"([^"]*)"?|\u201c([^\u201d]*)\u201d?|([^\s"\u201c]+))/gi;
+    }
+
+    // The values of the person: terms of a query's text that are not negated.
+    function personValues(text) {
+        var values = [];
+        var pattern = personPattern();
+        var match;
+        while ((match = pattern.exec(text)) !== null) {
+            var value = match[3] !== undefined ? match[3] : match[4] !== undefined ? match[4]
+                : match[5];
+            if (!match[2] && value) {
+                values.push(value);
+            }
+        }
+        return values;
+    }
+
+    /* The query a page searched with, for personMoment: with plain-language
+       search (SearchCore.interpret, where the page has it; options.plain
+       false: off), the typed text as it was understood -- a person's name
+       typed as words is a person: term --, the people being the picture's
+       named ones (names: its people.names); else the text as typed.
+       options.typed: the parts left as typed (the address's "typed": "*", or
+       keys joined by commas). core: SearchCore (default: the page's). */
+    function searchedQuery(text, rec, names, options, core) {
+        options = options || {};
+        if (core === undefined) {
+            core = typeof SearchCore !== "undefined" ? SearchCore : null;
+        }
+        if (typeof text !== "string" || !text || !rec || options.plain === false || !core ||
+                typeof core.interpret !== "function") {
+            return text;
+        }
+        var people = (Array.isArray(names) ? names : []).filter(function (person) {
+            return person && person.named && typeof person.label === "string";
+        }).map(function (person) {
+            return {id: person.id, name: person.label, label: person.label, ids: [rec.i],
+                    hidden: false};
+        });
+        var typed = options.typed === "*" ? "*" : typeof options.typed === "string" &&
+            options.typed ? options.typed.split(",") : [];
+        try {
+            var answer = core.interpret([rec], text, {people: people, typed: typed,
+                                                      plain: true});
+            return answer && typeof answer.query === "string" ? answer.query : text;
+        } catch (error) {
+            return text;
+        }
+    }
+
+    /* What the popover that names a face (openNaming) offers for the text
+       typed: people is /api/people's list (the admin's: hidden people too),
+       face {person (its person's id, or null), named (that person has a
+       name)}. Returns [{kind: "person", person}, ..., {kind: "name", person:
+       the face's person's id, name}, {kind: "new", name}]: the people (but
+       the face's own) whose name, or a word of it, starts with the text
+       (nameKey: any case, accents and punctuation aside; "lee" finds "Ann
+       Lee"; a person without a name only by its number: "12", "person 12"),
+       those called so first, then those whose name starts so, then the
+       others, each as people lists them; with nothing typed, the named
+       people. Then, when nobody (the face's own person neither) has that
+       name as the server compares names (serverNameKey: accents count there,
+       so "Jose" can be a new name beside the accented one, while "STRASSE"
+       is the name spelled with a sharp s): the text as a new name -- of the
+       face's person when it has none ("name": all its faces), and of a new
+       person of this face alone ("new"). Once something is typed, the first
+       one is what Enter takes. */
+    function faceChoices(people, face, text) {
+        var typed = String(text === null || text === undefined ? "" : text)
+            .replace(/\s+/g, " ").replace(/^ | $/g, "");
+        var key = nameKey(typed);
+        var server = serverNameKey(typed);
+        var own = face && typeof face.person === "number" ? face.person : null;
+        var numbered = /[0-9]/.test(key);
+        var exact = false;
+        var found = [];
+        (Array.isArray(people) ? people : []).forEach(function (person, order) {
+            if (!person || typeof person.id !== "number") {
+                return;
+            }
+            var label = nameKey(person.label || person.name || "");
+            if (key && serverNameKey(person.label || person.name || "") === server) {
+                exact = true;
+            }
+            if (person.id === own || (!person.name && (!key || !numbered))) {
+                return;
+            }
+            var rank = !key ? 3 : label === key ? 0 : label.indexOf(key) === 0 ? 1
+                : (" " + label).indexOf(" " + key) >= 0 ? 2 : -1;
+            if (rank >= 0) {
+                found.push({rank: rank, order: order, person: person});
+            }
+        });
+        found.sort(function (a, b) {
+            return a.rank - b.rank || a.order - b.order;
+        });
+        var choices = found.map(function (item) {
+            return {kind: "person", person: item.person};
+        });
+        // ("Person 12" is how people without a name are shown: no name.)
+        if (key && !exact && !/^person [0-9]+$/.test(key)) {
+            if (own !== null && !face.named) {
+                choices.push({kind: "name", person: own, name: typed});
+            }
+            choices.push({kind: "new", name: typed});
+        }
+        return choices;
+    }
+
+    // A name as the server tells names apart (people_groups.name_key: NFKC and
+    // case folding, accents kept), as near as a page can: one person per key.
+    function serverNameKey(text) {
+        text = String(text === null || text === undefined ? "" : text)
+            .replace(/\s+/g, " ").replace(/^ | $/g, "");
+        if (text.normalize) {
+            text = text.normalize("NFKC");
+        }
+        // (Case folding, where it is more than lower case: sharp s, final sigma.)
+        return text.toLowerCase().replace(/\u00df/g, "ss").replace(/\u03c2/g, "\u03c3");
+    }
+
+    /* The faces of a picture in reading order (for Tab): rows from the top --
+       a face whose middle is within the height of a row's first face is in
+       that row -- each from the left. faces: [{x, y, w, h}] (fractions). */
+    function readingOrder(faces) {
+        var rows = [];
+        (Array.isArray(faces) ? faces.slice() : []).sort(function (a, b) {
+            return a.y - b.y || a.x - b.x;
+        }).forEach(function (face) {
+            var middle = face.y + face.h / 2;
+            var row = rows.length ? rows[rows.length - 1] : null;
+            if (row && middle >= row.top && middle <= row.bottom) {
+                row.faces.push(face);
+            } else {
+                rows.push({top: face.y, bottom: face.y + face.h, faces: [face]});
+            }
+        });
+        var out = [];
+        rows.forEach(function (row) {
+            row.faces.sort(function (a, b) {
+                return a.x - b.x;
+            }).forEach(function (face) {
+                out.push(face);
+            });
+        });
+        return out;
+    }
+
+    // A moment of a video: "0:07", "1:02:03" -- whole seconds rounded down,
+    // as a player shows where it is (and the People page, people.js, too).
+    function momentText(seconds) {
+        seconds = number(seconds);
+        if (seconds === null || seconds < 0) {
+            return "";
+        }
+        var total = Math.floor(seconds);
+        var hours = Math.floor(total / 3600);
+        var minutes = Math.floor((total % 3600) / 60);
+        var rest = total % 60;
+        return (hours ? hours + ":" + two(minutes) : String(minutes)) + ":" + two(rest);
     }
 
     // The length of a video: "0:24", "12:05", "1:02:03" ("" when unknown):
@@ -474,6 +818,150 @@ var VIEWER = (function () {
         var turn = Math.abs(a.yaw - b.yaw) % (2 * Math.PI);
         return Math.min(turn, 2 * Math.PI - turn) < 1e-3 && Math.abs(a.pitch - b.pitch) < 1e-3 &&
             Math.abs(a.fov - b.fov) < 1e-3;
+    }
+
+    /* ---------- Wide pictures (pure helpers) ----------------------------- */
+
+    /* A wide picture (a flat panorama: at least WIDE_ASPECT times as wide
+       as it is tall, images.WIDE_ASPECT) opens in its pan view -- zoomed
+       so that it fills the stage's height, at its middle (Stage.layout) --
+       where shown whole it would be a thin strip: less than PAN_HEIGHT px
+       tall, on a stage at least PAN_RATIO times narrower than the picture
+       (an upright phone's). The numbers were chosen by looking at phone
+       and desktop screenshots of real panoramas: below WIDE_ASPECT (2:1
+       photos, short panoramas) the whole picture across an upright phone
+       was the better view; a desktop window, or a phone held sideways,
+       shows even a 4:1 panorama whole well enough (only far wider ones
+       pan there). The middle was a better first view than the most
+       detailed part of the picture (often a bush or a wall at one end). */
+    var WIDE_ASPECT = 2.2;
+    var PAN_RATIO = 2.5;
+    var PAN_HEIGHT = 200;
+    // On a stage wider than it is tall (a desktop window, a phone held
+    // sideways) the whole picture is a wide strip already: the pan view
+    // opens there only when the picture has the pixels to fill the stage's
+    // height, magnified at most this much (else the sharp strip is better).
+    var PAN_UPSCALE = 1.5;
+    // A sideways swipe longer than this (px) changes picture.
+    var SWIPE_DISTANCE = 60;
+    // A drag on a wide picture that begins this near an end of it (px) begins
+    // at that end (what is left is too little to see: see panSwipe).
+    var PAN_END_SLACK = 24;
+
+    // Is rec a wide flat picture (a photo; not a video, not a 360 photo)?
+    function isWide(rec) {
+        return Boolean(rec && typeof rec === "object" && !rec.mv && rec.p !== "360" &&
+                       rec.w > 0 && rec.hgt > 0 && rec.w >= WIDE_ASPECT * rec.hgt - 1e-9);
+    }
+
+    /* The zoom at which a wide picture, fitted whole into a stage of
+       stageWidth x stageHeight as width x height (px), fills the stage's
+       height when it opens in its pan view there (see WIDE_ASPECT; isWide
+       says which pictures are wide, their preview's shape may be a hair
+       narrower); 0 when it is shown whole. pixelsHigh: how many pixels
+       high the most detailed picture of it is (optional; see PAN_UPSCALE). */
+    function panFill(width, height, stageWidth, stageHeight, pixelsHigh) {
+        if (!(width > 0 && height > 0 && stageWidth > 0 && stageHeight > 0)) {
+            return 0;
+        }
+        var aspect = width / height;
+        if (aspect < 0.99 * WIDE_ASPECT || aspect < PAN_RATIO * stageWidth / stageHeight ||
+                height >= PAN_HEIGHT) {
+            return 0;
+        }
+        if (stageWidth > stageHeight && pixelsHigh > 0 &&
+                pixelsHigh * PAN_UPSCALE < stageHeight) {
+            return 0;
+        }
+        return stageHeight / height;
+    }
+
+    /* The size ({w, h}) of the most detailed picture of a wide record the
+       stage will show: its larger picture when one comes (pano: its
+       address; SITE.widePanoSize), else its preview (SITE.previewSize).
+       Without the site's helpers, the record's own size. */
+    function detailSize(rec, pano) {
+        var site = typeof window !== "undefined" ? window.SITE : null;
+        var found = null;
+        if (site && pano && site.widePanoSize) {
+            found = site.widePanoSize(rec.w, rec.hgt);
+        } else if (site && !pano && site.previewSize) {
+            found = site.previewSize(rec);
+        }
+        if (!found || !(found[0] > 0 && found[1] > 0)) {
+            found = [rec.w || 0, rec.hgt || 0];
+        }
+        return {w: found[0], h: found[1]};
+    }
+
+    /* Where the left edge of a picture shownWidth wide goes (tx) on a stage
+       stageWidth wide for its point centre (0: its left edge, 1: its right
+       edge) to be in the middle, with no gap at either side; centred when
+       it is no wider than the stage. */
+    function panOffset(centre, shownWidth, stageWidth) {
+        if (shownWidth <= stageWidth) {
+            return (stageWidth - shownWidth) / 2;
+        }
+        return clamp(stageWidth / 2 - centre * shownWidth, stageWidth - shownWidth, 0);
+    }
+
+    // The point of the picture in the middle of the stage (panOffset the other way).
+    function panCentre(tx, shownWidth, stageWidth) {
+        if (shownWidth <= stageWidth) {
+            return 0.5;
+        }
+        return clamp((stageWidth / 2 - tx) / shownWidth, 0, 1);
+    }
+
+    // How far along a picture wider than the stage the view is: 0 at its
+    // left end, 1 at its right end.
+    function panAlong(tx, shownWidth, stageWidth) {
+        if (shownWidth <= stageWidth) {
+            return 0.5;
+        }
+        return clamp(-tx / (shownWidth - stageWidth), 0, 1) || 0;     // (never -0)
+    }
+
+    /* The part of a picture shownWidth x shownHeight at (tx, ty) that a
+       stage shows, as fractions of the picture: {left, width, top,
+       height} (the minimap's frame). */
+    function panWindow(tx, ty, shownWidth, shownHeight, stageWidth, stageHeight) {
+        var left = clamp(-tx / shownWidth, 0, 1) || 0;                // (never -0)
+        var top = clamp(-ty / shownHeight, 0, 1) || 0;
+        return {left: left, width: clamp(stageWidth / shownWidth, 0, 1 - left),
+                top: top, height: clamp(stageHeight / shownHeight, 0, 1 - top)};
+    }
+
+    /* The end of a picture wider than the stage that the view has reached
+       (within slack px, default half a pixel): -1 its left end (nothing
+       more to the left), 1 its right end, 0 neither (or it is no wider
+       than the stage). */
+    function panEnd(tx, shownWidth, stageWidth, slack) {
+        slack = slack === undefined ? 0.5 : slack;
+        if (shownWidth <= stageWidth + 1) {
+            return 0;
+        }
+        if (tx >= -slack) {
+            return -1;
+        }
+        return tx <= stageWidth - shownWidth + slack ? 1 : 0;
+    }
+
+    /* Does a drag on a wide picture change picture? It does when it began
+       with the view at an end of the picture (or within PAN_END_SLACK px of
+       it: end, see panEnd) and pushed
+       on beyond that end by more than SWIPE_DISTANCE (push px; dy: how far
+       it went up or down), mostly sideways: a swipe once the pan has
+       reached the end. 1: the next picture (a swipe to the left at the
+       right end), -1: the previous one, 0: it only panned. */
+    function panSwipe(end, push, dy) {
+        if (!end || Math.abs(push) <= SWIPE_DISTANCE || Math.abs(push) <= 1.5 * Math.abs(dy)) {
+            return 0;
+        }
+        if (end === 1 && push < 0) {
+            return 1;
+        }
+        return end === -1 && push > 0 ? -1 : 0;
     }
 
     /* The uniforms of the 360 video shader for a record's lens geometry
@@ -837,7 +1325,7 @@ var VIEWER = (function () {
         }).join(", ");
     }
 
-    /* "Kahului, Hawaii, United States (3 km)": the place of a record (its
+    /* "Albufeira, Algarve, Portugal (3 km)": the place of a record (its
        town, when one is near, with how far it is), or "". A place only
        estimated (pe: the picture has no usable position of its own, see
        place_estimates.py) says where it comes from (ps); the owner's own
@@ -857,6 +1345,38 @@ var VIEWER = (function () {
             text += rec.km < 1 ? " (under 1 km)" : " (" + Math.round(rec.km) + " km)";
         }
         return text;
+    }
+
+    /* "Harbour Aquarium": the named place on the street maps where a picture
+       was taken (np; see named_places.py), or "". */
+    function namedPlace(rec) {
+        return rec && typeof rec.np === "string" ? rec.np : "";
+    }
+
+    // The kinds of named places, in words (others: the kind with spaces).
+    var KIND_WORDS = {aerodrome: "airport", place_of_worship: "place of worship",
+                      fast_food: "fast food"};
+
+    /* "aquarium, 40 m away", "zoo, taken inside it": what a named place is
+       (nk) and how far it is (nd, or ni inside it), or "". An approximate
+       position (na: an estimate, or one that may be off by more than the
+       distance) says "nearby" or "probably taken inside it". */
+    function namedPlaceNote(rec) {
+        if (!namedPlace(rec)) {
+            return "";
+        }
+        var kind = namedPlaceKind(rec);
+        var where = rec.ni ? (rec.na ? "probably taken inside it" : "taken inside it")
+            : typeof rec.nd === "number" && isFinite(rec.nd)
+                ? (rec.nd < 1 ? "right there" : Math.round(rec.nd) + " m away")
+                : rec.na ? "nearby" : "";
+        return [kind, where].filter(Boolean).join(", ");
+    }
+
+    // What a named place is, in words ("aquarium", "place of worship"), or "".
+    function namedPlaceKind(rec) {
+        return namedPlace(rec) && typeof rec.nk === "string" && rec.nk
+            ? KIND_WORDS[rec.nk] || rec.nk.replace(/_/g, " ") : "";
     }
 
     var ESTIMATED_PLACE = "(estimated from pictures taken around the same time)";
@@ -886,6 +1406,8 @@ var VIEWER = (function () {
         tagKey: tagKey,
         placeText: placeText,
         placeNames: placeNames,
+        namedPlace: namedPlace,
+        namedPlaceNote: namedPlaceNote,
         estimateReason: estimateReason,
         splitTags: splitTags,
         tagProblem: tagProblem,
@@ -895,9 +1417,17 @@ var VIEWER = (function () {
         monthLabel: monthLabel,
         shortDate: shortDate,
         longDate: longDate,
+        clockText: clockText,
         exposureParts: exposureParts,
         fileSize: fileSize,
+        rawText: rawText,
+        rawUrl: rawUrl,
         durationText: durationText,
+        personMoment: personMoment,
+        faceChoices: faceChoices,
+        readingOrder: readingOrder,
+        searchedQuery: searchedQuery,
+        momentText: momentText,
         codecName: codecName,
         canPlayVideo: canPlayVideo,
         videoFacts: videoFacts,
@@ -916,8 +1446,20 @@ var VIEWER = (function () {
         levelUp: levelUp,
         levelInverted: levelInverted,
         levelMatrix: levelMatrix,
+        isWide: isWide,
+        panFill: panFill,
+        panOffset: panOffset,
+        panCentre: panCentre,
+        panAlong: panAlong,
+        panWindow: panWindow,
+        panEnd: panEnd,
+        panSwipe: panSwipe,
         MIN_FOV: MIN_FOV,
-        MAX_FOV: MAX_FOV
+        MAX_FOV: MAX_FOV,
+        WIDE_ASPECT: WIDE_ASPECT,
+        PAN_RATIO: PAN_RATIO,
+        PAN_HEIGHT: PAN_HEIGHT,
+        PAN_END_SLACK: PAN_END_SLACK
     };
 
     if (!hasDocument) {
@@ -1305,8 +1847,12 @@ var VIEWER = (function () {
 
     /* ---------- Stage: one picture, zoomable, or a panorama ------------------ */
 
-    var SWIPE_DISTANCE = 60;
     var DOUBLE_TAP_MS = 300;
+    // The minimap of a wide picture's pan view: this high at most (px), and
+    // at most this share of the stage's width (a very wide picture's is
+    // lower).
+    var MINIMAP_HEIGHT = 34;
+    var MINIMAP_SHARE = 0.6;
     // A 360 video with a level track (rec.lv) waits this long for the full
     // record that holds it before its frames are shown as they are.
     var LEVEL_WAIT_MS = 3000;
@@ -1443,6 +1989,14 @@ var VIEWER = (function () {
         this.token = 0;
         this.cancelSharp = null;            // stops loading the large panorama (sharpen)
         this.mode = "image";                // "image", "pano" or "video"
+        this.wide = false;                  // a wide picture (isWide), shown as a picture
+        this.filling = false;               // ... in its pan view (kept so by layout)
+        this.centre = 0.5;                  // ... with this point of it in the middle
+        this.large = null;                  // its larger picture (urls.pano), to load
+        this.detail = null;                 // ... the size of the most detailed one to come
+        this.previewIn = false;             // its preview is shown (the larger one may come)
+        this.thumbUrl = "";                 // (the minimap's picture)
+        this.minimap = null;                // the minimap (buildMinimap)
         this.view = openingView(null);
         this.zoom = 1;
         this.tx = 0;
@@ -1613,6 +2167,51 @@ var VIEWER = (function () {
         return true;
     };
 
+    // A moment of the video shown (a person seen there): now when its player
+    // can, else once it has loaded (startTime: see seekWhenReady); soft: only
+    // while the video has not been played or moved. False for no video (or
+    // a drive, whose clips have moments of their own).
+    Stage.prototype.seekTo = function (seconds, soft) {
+        if (typeof seconds !== "number" || !isFinite(seconds) || seconds < 0 || this.drive ||
+                !this.rec || !this.rec.mv) {
+            return false;
+        }
+        var video = this.video;
+        if (soft && (this.moved || (video && (!video.paused || video.currentTime > 0.05)))) {
+            return false;
+        }
+        this.moved = !soft;
+        if (video && video.readyState >= 1) {
+            this.startTime = null;
+            try {
+                video.currentTime = seconds;
+            } catch (error) {
+                // (Not seekable.)
+            }
+            return true;
+        }
+        this.startTime = seconds;
+        return true;
+    };
+
+    // A new player of the video shown: to startTime (seekTo) once it knows its
+    // length.
+    Stage.prototype.seekWhenReady = function (video) {
+        var self = this;
+        video.addEventListener("loadedmetadata", function () {
+            if (self.video !== video || typeof self.startTime !== "number") {
+                return;
+            }
+            var at = self.startTime;
+            self.startTime = null;
+            try {
+                video.currentTime = at;
+            } catch (error) {
+                // (Not seekable: from the start.)
+            }
+        });
+    };
+
     // Is a video playing (for Space)? Toggles play and pause; false when no video.
     Stage.prototype.togglePlay = function () {
         var video = this.video;
@@ -1701,6 +2300,7 @@ var VIEWER = (function () {
             }
         });
         video.src = urls.video;
+        this.seekWhenReady(video);
         this.box.insertBefore(video, this.note);
         this.video = video;
         this.img.hidden = true;
@@ -1934,6 +2534,7 @@ var VIEWER = (function () {
             }
         });
         video.src = urls.video;
+        this.seekWhenReady(video);
         this.video = video;
         this.videoFrame = function () {
             frame();
@@ -2003,6 +2604,7 @@ var VIEWER = (function () {
             });
         }
         video.src = urls.video;
+        this.seekWhenReady(video);
         var box = el("div", {className: "stage-fisheye"}, [video]);
         this.box.insertBefore(box, this.note);
         this.fisheyeBox = box;
@@ -2122,7 +2724,7 @@ var VIEWER = (function () {
         if (this.options.onState) {
             this.options.onState({zoomed: this.zoom > 1.01, pano: this.mode === "pano",
                                   zoom: this.zoom, video: this.mode === "video",
-                                  unlevelled: this.unlevelled()});
+                                  unlevelled: this.unlevelled(), moved: this.isMoved()});
         }
     };
 
@@ -2150,9 +2752,18 @@ var VIEWER = (function () {
             return;
         }
         this.mode = "image";
+        this.startTime = null;      // (seekTo)
+        this.moved = false;
         // (A 360 picture opens at its opening view, see openingView.)
         this.view = openingView(rec);
         this.zoom = 1;
+        this.wide = false;
+        this.filling = false;
+        this.centre = 0.5;
+        this.large = null;
+        this.detail = null;
+        this.previewIn = false;
+        this.hideMinimap();
         this.img.hidden = false;
         this.box.classList.remove("is-pano");
         this.box.removeAttribute("data-texture-width");
@@ -2166,6 +2777,19 @@ var VIEWER = (function () {
             return;
         }
         this.natural = {w: rec && rec.w ? rec.w : 0, h: rec && rec.hgt ? rec.hgt : 0};
+        // A wide picture opens in its pan view where the stage is much
+        // narrower than itself (see layout); its larger picture is loaded
+        // once it is zoomed in (wantLarge). Its zoom goes by the pixels of
+        // the most detailed picture that comes (detail), so it stays as it
+        // opened while the preview and the larger picture arrive. Not with
+        // only its thumbnail (an export without pictures): that would only
+        // show it blurred.
+        this.wide = isWide(rec) && Boolean(urls.preview);
+        this.filling = this.wide;
+        this.large = this.wide ? urls.pano || null : null;
+        this.detail = this.wide ? detailSize(rec, this.large) : null;
+        var largeComing = Boolean(this.large);
+        this.thumbUrl = urls.thumb || urls.preview || "";
         this.img.alt = altText(rec);
         this.img.src = urls.thumb || urls.preview || "";
         this.layout();
@@ -2198,6 +2822,11 @@ var VIEWER = (function () {
                 return;
             }
             self.img.src = loader.src;
+            self.previewIn = true;
+            if (!largeComing) {
+                // (The preview is the most detailed picture: its own pixels.)
+                self.detail = null;
+            }
             self.layout();
             if (wantPano) {
                 self.setNote(flatPanoramaNote());
@@ -2214,6 +2843,14 @@ var VIEWER = (function () {
                 return;
             }
             self.busy.hidden = true;
+            if (self.wide) {
+                // (Only its thumbnail: shown whole, as one with no preview.)
+                self.wide = self.filling = false;
+                self.large = self.detail = null;
+                self.zoom = 1;
+                self.hideMinimap();
+                self.layout();
+            }
             self.setNote("Showing a small version: the full picture cannot be read right now.");
             self.state();
         };
@@ -2379,13 +3016,54 @@ var VIEWER = (function () {
         this.base = {w: Math.max(1, w * scale), h: Math.max(1, h * scale)};
         this.img.style.width = this.base.w + "px";
         this.img.style.height = this.base.h + "px";
+        if (this.filling) {
+            // A wide picture's pan view: it fills the stage's height (shown
+            // whole where the stage is not much narrower), with the same
+            // point in the middle as before (a phone turned, the pane
+            // opened or closed).
+            this.zoom = this.panZoom() || 1;
+            this.tx = panOffset(this.centre, this.base.w * this.zoom, size.w);
+            this.ty = 0;
+        }
         this.place();
+        if (this.wide) {
+            // (A stage resized may open or leave the pan view: Reset follows.)
+            this.state();
+        }
+    };
+
+    // The pixels ({w, h}) of the picture the view goes by: a wide picture's
+    // most detailed one, which may still be on its way (detail; so the view
+    // stays as it opened while the preview and the larger picture arrive),
+    // else the picture shown.
+    Stage.prototype.pixels = function () {
+        if (this.wide && this.detail) {
+            return this.detail;
+        }
+        return {w: Math.max(this.natural.w || 0, this.img.naturalWidth || 0),
+                h: Math.max(this.natural.h || 0, this.img.naturalHeight || 0)};
+    };
+
+    // The zoom of a wide picture's pan view here (0: it is shown whole).
+    Stage.prototype.panZoom = function () {
+        if (!this.wide || this.mode !== "image") {
+            return 0;
+        }
+        var size = this.size();
+        var fill = panFill(this.base.w, this.base.h, size.w, size.h, this.pixels().h);
+        return fill > 1.01 ? Math.min(fill, this.maxZoom()) : 0;
     };
 
     Stage.prototype.maxZoom = function () {
-        var pixels = Math.max(this.natural.w || 0, this.img.naturalWidth || 0);
+        var pixels = this.pixels().w;
         var shown = this.base.w || 1;
-        return clamp(2 * pixels / shown, 2, 8);
+        var most = 8;
+        if (this.wide) {
+            // (A wide picture zooms in up to twice its pan view.)
+            var size = this.size();
+            most = Math.max(most, 2 * panFill(this.base.w, this.base.h, size.w, size.h));
+        }
+        return clamp(2 * pixels / shown, 2, most);
     };
 
     // Keep the picture centred when smaller than the stage, else covering it.
@@ -2398,6 +3076,195 @@ var VIEWER = (function () {
         this.img.style.transform = "translate(" + this.tx + "px, " + this.ty + "px) scale(" +
             this.zoom + ")";
         this.box.classList.toggle("is-zoomed", this.zoom > 1.01);
+        // (The pan view: on the detail page an upward swipe still scrolls.)
+        this.box.classList.toggle("is-filling", this.filling && this.zoom > 1.01);
+        if (this.wide) {
+            this.drawMinimap();
+            this.wantLarge();
+        }
+    };
+
+    /* A wide picture zoomed in (its pan view too) wants more pixels than
+       its preview's: its larger picture (urls.pano) is loaded, and replaces
+       the preview once it is there (the view stays where it is). */
+    Stage.prototype.wantLarge = function () {
+        var self = this;
+        if (!this.large || !this.previewIn || this.zoom <= 1.01 || this.mode !== "image") {
+            return;
+        }
+        var url = this.large;
+        var token = this.token;
+        this.large = null;
+        var loader = new Image();
+        loader.decoding = "async";
+        loader.onload = function () {
+            if (token !== self.token || self.mode !== "image") {
+                return;
+            }
+            self.cancelSharp = null;
+            self.natural = {w: loader.naturalWidth, h: loader.naturalHeight};
+            self.detail = null;
+            self.img.src = loader.src;
+            self.layout();
+        };
+        loader.onerror = function () {
+            if (token === self.token) {
+                self.cancelSharp = null;        // (the preview stays)
+                // (Its pixels are all there is: the view goes by them.)
+                self.detail = null;
+                if (self.mode === "image") {
+                    self.layout();
+                }
+            }
+        };
+        this.dropSharp();
+        this.cancelSharp = function () {
+            loader.onload = null;
+            loader.onerror = null;
+            loader.removeAttribute("src");      // (stops the download)
+        };
+        loader.src = url;
+    };
+
+    /* Move a picture wider than the stage sideways by dx px (a sideways
+       scroll, the minimap's keys); its pan view keeps the new middle. */
+    Stage.prototype.panBy = function (dx) {
+        this.tx += dx;
+        this.place();
+        this.followCentre();
+        this.state();
+    };
+
+    // Move the view so that the point at (0: the picture's left edge, 1: its right edge)
+    // is in the middle of the stage.
+    Stage.prototype.panTo = function (at) {
+        this.tx = panOffset(clamp(at, 0, 1), this.base.w * this.zoom, this.size().w);
+        this.place();
+        this.followCentre();
+    };
+
+    // The pan view keeps the point now in the middle there (see layout).
+    Stage.prototype.followCentre = function () {
+        if (this.filling) {
+            this.centre = panCentre(this.tx, this.base.w * this.zoom, this.size().w);
+        }
+    };
+
+    Stage.prototype.hideMinimap = function () {
+        if (this.minimap) {
+            this.minimap.root.hidden = true;
+        }
+        this.box.classList.remove("has-minimap");
+    };
+
+    /* The minimap of a wide picture wider (or taller) than the stage: the
+       whole picture small at the foot of the stage, the part in view
+       framed (format.panWindow). */
+    Stage.prototype.drawMinimap = function () {
+        var size = this.size();
+        var w = this.base.w * this.zoom;
+        var h = this.base.h * this.zoom;
+        if (!this.wide || this.mode !== "image" || !this.thumbUrl ||
+                (w <= size.w + 1 && h <= size.h + 1)) {
+            this.hideMinimap();
+            return;
+        }
+        var map = this.minimap || this.buildMinimap();
+        var aspect = this.base.w / this.base.h;
+        var width = Math.max(1, Math.min(MINIMAP_HEIGHT * aspect, size.w * MINIMAP_SHARE));
+        map.frame.style.width = width + "px";
+        map.frame.style.height = Math.max(1, width / aspect) + "px";
+        if (map.img.getAttribute("src") !== this.thumbUrl) {
+            map.img.src = this.thumbUrl;
+        }
+        var view = panWindow(this.tx, this.ty, w, h, size.w, size.h);
+        map.view.style.left = (100 * view.left) + "%";
+        map.view.style.width = (100 * view.width) + "%";
+        map.view.style.top = (100 * view.top) + "%";
+        map.view.style.height = (100 * view.height) + "%";
+        var along = Math.round(100 * panAlong(this.tx, w, size.w));
+        map.root.setAttribute("aria-valuenow", String(along));
+        map.root.setAttribute("aria-valuetext", w <= size.w + 1 ? "All of it across"
+            : along <= 0 ? "At the left end" : along >= 100 ? "At the right end"
+                : along + "% of the way across");
+        map.root.hidden = false;
+        this.box.classList.add("has-minimap");
+    };
+
+    /* The minimap's nodes: a slider (role) whose picture a tap or a drag
+       moves the view to, and whose keys (minimapKey) move along it. */
+    Stage.prototype.buildMinimap = function () {
+        var self = this;
+        var img = el("img", {className: "stage-minimap-img", alt: "", draggable: false});
+        var view = el("span", {className: "stage-minimap-view"});
+        var frame = el("span", {className: "stage-minimap-frame"}, [img, view]);
+        var root = el("div", {className: "stage-minimap", hidden: true,
+                              title: "Where you are in the picture: tap or drag to move " +
+                                  "(arrow keys, Home, End)",
+                              attrs: {role: "slider", "aria-label": "Where in the panorama",
+                                      "aria-valuemin": "0", "aria-valuemax": "100"}},
+                      [frame]);
+        root.tabIndex = 0;
+        var dragging = null;
+        function moveTo(event) {
+            var rect = frame.getBoundingClientRect();
+            if (rect.width > 0) {
+                self.panTo((event.clientX - rect.left) / rect.width);
+            }
+        }
+        root.addEventListener("pointerdown", function (event) {
+            if (event.button !== undefined && event.button !== 0 &&
+                    event.pointerType === "mouse") {
+                return;
+            }
+            try {
+                root.setPointerCapture(event.pointerId);
+            } catch (error) {
+                // (Capture is a nicety: a drag that leaves the minimap.)
+            }
+            dragging = event.pointerId;
+            moveTo(event);
+        });
+        root.addEventListener("pointermove", function (event) {
+            if (dragging === event.pointerId) {
+                moveTo(event);
+            }
+        });
+        function stop(event) {
+            if (dragging === event.pointerId) {
+                dragging = null;
+                self.state();
+            }
+        }
+        root.addEventListener("pointerup", stop);
+        root.addEventListener("pointercancel", stop);
+        root.addEventListener("keydown", function (event) {
+            if (!event.ctrlKey && !event.metaKey && !event.altKey && self.minimapKey(event.key)) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
+        this.box.insertBefore(root, this.note);
+        this.minimap = {root: root, frame: frame, img: img, view: view};
+        return this.minimap;
+    };
+
+    /* The keys of the minimap (it has the focus): the left and right arrows
+       move a quarter of the stage along the picture, Page Up and Page Down
+       most of the stage, Home and End to its ends. False for other keys. */
+    Stage.prototype.minimapKey = function (key) {
+        if (!this.wide || this.mode !== "image") {
+            return false;
+        }
+        var size = this.size();
+        var far = this.base.w * this.zoom;
+        var moves = {ArrowLeft: size.w / 4, ArrowRight: -size.w / 4, PageUp: size.w * 0.9,
+                     PageDown: -size.w * 0.9, Home: far, End: -far};
+        if (!Object.prototype.hasOwnProperty.call(moves, key)) {
+            return false;
+        }
+        this.panBy(moves[key]);
+        return true;
     };
 
     // Zoom to `zoom` keeping the stage point (x, y) where it is.
@@ -2409,6 +3276,8 @@ var VIEWER = (function () {
         x = x === undefined ? size.w / 2 : x;
         y = y === undefined ? size.h / 2 : y;
         zoom = clamp(zoom, 1, this.maxZoom());
+        // (Zoomed by hand: no longer the pan view, which layout keeps.)
+        this.filling = false;
         var u = (x - this.tx) / this.zoom;
         var v = (y - this.ty) / this.zoom;
         this.zoom = zoom;
@@ -2434,9 +3303,34 @@ var VIEWER = (function () {
             this.redraw();
             return;
         }
+        if (this.wide && this.mode === "image") {
+            // (Back to its pan view, at its middle.)
+            this.filling = true;
+            this.centre = 0.5;
+            this.layout();
+            this.state();
+            return;
+        }
         this.zoom = 1;
         this.place();
         this.state();
+    };
+
+    /* A 360-degree view turned to look at the point (u, v) of its panorama (0..1
+       across from the left, down from the top: a face's middle), its zoom kept.
+       False when the stage shows no 360-degree view. */
+    Stage.prototype.lookAt = function (u, v) {
+        if (this.mode !== "pano" || !isFinite(u) || !isFinite(v)) {
+            return false;
+        }
+        var view = this.view || openingView(null);
+        var yaw = -(u - 0.5) * 2 * Math.PI;
+        yaw = ((yaw + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+        this.view = {yaw: yaw, pitch: clamp((0.5 - v) * Math.PI, -MAX_PITCH, MAX_PITCH),
+                     fov: view.fov};
+        this.redraw();
+        this.state();
+        return true;
     };
 
     Stage.prototype.isZoomed = function () {
@@ -2448,6 +3342,10 @@ var VIEWER = (function () {
     Stage.prototype.isMoved = function () {
         if (this.mode === "pano") {
             return !sameView(this.view || openingView(null), openingView(this.rec));
+        }
+        if (this.panZoom()) {
+            // (A wide picture opens in its pan view, at its middle.)
+            return !this.filling || Math.abs(this.centre - 0.5) > 0.005;
         }
         return this.zoom > 1.01;
     };
@@ -2461,8 +3359,9 @@ var VIEWER = (function () {
         if (event.button !== undefined && event.button !== 0 && event.pointerType === "mouse") {
             return;
         }
-        // (A video's player takes its own clicks and drags.)
-        if (event.target.closest && event.target.closest("button, a, video, .stage-controls")) {
+        // (A video's player takes its own clicks and drags; so does the minimap.)
+        if (event.target.closest &&
+                event.target.closest("button, a, video, .stage-controls, .stage-minimap")) {
             return;
         }
         try {
@@ -2474,8 +3373,13 @@ var VIEWER = (function () {
         this.pointers[event.pointerId] = p;
         var ids = Object.keys(this.pointers);
         if (ids.length === 1) {
+            // (end: the end of a wide picture the view is at, see panSwipe.)
             this.gesture = {kind: "drag", startX: p.x, startY: p.y, lastX: p.x, lastY: p.y,
-                            moved: false, touch: event.pointerType !== "mouse", time: Date.now()};
+                            moved: false, touch: event.pointerType !== "mouse", time: Date.now(),
+                            end: this.wide && this.mode === "image"
+                                ? panEnd(this.tx, this.base.w * this.zoom, this.size().w,
+                                         PAN_END_SLACK) : 0,
+                            push: 0};
         } else if (ids.length === 2) {
             var a = this.pointers[ids[0]];
             var b = this.pointers[ids[1]];
@@ -2532,6 +3436,8 @@ var VIEWER = (function () {
             var size = this.size();
             this.view = panoDrag(this.view, dx, dy, size.w, size.h);
             this.redraw();
+        } else if (this.zoom > 1.01 && this.wide) {
+            this.dragWide(g, dx, dy);
         } else if (this.zoom > 1.01) {
             this.tx += dx;
             this.ty += dy;
@@ -2541,6 +3447,32 @@ var VIEWER = (function () {
             this.img.style.transform = "translate(" + (this.tx + (p.x - g.startX) * 0.5) + "px, " +
                 this.ty + "px)";
         }
+    };
+
+    /* A drag of dx, dy px on a wide picture zoomed in (its pan view too):
+       it pans; pushed on beyond the end the drag began at (g.end), the
+       picture follows the finger a little (g.push: how far), as a hint that
+       a swipe there changes picture (see pointerUp, panSwipe). */
+    Stage.prototype.dragWide = function (g, dx, dy) {
+        if (g.push && dx * g.push < 0) {
+            // (Coming back: first the picture comes back to the end.)
+            var back = Math.abs(dx) > Math.abs(g.push) ? -g.push : dx;
+            g.push += back;
+            dx -= back;
+        }
+        var wanted = this.tx + dx;
+        this.tx = wanted;
+        this.ty += dy;
+        this.place();
+        var beyond = wanted - this.tx;
+        if (g.touch && g.end && beyond * g.end < 0 && this.options.onSwipe) {
+            g.push += beyond;
+        }
+        if (g.push) {
+            this.img.style.transform = "translate(" + (this.tx + g.push * 0.4) + "px, " +
+                this.ty + "px) scale(" + this.zoom + ")";
+        }
+        this.followCentre();
     };
 
     Stage.prototype.pointerUp = function (event) {
@@ -2575,6 +3507,16 @@ var VIEWER = (function () {
                 return;
             }
         }
+        if (this.wide && this.mode === "image" && this.zoom > 1.01 && g.moved) {
+            // A swipe once the pan has reached an end changes picture.
+            var turn = panSwipe(g.end, g.push, dy);
+            this.place();
+            if (turn && g.touch && this.options.onSwipe) {
+                this.options.onSwipe(turn);
+                return;
+            }
+            this.state();
+        }
         if (!g.moved && g.touch) {
             var now = Date.now();
             if (this.lastTap && now - this.lastTap.time < DOUBLE_TAP_MS &&
@@ -2594,6 +3536,19 @@ var VIEWER = (function () {
             this.reset();
             return;
         }
+        if (this.panZoom()) {
+            // A wide picture: the whole of it, and back to its pan view
+            // (there, with the place tapped in the middle).
+            if (this.zoom > 1.01) {
+                this.zoomTo(1, x, y);
+            } else {
+                this.centre = clamp((x - this.tx) / (this.base.w * this.zoom), 0, 1);
+                this.filling = true;
+                this.layout();
+                this.state();
+            }
+            return;
+        }
         if (this.zoom > 1.01) {
             this.zoomTo(1, x, y);
         } else {
@@ -2603,7 +3558,7 @@ var VIEWER = (function () {
 
     Stage.prototype.doubleClick = function (event) {
         if (this.mode === "video" ||
-                (event.target.closest && event.target.closest("button, a"))) {
+                (event.target.closest && event.target.closest("button, a, .stage-minimap"))) {
             return;
         }
         if (this.tappedTwice && Date.now() - this.tappedTwice < 800) {
@@ -2616,20 +3571,25 @@ var VIEWER = (function () {
     };
 
     Stage.prototype.wheel = function (event) {
+        var unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+        // A wide picture wider than the stage: a sideways scroll (a
+        // touchpad's) pans it.
+        if (this.wide && this.mode === "image" && !event.ctrlKey &&
+                Math.abs(event.deltaX || 0) > Math.abs(event.deltaY || 0) &&
+                this.base.w * this.zoom > this.size().w + 1) {
+            event.preventDefault();
+            this.panBy(-event.deltaX * unit);
+            return;
+        }
         // A stage in a page: the wheel scrolls the page, unless Ctrl is
-        // held (a touchpad pinch too) or the picture is zoomed in. A video
-        // does not zoom.
-        if ((this.options.scrollPage && !event.ctrlKey && !this.isZoomed()) ||
-                this.mode === "video") {
+        // held (a touchpad pinch too) or the picture is zoomed in (by
+        // hand: not a wide picture's pan view). A video does not zoom.
+        if ((this.options.scrollPage && !event.ctrlKey &&
+             (!this.isZoomed() || this.filling)) || this.mode === "video") {
             return;
         }
         event.preventDefault();
-        var delta = event.deltaY;
-        if (event.deltaMode === 1) {
-            delta *= 16;
-        } else if (event.deltaMode === 2) {
-            delta *= 400;
-        }
+        var delta = event.deltaY * unit;
         var factor = Math.exp(-clamp(delta, -300, 300) * 0.0025);
         var p = this.point(event);
         this.zoomBy(factor, p.x, p.y);
@@ -3471,14 +4431,92 @@ var VIEWER = (function () {
         if (source && SOURCES[source]) {
             notes.push(SOURCES[source]);
         }
-        return text + (notes.length ? " (" + notes.join("; ") + ")" : "");
+        text += notes.length ? " (" + notes.join("; ") + ")" : "";
+        // (The time of the place, not the camera's: its clock under it.)
+        var clock = detail ? clockText(taken, detail.clock) : "";
+        if (!clock) {
+            return text;
+        }
+        return el("span", {className: "info-date"}, [
+            el("span", {text: text}), el("span", {className: "info-clock-note", text: clock})]);
     }
 
-    // The place of a picture, as a chip that finds the pictures taken there.
+    // A picture's RAW file (rawText), with a link that downloads it when
+    // there is one (rawUrl); "" without a RAW file.
+    function rawFact(detail) {
+        var raw = detail && detail.raw && typeof detail.raw === "object" ? detail.raw : null;
+        var text = rawText(raw);
+        var url = rawUrl(raw);
+        if (!text || !url) {
+            return text;
+        }
+        return el("span", {className: "info-raw"}, [
+            el("span", {text: text}),
+            el("a", {className: "info-raw-link", href: url, text: "Download",
+                     title: "Download the RAW file as the camera wrote it",
+                     attrs: {download: ""}})]);
+    }
+
+    // The place of a picture: its named place on the street maps (np), a chip
+    // that finds the pictures taken there, then its town (townFact), with
+    // what the named place is and how far it is ("aquarium, 40 m away").
+    function placeFact(rec, context, detail) {
+        var town = townFact(rec, context, detail);
+        var name = namedPlace(rec);
+        if (!name) {
+            return town;
+        }
+        var note = namedPlaceNote(rec);
+        var query = window.SearchCore && SearchCore.namedPlaceQuery
+            ? SearchCore.namedPlaceQuery(name) : "";
+        var named = query ? chip(name, "q", query, context,
+                                 (note ? note.charAt(0).toUpperCase() + note.slice(1) +
+                                  " (on the street maps). " : "") +
+                                 "Show all pictures taken at " + name)
+            : el("span", {text: name});
+        // (Found by its kind -- kind:, or "churches" in plain language --
+        // the kind is marked too: "High Falls" never says waterfall.)
+        var byKind = kindMatches(rec, context.query);
+        if (byKind || matches(name, context.query, "np")) {
+            named.classList.add("is-match");
+        }
+        var box = el("span", {className: "info-place info-named-place"});
+        if (town) {
+            // (The dot stays with the named place when the line wraps.)
+            box.appendChild(el("span", {className: "info-place-named"}, [
+                named, el("span", {className: "info-place-sep", text: "\u00b7",
+                                   attrs: {"aria-hidden": "true"}})]));
+            box.appendChild(typeof town === "string" ? el("span", {text: town}) : town);
+        } else {
+            box.appendChild(named);
+        }
+        if (note) {
+            var kind = namedPlaceKind(rec);
+            box.appendChild(byKind && kind && note.indexOf(kind) === 0
+                ? el("span", {className: "info-place-note info-named-note"}, [
+                    el("mark", {text: kind}), el("span", {text: note.slice(kind.length)})])
+                : el("span", {className: "info-place-note info-named-note", text: note}));
+        }
+        return box;
+    }
+
+    // True when the search finds the picture by the kind of its named place.
+    function kindMatches(rec, query) {
+        if (!query || !window.SearchCore || !SearchCore.kindMatches) {
+            return false;
+        }
+        try {
+            return SearchCore.kindMatches(query, rec.nk);
+        } catch (error) {
+            return false;
+        }
+    }
+
+    // The town of a picture, as a chip that finds the pictures taken there.
     // An estimated place (pe) says where it comes from after it ("estimated
     // from ...", a button that shows the details); the owner's own place
     // (ps "o") says so to the admin.
-    function placeFact(rec, context, detail) {
+    function townFact(rec, context, detail) {
         var text = placeText(rec, admin());
         var value = text && window.SearchCore && SearchCore.placeOf ? SearchCore.placeOf(rec) : "";
         if (!value) {
@@ -3486,9 +4524,14 @@ var VIEWER = (function () {
         }
         var near = rec.ci || rec.rg || rec.co;
         if (!rec.pe && rec.ps !== "o") {
-            var own = chip(text, "place", value, context, rec.ci
-                ? "The town nearest to where it was taken. Show all pictures from " + near
-                : "Show all pictures from " + near);
+            // (ps "f": the place its file names, without a position -- or with
+            // one, its names instead of the nearest town's.)
+            var own = chip(text, "place", value, context, rec.ps === "f"
+                ? (rec.gp ? "The place its file names (the pin is its GPS position). "
+                    : "The place its file names (no position, so no pin on the map). ") +
+                  "Show all pictures from " + near
+                : rec.ci ? "The town nearest to where it was taken. Show all pictures from " + near
+                    : "Show all pictures from " + near);
             if (!(detail && detail.track && detail.track.position)) {
                 return own;
             }
@@ -3576,27 +4619,53 @@ var VIEWER = (function () {
        (words), choice ("use", "ignore" or ""), place (of the position set
        aside), estimated}, or null for a picture without a position. */
 
-    // The record keys a position changes (gps_check.RECORD_KEYS).
-    var LOCATION_KEYS = ["gp", "ci", "rg", "co", "cc", "km", "pe", "ps", "gx"];
+    // The record keys a position changes (gps_check.RECORD_KEYS), and those
+    // of its time, which the local time of a place changes with it
+    // (local_times.RECORD_KEYS).
+    var LOCATION_KEYS = ["gp", "ci", "rg", "co", "cc", "km", "pe", "ps", "gx",
+                         "np", "nk", "nd", "ni", "na"];
+    var TIME_KEYS = ["dk", "ts"];
+
+    // A record's position and place keys as the server's answer has them
+    // (keys; a key it does not have is taken away), and its time keys when
+    // the answer has them (only when the time changed).
+    function patchPlaceKeys(target, keys) {
+        LOCATION_KEYS.forEach(function (key) {
+            var value = keys ? keys[key] : undefined;
+            if (value === undefined) {
+                delete target[key];
+            } else {
+                target[key] = value;
+            }
+        });
+        TIME_KEYS.forEach(function (key) {
+            if (keys && keys[key] !== undefined) {
+                target[key] = keys[key];
+            }
+        });
+    }
+
+    // The picture's time in the details (shown) as the server's answer has
+    // it after a choice about its position or place (answer.time, see
+    // local_times.detail: the local time of the place may have changed).
+    function patchTime(shown, answer) {
+        var time = answer && answer.time && typeof answer.time === "object" ? answer.time : null;
+        if (time) {
+            shown.taken_at = time.taken_at;
+            shown.tz_offset = time.tz_offset;
+            shown.clock = time.clock || null;
+        }
+    }
 
     /* Use (true) or ignore (false) the picture's GPS position. The server
        keeps the choice (for every copy of the shot) and checks the positions
-       again; the place keys of the record -- and of the other records whose
-       position the check changed (answer.others, found with context.get) --
-       change in place, the pane is drawn again (unless it shows another
-       picture by now) and context.onEdited(id, detail) is told (the search
-       sees the change). */
+       (and the local times) again; the place and time keys of the record --
+       and of the other records whose position, place or time changed
+       (answer.others, found with context.get) -- change in place, the pane
+       is drawn again (unless it shows another picture by now) and
+       context.onEdited(id, detail) is told (the search sees the change). */
     function chooseLocation(box, rec, detail, context, use, button) {
-        function patch(target, keys) {
-            LOCATION_KEYS.forEach(function (key) {
-                var value = keys ? keys[key] : undefined;
-                if (value === undefined) {
-                    delete target[key];
-                } else {
-                    target[key] = value;
-                }
-            });
-        }
+        var patch = patchPlaceKeys;
         return busy(button, SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/location",
                                         {use: use}))
             .then(function (answer) {
@@ -3616,6 +4685,7 @@ var VIEWER = (function () {
                     shown[key] = detail[key];
                 });
                 shown.location_check = answer ? answer.location_check || null : null;
+                patchTime(shown, answer);
                 var ignored = Boolean(shown.location_check && shown.location_check.ignored);
                 var copies = answer && answer.copies > 0 ? answer.copies : 0;
                 var more = changed - copies + (answer && answer.more > 0 ? answer.more : 0);
@@ -3713,28 +4783,22 @@ var VIEWER = (function () {
 
     /* Tell the server the owner's choice about the picture's place (body:
        {choice: "accept" | "set" | "reject" | "clear", lat, lon}); the place
-       keys of the record change in place, the pane is drawn again (unless
-       it shows another picture by now) and context.onEdited(id, detail) is
-       told. */
+       and time keys of the record change in place, the pane is drawn again
+       (unless it shows another picture by now) and context.onEdited(id,
+       detail) is told. */
     function choosePlace(box, rec, detail, context, body, button, said) {
         box.placeForm = null;
         return busy(button, SHELL.admin("/images/" + encodeURIComponent(rec.i) + "/place", body))
             .then(function (answer) {
                 var released = releaseSheet(box);
-                LOCATION_KEYS.forEach(function (key) {
-                    var value = answer && answer.record ? answer.record[key] : undefined;
-                    if (value === undefined) {
-                        delete rec[key];
-                    } else {
-                        rec[key] = value;
-                    }
-                });
+                patchPlaceKeys(rec, answer ? answer.record : null);
                 var shown = {};
                 Object.keys(detail || {}).forEach(function (key) {
                     shown[key] = detail[key];
                 });
                 shown.place = answer ? answer.place || null : null;
                 shown.place_estimate = answer ? answer.place_estimate || null : null;
+                patchTime(shown, answer);
                 toast(said, "ok");
                 var focused = document.activeElement;
                 var hadFocus = !focused || focused === document.body || box.contains(focused);
@@ -3978,6 +5042,20 @@ var VIEWER = (function () {
         return button;
     }
 
+    // Whether a picture's file names a place that is its own when nothing else
+    // decides (its XMP location fields, kept in its exif as "XMPPlace":
+    // place_estimates.file_place needs a country; not with a position the
+    // GPS check set aside, as the names may come from it).
+    function fileNamesPlace(detail) {
+        var place = detail && detail.exif && detail.exif.XMPPlace;
+        if (detail && detail.location_check && detail.location_check.ignored) {
+            return false;
+        }
+        return !!(place && typeof place === "object" &&
+                  ((typeof place.country === "string" && place.country) ||
+                   (typeof place.cc === "string" && place.cc)));
+    }
+
     /* The admin's choices about a picture's estimated place (or own place),
        under the facts; null when there is nothing to choose (a picture with
        a GPS position, or one with no place at all: see adminActions). */
@@ -3990,7 +5068,16 @@ var VIEWER = (function () {
             ? detail.place_estimate : null;
         var note = el("div", {className: "info-place-estimate"});
         var row = el("div", {className: "info-place-row"});
-        if (estimate && estimate.choice === "reject" && !estimate.source) {
+        var rejected = estimate && estimate.choice === "reject" && !estimate.source;
+        if (rejected && fileNamesPlace(detail)) {
+            // (No place, although its file names one: the file's place comes back.)
+            note.appendChild(el("p", {className: "info-small", text: "You said the picture " +
+                                      "has no place, although its file names one."}));
+            row.appendChild(actionButton("Use its file's place", function (button) {
+                choosePlace(box, rec, detail, context, {choice: "clear"}, button,
+                            "The place its file names is back.");
+            }));
+        } else if (rejected) {
             note.appendChild(el("p", {className: "info-small",
                                       text: "You rejected the estimated place."}));
             row.appendChild(actionButton("Estimate again", function (button) {
@@ -4004,6 +5091,16 @@ var VIEWER = (function () {
                 choosePlace(box, rec, detail, context, {choice: "clear"}, button,
                             "Your place is cleared; the place is estimated again.");
             }));
+        } else if (rec.ps === "f") {
+            // (The place its file names, without a position: place_estimates.py.)
+            note.appendChild(el("p", {className: "info-small", text: "Its file names this " +
+                                      "place, without a position (no pin on the map)."}));
+            var none = actionButton("No place", function (button) {
+                choosePlace(box, rec, detail, context, {choice: "reject"}, button,
+                            "The picture has no place now; its file's place is set aside.");
+            }, "subtle-danger");
+            none.title = "No place for this picture, whatever its file says (kept across scans)";
+            row.appendChild(none);
         } else if (rec.pe) {
             note.appendChild(el("p", {className: "info-small",
                                       text: "Is the estimated place right?"}));
@@ -4022,8 +5119,8 @@ var VIEWER = (function () {
         } else {
             return null;
         }
-        row.appendChild(setPlaceButton(box, rec, detail, context, rec.pe || rec.ps === "o"
-            ? "Change place\u2026" : "Set place\u2026"));
+        row.appendChild(setPlaceButton(box, rec, detail, context,
+            rec.pe || rec.ps === "o" || rec.ps === "f" ? "Change place\u2026" : "Set place\u2026"));
         note.appendChild(row);
         return note;
     }
@@ -5047,10 +6144,14 @@ var VIEWER = (function () {
         }
         clear(box);
         box.infoId = rec ? rec.i : null;    // (whose information the box shows)
+        if (naming && (!rec || naming.rec.i !== rec.i)) {
+            closeNaming(false);             // (another picture: its popover goes)
+        }
         if (!rec) {
             box.appendChild(el("p", {className: "muted", text: "This picture is not available."}));
             return;
         }
+        peoplePane = {box: box, rec: rec, detail: detail, context: context};
         var head = el("div", {className: "info-head"});
         head.appendChild(el("h2", {className: "info-title"},
                             [highlighted(rec.t || rec.n || "Untitled picture", context.query, "t")]));
@@ -5062,13 +6163,21 @@ var VIEWER = (function () {
             var length = durationText(rec.dr);
             badges.appendChild(badge("Video" + (length ? " \u00b7 " + length : ""), "is-video"));
         }
+        if (detail && detail.raw && detail.raw.how === "alone") {
+            badges.appendChild(badge("RAW", "is-raw"));
+        }
         if (rec.h) {
             badges.appendChild(badge("Hidden", "is-hidden"));
         }
-        if (rec.se && SENSITIVE[rec.se]) {
+        // A published site marks no picture as sensitive or private: each one
+        // there is one the owner chose to publish (export.py: its records never
+        // carry pr; se stays for "Hide sensitive pictures").
+        var site = typeof window !== "undefined" ? window.SITE : null;
+        var flagBadges = !(site && site.isStatic);
+        if (flagBadges && rec.se && SENSITIVE[rec.se]) {
             badges.appendChild(badge("Sensitive: " + SENSITIVE[rec.se], "is-warn"));
         }
-        if (rec.pr) {
+        if (flagBadges && rec.pr) {
             badges.appendChild(badge("Private information", "is-warn"));
         }
         if (rec.ed && admin()) {
@@ -5110,13 +6219,15 @@ var VIEWER = (function () {
         var factList = facts([
             ["Taken", dateText(rec, detail)],
             ["Place", placeFact(rec, context, detail)],
+            ["People", peopleFact(rec, detail, context)],
             ["Camera", rec.cm ? chip(rec.cm, "camera", rec.cm, context, "More from this camera") : ""],
             ["Settings", exposure + (lens ? (exposure ? " \u00b7 " : "") + lens : "")],
             ["Video", rec.mv ? videoFacts(rec, detail) : ""],
             ["Library", libraryName],
             ["File", fileName],
             ["Folder", folder],
-            ["Size", size]
+            ["Size", size],
+            ["RAW", rawFact(detail)]
         ]);
         if (factList) {
             box.appendChild(factList);
@@ -5346,6 +6457,1312 @@ var VIEWER = (function () {
                                     "info-similar-section info-looks-section"));
         }
         keepPlaceForm(box, rec, detail, context);
+        faceBoxesFor(rec, detail, context);
+    }
+
+    /* ---------- People: names in the pane, faces over the picture --------- */
+
+    var FACES_KEY = "searchImages.faceBoxes";
+    var faceLayer = null;       // {stage, rec, layer, observer, place}
+
+    // The person: search for one of a picture's people ({id, label}).
+    function personSearch(person) {
+        if (window.SearchCore && SearchCore.personTerm) {
+            return SearchCore.personTerm([person], person);
+        }
+        return "person:#" + person.id;
+    }
+
+    // The "People" fact: the names of the people in the picture, and the
+    // admin's "Show faces"; "" when there is nothing to say.
+    function peopleFact(rec, detail, context) {
+        var found = detail && detail.people && typeof detail.people === "object"
+            ? detail.people : null;
+        if (!found) {
+            return "";
+        }
+        var names = Array.isArray(found.names) ? found.names : [];
+        var faces = admin() && Array.isArray(found.faces) ? found.faces : [];
+        if (!names.length && !faces.length) {
+            return "";
+        }
+        var row = el("div", {className: "info-chips info-people"});
+        // (A video's people: the moments each was seen at, which move it there.)
+        var moments = rec.mv && !context.drive && context.stage && context.stage.seekTo;
+        names.forEach(function (person) {
+            var node = chip(person.label, "q", personSearch(person), context,
+                            "Show all pictures of " + person.label);
+            if (!person.named) {
+                node.classList.add("is-unnamed");
+            }
+            if (moments && Array.isArray(person.at) && person.at.length) {
+                // (A line of its own: the name, then its moments.)
+                row.classList.add("has-moments");
+                row.appendChild(el("span", {className: "info-person"},
+                                   [node, momentButtons(person, context.stage)]));
+            } else {
+                row.appendChild(node);
+            }
+        });
+        if (!names.length) {
+            row.appendChild(el("span", {className: "muted", text: faces.length === 1
+                ? "A face of nobody known" : faces.length + " faces of nobody known"}));
+        }
+        // (No boxes over a video or a 360 picture: a strip of its faces in the pane.)
+        var strip = faces.length && (rec.mv || rec.p === "360");
+        if (faces.length && context.stage) {
+            var toggle = el("button", {type: "button", className: "button small info-faces",
+                                       text: facesWanted() ? "Hide faces" : "Show faces",
+                                       title: (strip ? "Show the faces found in it, to say who " +
+                                                   "they are" : "Draw the boxes of the faces " +
+                                                   "found in the picture, to say who they are") +
+                                           " (on for the next pictures too)",
+                                       attrs: {"aria-pressed": facesWanted() ? "true" : "false"}});
+            toggle.addEventListener("click", function () {
+                var on = !facesWanted();
+                storage(FACES_KEY, on ? "1" : "0");
+                toggle.setAttribute("aria-pressed", on ? "true" : "false");
+                toggle.textContent = on ? "Hide faces" : "Show faces";
+                var pane = peoplePane && peoplePane.rec.i === rec.i ? peoplePane.box : null;
+                if (strip && pane) {
+                    // (The strip is part of this line: drawn again.)
+                    redrawPeople({box: pane, rec: rec, detail: detail, context: context});
+                    var again = pane.querySelector(".info-faces");
+                    if (again && again.focus) {
+                        again.focus();
+                    }
+                    return;
+                }
+                faceBoxesFor(rec, detail, context);
+            });
+            row.appendChild(toggle);
+            if (strip && facesWanted()) {
+                row.appendChild(faceStrip(faces, rec, detail, context));
+            }
+        }
+        return row;
+    }
+
+    /* The faces of a video or a 360 picture (the admin's, "Show faces" on): a
+       button for each, its face's picture and its person's name ("?": nobody;
+       of a video, the moment it was seen at), that opens the popover to say
+       who it is (openNaming) -- and moves a video to that moment. */
+    function faceStrip(faces, rec, detail, context) {
+        var strip = el("div", {className: "info-face-strip",
+                               attrs: {role: "group", "aria-label": "Faces"}});
+        var seek = rec.mv && !context.drive && context.stage && context.stage.seekTo;
+        faces.forEach(function (face) {
+            var moment = rec.mv && typeof face.at === "number" ? momentText(face.at) : "";
+            var url = window.SITE && SITE.faceUrl ? SITE.faceUrl(face.id) : null;
+            var button = el("button", {type: "button",
+                                       className: "info-face" + (face.person ? "" : " is-unknown") +
+                                           (face.hidden ? " is-hidden" : ""),
+                                       title: faceTitle(face) + (moment ? " (at " + moment + ")"
+                                                                 : ""),
+                                       attrs: {"aria-haspopup": "dialog",
+                                               "data-face": String(face.id),
+                                               "aria-label": faceTitle(face) +
+                                                   (moment ? ", at " + moment : "")}});
+            if (url) {
+                button.appendChild(el("img", {src: url, alt: "", loading: "lazy",
+                                              decoding: "async"}));
+            }
+            button.appendChild(el("span", {className: "info-face-name", text: faceText(face)}));
+            if (moment) {
+                button.appendChild(el("span", {className: "info-face-at", text: moment}));
+            }
+            button.addEventListener("click", function () {
+                if (seek && typeof face.at === "number") {
+                    context.stage.seekTo(face.at);
+                } else if (!rec.mv && rec.p === "360" && context.stage &&
+                           context.stage.rec === rec && context.stage.lookAt) {
+                    // (A 360 photo turns to the face: seen where it is while it is named.)
+                    context.stage.lookAt(face.x + face.w / 2, face.y + face.h / 2);
+                }
+                openNaming({face: face, rec: rec, detail: detail, context: context, gap: 6,
+                            anchor: function () {
+                                var pane = peoplePane && peoplePane.rec.i === rec.i
+                                    ? peoplePane.box : null;
+                                return pane ? pane.querySelector(".info-face[data-face=\"" +
+                                                                 face.id + "\"]") : null;
+                            }});
+            });
+            strip.appendChild(button);
+        });
+        return strip;
+    }
+
+    // What a face box (or a face of the strip) says: its person's name, "?" for nobody.
+    function faceText(face) {
+        return face.person ? face.label + (face.hidden ? " (hidden)" : "") : "?";
+    }
+
+    // What a face box is to a screen reader (and its tooltip).
+    function faceTitle(face) {
+        return face.person ? "Face of " + face.label + (face.hidden ? " (hidden)" : "") +
+            ": say who it is" : "A face of nobody known: say who it is";
+    }
+
+    // The moments of a video a person was seen at, each a button that moves the
+    // video there: MOMENTS_SHOWN of them, and "+3" shows the others.
+    var MOMENTS_SHOWN = 6;
+
+    function momentButtons(person, stage) {
+        var box = el("span", {className: "info-moments",
+                              attrs: {"aria-label": person.label + " in the video at"}});
+        var button = function (seconds) {
+            var text = momentText(seconds) || "0:00";
+            var node = el("button", {type: "button", className: "info-moment", text: text,
+                                     title: "Show " + person.label + " at " + text});
+            node.addEventListener("click", function () {
+                stage.seekTo(seconds);
+            });
+            return node;
+        };
+        person.at.slice(0, MOMENTS_SHOWN).forEach(function (seconds) {
+            box.appendChild(button(seconds));
+        });
+        var rest = person.at.slice(MOMENTS_SHOWN);
+        if (rest.length) {
+            var more = el("button", {type: "button", className: "info-moment is-more",
+                                     text: "+" + rest.length,
+                                     title: "Show the other " + rest.length + " moments of " +
+                                         person.label,
+                                     attrs: {"aria-label": "Show the other " + rest.length +
+                                                           " moments"}});
+            more.addEventListener("click", function () {
+                var first = null;
+                rest.forEach(function (seconds) {
+                    var node = button(seconds);
+                    first = first || node;
+                    box.insertBefore(node, more);
+                });
+                box.removeChild(more);
+                if (first && first.focus) {
+                    first.focus();
+                }
+            });
+            box.appendChild(more);
+        }
+        return box;
+    }
+
+    function facesWanted() {
+        return storage(FACES_KEY) === "1";
+    }
+
+    // Give node the keyboard without scrolling anything to it.
+    function focusQuietly(node) {
+        try {
+            node.focus({preventScroll: true});
+        } catch (problem) {
+            node.focus();
+        }
+    }
+
+    // The keyboard was on what is gone (a redrawn box, a popover): nowhere now.
+    function focusGone() {
+        var active = hasDocument ? document.activeElement : null;
+        return !active || active === document.body || !document.documentElement.contains(active);
+    }
+
+    // The keyboard was on a face box that went (another picture's): to the viewer
+    // (keepFocus), or the nearest holder of the stage that takes it.
+    function focusLost(stage) {
+        if (!hasDocument || !focusGone()) {
+            return;
+        }
+        keepFocus();
+        var holder = stage && stage.box && stage.box.closest ? stage.box.closest("[tabindex]")
+            : null;
+        if (focusGone() && holder && holder.focus) {
+            focusQuietly(holder);
+        }
+    }
+
+    /* keep: the layer is drawn again for the same picture (its popover stays).
+       Returns the face whose box had the keyboard ({rec, face}: faceBoxesFor
+       gives it to its new box), or null; without keep the keyboard goes to the
+       viewer (focusLost). */
+    function dropFaceBoxes(keep) {
+        if (!faceLayer) {
+            return null;
+        }
+        var gone = faceLayer;
+        faceLayer = null;
+        if (gone.observer) {
+            gone.observer.disconnect();
+        }
+        cancelOpen(gone);
+        window.removeEventListener("resize", gone.place);
+        gone.stage.img.removeEventListener("load", gone.place);
+        gone.listening.forEach(function (pair) {
+            gone.stage.box.removeEventListener(pair[0], pair[1]);
+        });
+        var active = hasDocument ? document.activeElement : null;
+        var focused = active && active !== gone.layer && gone.layer.contains(active)
+            ? {rec: gone.rec, face: Number(active.getAttribute("data-face"))} : null;
+        if (gone.layer.parentNode) {
+            gone.layer.parentNode.removeChild(gone.layer);
+        }
+        if (!keep && naming && naming.onBox) {
+            closeNaming(false);
+        }
+        if (focused && !keep) {
+            focusLost(gone.stage);
+        }
+        return focused;
+    }
+
+    // A tap's popover that waits (a second tap would make it a double tap) opens not.
+    function cancelOpen(current) {
+        if (current && current.pending) {
+            clearTimeout(current.pending.timer);
+            current.pending = null;
+        }
+    }
+
+    /* A face box that takes the keyboard (Tab) comes into sight: the picture,
+       zoomed in, moves by the stage's own place and zoom until the face -- and
+       its name under it -- is in the stage. (The browser would scroll the stage
+       instead, which the stage does not know of: see the "scroll" listener.) */
+    function revealFace(current, box) {
+        var stage = current.stage;
+        if (faceLayer !== current || !stage.base || typeof stage.tx !== "number" ||
+                typeof stage.place !== "function") {
+            return;
+        }
+        var outer = stage.box.getBoundingClientRect();
+        var rect = box.getBoundingClientRect();
+        var dx = revealShift(rect.left, rect.right, outer.left, outer.right);
+        var dy = revealShift(rect.top, rect.bottom + 24, outer.top, outer.bottom);
+        if (dx || dy) {
+            stage.tx += dx;
+            stage.ty += dy;
+            stage.place();
+            if (stage.followCentre) {
+                stage.followCentre();
+            }
+            if (stage.state) {
+                stage.state();
+            }
+        }
+    }
+
+    // How far a span (low..high) moves to be within min..max (8 px in): its middle to
+    // the middle when it is too long.
+    function revealShift(low, high, min, max) {
+        var margin = 8;
+        if (high - low > max - min - 2 * margin) {
+            return Math.round((min + max) / 2 - (low + high) / 2);
+        }
+        if (low < min + margin) {
+            return Math.round(min + margin - low);
+        }
+        if (high > max - margin) {
+            return Math.round(max - margin - high);
+        }
+        return 0;
+    }
+
+    /* Faces whose names would cover a neighbour (side by side and close, in a
+       crowd -- each name is under its box, about 7 px a letter): their names
+       show only on hover, on focus and while being named (style.css
+       .is-tight). Of two names that would cover each other, the one on the
+       left gives way. width, height: the picture's size as shown (px). */
+    function markTight(items, width, height) {
+        var rects = items.map(function (item) {
+            var left = item.face.x * width;
+            var top = item.face.y * height;
+            var right = left + item.face.w * width;
+            var bottom = top + item.face.h * height;
+            var room = 14 + 7 * item.label.length;
+            return {box: {left: left, top: top, right: right, bottom: bottom},
+                    label: {left: left, top: bottom, right: left + room, bottom: bottom + 22}};
+        });
+        function meet(a, b) {
+            return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        }
+        items.forEach(function (item, at) {
+            var mine = rects[at];
+            var tight = rects.some(function (other, k) {
+                var after = other.box.left > mine.box.left ||
+                    (other.box.left === mine.box.left && k > at);
+                return k !== at && (meet(mine.label, other.box) ||
+                                    (after && meet(mine.label, other.label)));
+            });
+            item.box.classList.toggle("is-tight", tight);
+        });
+    }
+
+    /* The admin's boxes of the faces of rec over context.stage's picture
+       (when "Show faces" is on and the stage shows that picture flat), or
+       none. The layer is the stage's child, laid over the picture as it is
+       shown (its place, size and zoom, read whenever the picture's style
+       changes), so the stage itself does not know about it. Each box is a
+       button (Tab reaches them in reading order, readingOrder): Enter, a
+       click or a tap opens its popover -- a tap or a click after a short
+       wait (DOUBLE_TAP_MS), so that a double tap or a double click zooms in
+       as anywhere on the picture, and opens nothing. */
+    function faceBoxesFor(rec, detail, context) {
+        var stage = context.stage;
+        if (stage && stage.rec !== rec && faceLayer && faceLayer.stage === stage &&
+                faceLayer.rec === stage.rec) {
+            // (rec is not the picture shown -- a late answer, the Undo of a change made
+            // on an earlier picture: the boxes of the one shown stay as they are.)
+            return;
+        }
+        var faces = admin() && detail && detail.people && Array.isArray(detail.people.faces)
+            ? detail.people.faces : [];
+        // (The face the address asks for -- the People page's link to a face, on the
+        // details page: context.face -- is drawn and marked, "Show faces" on or not,
+        // and a wide picture's pan view goes to it.)
+        var chosen = typeof context.face === "number" ? context.face : null;
+        var shown = facesWanted() ? faces : faces.filter(function (face) {
+            return face.id === chosen;
+        });
+        // (Drawn again when a face's person changes: its name is on its box.)
+        var key = chosen + ":" + shown.map(function (face) {
+            return face.id + "/" + face.person + "/" + face.label + (face.hidden ? "/h" : "");
+        }).join(",");
+        if (faceLayer && faceLayer.stage === stage && faceLayer.rec === rec && shown.length &&
+                faceLayer.key === key) {
+            faceLayer.place();
+            return;
+        }
+        var focused = dropFaceBoxes(true);
+        if (!hasDocument || !stage || !stage.img || !shown.length ||
+                stage.rec !== rec || stage.mode !== "image" || rec.mv || rec.p === "360") {
+            if (naming && naming.onBox) {
+                closeNaming(false);
+            }
+            if (focused) {
+                focusLost(stage);
+            }
+            return;
+        }
+        var layer = el("div", {className: "face-layer"});
+        var marked = null;
+        var current = {stage: stage, rec: rec, layer: layer, observer: null, key: key,
+                       panned: true, listening: [], tap: null, pending: null, items: [],
+                       pressed: 0};
+        readingOrder(shown).forEach(function (face) {
+            // (A box is a button: a click or a tap -- not a drag of the picture, which
+            // starts on it as anywhere -- or Enter opens the popover to say who it is.)
+            var asked = naming && naming.onBox && naming.rec.i === rec.i &&
+                naming.face.id === face.id;
+            var box = el("div", {className: "face-box" + (face.person ? "" : " is-unknown") +
+                                 (face.hidden ? " is-hidden" : "") +
+                                 (face.id === chosen ? " is-chosen" : "") +
+                                 (asked ? " is-naming" : ""),
+                                 title: faceTitle(face),
+                                 attrs: {role: "button", tabindex: "0", "aria-haspopup": "dialog",
+                                         "aria-expanded": asked ? "true" : "false",
+                                         "aria-label": faceTitle(face),
+                                         "data-face": String(face.id)}});
+            if (face.id === chosen) {
+                marked = face;
+            }
+            box.style.left = (100 * face.x) + "%";
+            box.style.top = (100 * face.y) + "%";
+            box.style.width = (100 * face.w) + "%";
+            box.style.height = (100 * face.h) + "%";
+            var label = faceText(face);
+            box.appendChild(el("span", {className: "face-name", text: label,
+                                        attrs: {"aria-hidden": "true"}}));
+            current.items.push({face: face, box: box, label: label});
+            var open = function () {
+                openNaming({face: face, rec: rec, detail: detail, context: context, gap: 28,
+                            onBox: true, anchor: function () {
+                                return faceLayer && faceLayer.rec === rec
+                                    ? faceLayer.layer.querySelector(".face-box[data-face=\"" +
+                                                                    face.id + "\"]") : null;
+                            }});
+            };
+            box.addEventListener("keydown", function (event) {
+                if ((event.key === "Enter" || event.key === " ") && !event.ctrlKey &&
+                        !event.altKey && !event.metaKey) {
+                    event.preventDefault();
+                    cancelOpen(current);
+                    open();
+                }
+            });
+            box.addEventListener("pointerdown", function (event) {
+                if (event.pointerType === "mouse" && event.button !== undefined &&
+                        event.button !== 0) {
+                    return;
+                }
+                current.pressed = Date.now();
+                // A second press soon after a tap, near it: a double tap (or click), which
+                // zooms in -- the first one's popover opens not, nor does this one's.
+                var waiting = current.pending;
+                var second = Boolean(waiting && Math.abs(event.clientX - waiting.x) < 30 &&
+                                     Math.abs(event.clientY - waiting.y) < 30);
+                cancelOpen(current);
+                current.tap = {id: event.pointerId, x: event.clientX, y: event.clientY,
+                               time: Date.now(), open: open, moved: false, second: second};
+            });
+            box.addEventListener("click", function (event) {
+                var tap = current.tap;
+                current.tap = null;
+                if (event.detail > 1) {
+                    cancelOpen(current);        // (a double click: the stage zooms in)
+                } else if (!tap) {
+                    open();     // (a click without a press: a screen reader's, a script's)
+                }
+            });
+            box.addEventListener("dblclick", function () {
+                cancelOpen(current);
+            });
+            // (Tab to a box out of sight: the picture moves to show it. Not for a press,
+            // which is on a box in sight, and may be the start of a drag.)
+            box.addEventListener("focus", function () {
+                if (Date.now() - current.pressed > 600) {
+                    setTimeout(function () {
+                        revealFace(current, box);
+                    }, 0);
+                }
+            });
+            layer.appendChild(box);
+        });
+        current.panned = !marked;
+        stage.box.appendChild(layer);
+        // The stage takes the pointer (a drag of the picture): its moves and its end
+        // come to the stage, which says whether a press on a box was a tap.
+        var listen = function (name, handler) {
+            stage.box.addEventListener(name, handler);
+            current.listening.push([name, handler]);
+        };
+        listen("pointerdown", function (event) {
+            if (current.tap && event.pointerId !== current.tap.id) {
+                current.tap.many = true;
+            }
+            if (current.pending && !(event.target && event.target.closest &&
+                                     event.target.closest(".face-box"))) {
+                cancelOpen(current);    // (a press elsewhere on the picture)
+            }
+        });
+        listen("pointermove", function (event) {
+            var tap = current.tap;
+            if (tap && event.pointerId === tap.id &&
+                    Math.abs(event.clientX - tap.x) + Math.abs(event.clientY - tap.y) > 8) {
+                tap.moved = true;
+            }
+        });
+        listen("pointerup", function (event) {
+            var tap = current.tap;
+            if (tap && event.pointerId === tap.id && !tap.moved && !tap.many && !tap.second &&
+                    Date.now() - tap.time < 800) {
+                tap.opened = true;
+                cancelOpen(current);
+                current.pending = {x: tap.x, y: tap.y, timer: setTimeout(function () {
+                    current.pending = null;
+                    if (faceLayer === current) {
+                        tap.open();
+                    }
+                }, DOUBLE_TAP_MS)};
+            }
+        });
+        // (A tap that opens the popover: no mouse events and click after it, which
+        // could land on the popover where the finger was -- a phone's sheet.)
+        listen("touchend", function (event) {
+            if (current.tap && current.tap.opened && event.cancelable !== false) {
+                event.preventDefault();
+            }
+        });
+        // The browser scrolls the stage to show a box that takes the keyboard; the
+        // stage shows the picture by its own place and zoom, never scrolled.
+        listen("scroll", function () {
+            if (stage.box.scrollLeft || stage.box.scrollTop) {
+                stage.box.scrollLeft = 0;
+                stage.box.scrollTop = 0;
+                current.place();
+            }
+        });
+        current.place = function () {
+            if (faceLayer !== current) {
+                return;
+            }
+            if (stage.rec !== rec || stage.mode !== "image" || stage.img.hidden) {
+                dropFaceBoxes();
+                return;
+            }
+            if (!current.panned && stage.filling && stage.base && stage.base.w > 1 &&
+                    typeof stage.panTo === "function") {
+                // (Once laid out: a wide picture's pan view to the face asked for.)
+                current.panned = true;
+                stage.panTo(marked.x + marked.w / 2);
+            }
+            var outer = stage.box.getBoundingClientRect();
+            var shown = stage.img.getBoundingClientRect();
+            layer.style.left = (shown.left - outer.left) + "px";
+            layer.style.top = (shown.top - outer.top) + "px";
+            layer.style.width = shown.width + "px";
+            layer.style.height = shown.height + "px";
+            markTight(current.items, shown.width, shown.height);
+            if (naming && naming.onBox) {
+                placeNaming(naming);        // (it follows its box: a zoom, a pan)
+            }
+        };
+        if (typeof MutationObserver === "function") {
+            current.observer = new MutationObserver(current.place);
+            current.observer.observe(stage.img, {attributes: true,
+                                                 attributeFilter: ["style", "src", "hidden"]});
+        }
+        window.addEventListener("resize", current.place);
+        stage.img.addEventListener("load", current.place);
+        faceLayer = current;
+        current.place();
+        if (naming && naming.onBox && naming.rec.i !== rec.i) {
+            closeNaming(false);
+        }
+        if (focused) {
+            // (The same face's new box takes the keyboard back; another picture's: none.)
+            var again = focused.rec === rec ? layer.querySelector(".face-box[data-face=\"" +
+                                                                  focused.face + "\"]") : null;
+            if (again) {
+                focusQuietly(again);
+            } else {
+                focusLost(stage);
+            }
+        }
+    }
+
+    /* ---------- People: who a face is, said where it is (the admin's) -------- */
+
+    var NAMING_SHEET_QUERY = "(max-width: 899px) and (orientation: portrait), (max-width: 599px)";
+    var UNDO_SECONDS = 12;      // how long a change's message (with Undo) shows
+    var naming = null;          // the open popover (openNaming)
+    var knownPeople = null;     // /api/people?hidden=1's people, the last that came
+    var peoplePane = null;      // {box, rec, detail, context}: the pane drawn last
+    var lastUndo = null;        // {token, until, run}: what Ctrl+Z undoes (its message shows)
+    var undoKeys = false;       // (Ctrl+Z is listened for)
+    var namingCount = 0;        // (ids of the popovers' parts)
+
+    // The people of the admin's /api/people (hidden ones too); done() when they came.
+    function loadKnownPeople(done) {
+        if (!window.SITE || !SITE.loadPeople) {
+            done();
+            return;
+        }
+        SITE.loadPeople(function (answer) {
+            if (answer && Array.isArray(answer.people)) {
+                knownPeople = answer.people;
+            }
+            done();
+        }, true);
+    }
+
+    function knownPerson(id) {
+        var list = Array.isArray(knownPeople) ? knownPeople : [];
+        for (var k = 0; k < list.length; k++) {
+            if (list[k] && list[k].id === id) {
+                return list[k];
+            }
+        }
+        return null;
+    }
+
+    function picturesOf(person) {
+        var count = Array.isArray(person.ids) ? person.ids.length : 0;
+        return plural(count, "picture");
+    }
+
+    /* The popover that says who a face is: spec {face (people.faces' box), rec,
+       detail, context, anchor() (the box or the strip's button it is by, now;
+       null when gone), gap (room under the anchor: its name), onBox (by a box
+       over the picture)}. It shows who the face is now, a field to type a name
+       in with the choices for it (format.faceChoices; the arrows move among
+       them, Enter or a click takes one), "Not <name>" and "Not a face"; Esc,
+       x or a press elsewhere closes it (Esc gives the keyboard back to the
+       box). On a narrow upright screen it is a sheet at the foot of the
+       screen (above the on-screen keyboard). */
+    function openNaming(spec) {
+        if (!admin() || !hasDocument || !spec || !spec.face) {
+            return;
+        }
+        if (naming && naming.face.id === spec.face.id && naming.rec.i === spec.rec.i) {
+            naming.input.focus();
+            return;
+        }
+        closeNaming(false);
+        var face = spec.face;
+        var anchor = spec.anchor();
+        var host = (anchor && anchor.closest && anchor.closest(".viewer")) || document.body;
+        namingCount += 1;
+        var ids = "face-pop-" + namingCount;
+        var node = el("dialog", {className: "face-popover", attrs: {"aria-labelledby":
+                                                                     ids + "-title"}});
+        var faceUrl = window.SITE && SITE.faceUrl ? SITE.faceUrl(face.id) : null;
+        var head = el("div", {className: "face-pop-head"});
+        if (faceUrl) {
+            head.appendChild(el("img", {className: "face-pop-face", src: faceUrl, alt: "",
+                                        decoding: "async"}));
+        }
+        var now = el("p", {className: "face-pop-now", id: ids + "-now"});
+        head.appendChild(el("div", {className: "face-pop-who"}, [
+            el("h3", {className: "face-pop-title", id: ids + "-title", text: "Who is this?"}),
+            now
+        ]));
+        var x = el("button", {type: "button", className: "face-pop-x", text: "\u00d7",
+                              title: "Close (Esc)", attrs: {"aria-label": "Close"}});
+        head.appendChild(x);
+        node.appendChild(head);
+        var input = el("input", {type: "text", className: "input face-pop-input",
+                                 placeholder: face.person ? "Another name" : "Type a name",
+                                 maxLength: 100, autocomplete: "off", spellcheck: false,
+                                 attrs: {role: "combobox", "aria-autocomplete": "list",
+                                         "aria-expanded": "true", "aria-controls": ids + "-list",
+                                         "aria-labelledby": ids + "-title",
+                                         "aria-describedby": ids + "-now",
+                                         autocapitalize: "words", enterkeyhint: "done"}});
+        node.appendChild(input);
+        var list = el("ul", {className: "face-pop-list", id: ids + "-list",
+                             attrs: {role: "listbox", "aria-label": "People"}});
+        node.appendChild(list);
+        var hint = el("p", {className: "face-pop-hint", hidden: true});
+        node.appendChild(hint);
+        var error = el("p", {className: "face-pop-error", hidden: true, attrs: {role: "alert"}});
+        node.appendChild(error);
+        var actions = el("div", {className: "face-pop-actions"});
+        node.appendChild(actions);
+        var current = {face: face, rec: spec.rec, detail: spec.detail, context: spec.context,
+                       node: node, input: input, list: list, hint: hint, error: error,
+                       now: now, actions: actions, ids: ids, choices: [], active: -1,
+                       busy: false, anchor: spec.anchor, gap: spec.gap || 6,
+                       onBox: Boolean(spec.onBox), cleanup: [],
+                       pane: peoplePane && peoplePane.rec.i === spec.rec.i ? peoplePane.box
+                           : null};
+        naming = current;
+        x.addEventListener("click", function () {
+            closeNaming(true);
+        });
+        input.addEventListener("input", function () {
+            error.hidden = true;
+            current.enterWaiting = false;
+            drawChoices(current);
+            placeNaming(current);       // (a shorter list: it stays by its face)
+        });
+        node.addEventListener("keydown", function (event) {
+            namingKey(current, event);
+        });
+        // Only a press that starts in the popover acts in it: the end of the tap that
+        // opened it (a phone's sheet comes where the finger was) neither takes a choice
+        // nor takes the keyboard from the field.
+        node.addEventListener("pointerdown", function () {
+            current.pressed = true;
+        }, true);
+        node.addEventListener("mousedown", function (event) {
+            if (!current.pressed) {
+                event.preventDefault();
+            }
+        }, true);
+        node.addEventListener("click", function (event) {
+            if (event.detail && !current.pressed) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        }, true);
+        drawNow(current);
+        drawChoices(current);
+        host.appendChild(node);
+        if (typeof node.show === "function") {
+            try {
+                node.show();
+            } catch (problem) {
+                node.setAttribute("open", "");
+            }
+        } else {
+            node.setAttribute("open", "");
+        }
+        var follow = function () {
+            placeNaming(current);
+        };
+        // A press anywhere else closes it (on its box: it stays).
+        var outside = function (event) {
+            var target = event.target;
+            var by = current.anchor();
+            if (naming === current && !node.contains(target) && !(by && by.contains(target))) {
+                closeNaming(false);
+            }
+        };
+        document.addEventListener("pointerdown", outside, true);
+        window.addEventListener("resize", follow);
+        document.addEventListener("scroll", follow, true);
+        current.cleanup.push(function () {
+            document.removeEventListener("pointerdown", outside, true);
+            window.removeEventListener("resize", follow);
+            document.removeEventListener("scroll", follow, true);
+        });
+        if (window.visualViewport && window.visualViewport.addEventListener) {
+            // (A phone's keyboard: the sheet stays above it.)
+            window.visualViewport.addEventListener("resize", follow);
+            window.visualViewport.addEventListener("scroll", follow);
+            current.cleanup.push(function () {
+                window.visualViewport.removeEventListener("resize", follow);
+                window.visualViewport.removeEventListener("scroll", follow);
+            });
+        }
+        if (anchor) {
+            anchor.classList.add("is-naming");
+            anchor.setAttribute("aria-expanded", "true");
+        }
+        placeNaming(current);
+        input.focus();
+        loadKnownPeople(function () {
+            if (naming !== current) {
+                return;
+            }
+            current.loaded = true;
+            drawNow(current);
+            drawChoices(current);
+            placeNaming(current);
+            // (Enter pressed while the people came: it takes a person the letters name,
+            // never a new name made of them -- that one is chosen by hand.)
+            var first = current.enterWaiting && current.active === 0 ? current.choices[0] : null;
+            current.enterWaiting = false;
+            if (first && first.kind === "person") {
+                take(current, first);
+            }
+        });
+    }
+
+    function closeNaming(focusBack) {
+        var current = naming;
+        if (!current) {
+            return;
+        }
+        naming = null;
+        current.cleanup.forEach(function (undo) {
+            undo();
+        });
+        if (current.node.parentNode) {
+            current.node.parentNode.removeChild(current.node);
+        }
+        var by = current.anchor();
+        if (by) {
+            by.classList.remove("is-naming");
+            by.setAttribute("aria-expanded", "false");
+            if (focusBack && by.focus) {
+                focusQuietly(by);
+            }
+        }
+    }
+
+    // Who the face is now: its person (a link to the People page) and how many faces
+    // that person has, or nobody; and the buttons "Not <name>" and "Not a face".
+    function drawNow(current) {
+        var face = current.face;
+        clear(current.now);
+        clear(current.actions);
+        var person = face.person ? knownPerson(face.person) : null;
+        if (face.person) {
+            var label = person ? person.label : face.label;
+            current.now.appendChild(document.createTextNode("Now: "));
+            current.now.appendChild(el("a", {href: "/people?person=" +
+                                                encodeURIComponent(face.person),
+                                            text: label + (face.hidden ? " (hidden)" : ""),
+                                            title: "Open " + label + " on the People page"}));
+            if (person && typeof person.faces === "number") {
+                current.now.appendChild(document.createTextNode(
+                    " \u00b7 " + plural(person.faces, "face")));
+            }
+            var leave = "Take this face out of " + label + " for good";
+            current.actions.appendChild(namingButton(current, "Not " + label, leave, function () {
+                send(current, "/people/faces", {action: "reject", faces: [face.id],
+                                                person: face.person, undo: true},
+                     function () {
+                         return "This face is not " + label + " any more.";
+                     });
+            }));
+        } else {
+            current.now.textContent = "In no person yet";
+        }
+        var none = "Something that is not a face: left out of People";
+        current.actions.appendChild(namingButton(current, "Not a face", none, function () {
+            var body = {action: "not_face", faces: [face.id], undo: true};
+            if (face.person) {
+                body.person = face.person;
+            }
+            send(current, "/people/faces", body, function () {
+                return "Marked as not a face.";
+            });
+        }));
+    }
+
+    function namingButton(current, text, title, onClick) {
+        var button = el("button", {type: "button", className: "button small", text: text,
+                                   title: title});
+        button.addEventListener("click", function (event) {
+            if (!ghost(current, event)) {
+                onClick();
+            }
+        });
+        return button;
+    }
+
+    // A click in the popover that did not start there (the end of the tap that opened it).
+    function ghost(current, event) {
+        return Boolean(event && event.detail) && !current.pressed;
+    }
+
+    // The choices for what was typed (format.faceChoices), the first one marked.
+    function drawChoices(current) {
+        var face = current.face;
+        var own = face.person ? knownPerson(face.person) : null;
+        var named = face.person ? (own ? Boolean(own.name) : !/^Person [0-9]+$/.test(face.label))
+            : false;
+        current.choices = faceChoices(knownPeople, {person: face.person || null, named: named},
+                                      current.input.value);
+        clear(current.list);
+        current.choices.forEach(function (choice, index) {
+            current.list.appendChild(choiceNode(current, choice, index, own));
+        });
+        current.list.hidden = !current.choices.length;
+        current.input.setAttribute("aria-expanded", current.choices.length ? "true" : "false");
+        var typed = current.input.value.replace(/^\s+|\s+$/g, "");
+        // (Until the people came, the letters typed name nobody yet: Enter waits for
+        // them, see openNaming, rather than take a new name made of those letters.)
+        var listed = knownPeople !== null;
+        var hint = "";
+        if (!listed) {
+            hint = current.loaded ? "The people could not be loaded: choose a line with the " +
+                "arrows or a click." : "Loading the people\u2026";
+        } else if (!current.choices.length) {
+            hint = !typed ? "Type a name." : face.person && own && nameKey(own.label) ===
+                nameKey(typed) ? "This face is " + own.label + " already."
+                : /^person [0-9]+$/.test(nameKey(typed))
+                    ? "\u201cPerson 12\u201d is how people without a name are shown."
+                    : "";
+        }
+        current.hint.textContent = hint;
+        current.hint.hidden = !hint;
+        // (Enter takes the first choice once something is typed and the people are
+        // there; before, none: the arrows choose.)
+        setActive(current, current.choices.length && typed && listed ? 0 : -1);
+    }
+
+    function choiceNode(current, choice, index, own) {
+        var node = el("li", {className: "face-pop-option" + (choice.kind === "person" ? ""
+                                                             : " is-new"),
+                             id: current.ids + "-option-" + index,
+                             attrs: {role: "option", "aria-selected": "false"}});
+        var small = "";
+        if (choice.kind === "person") {
+            var person = choice.person;
+            var url = person.cover !== null && person.cover !== undefined && window.SITE &&
+                SITE.faceUrl ? SITE.faceUrl(person.cover) : null;
+            node.appendChild(url ? el("img", {src: url, alt: "", loading: "lazy",
+                                              decoding: "async"})
+                : el("span", {className: "face-pop-plus", text: "?",
+                              attrs: {"aria-hidden": "true"}}));
+            node.appendChild(el("span", {className: "face-pop-name", text: person.label}));
+            // (Faces, as the popover's head and the messages count them.)
+            small = (typeof person.faces === "number" ? plural(person.faces, "face")
+                     : picturesOf(person)) + (person.hidden ? ", hidden" : "");
+        } else {
+            node.appendChild(el("span", {className: "face-pop-plus", text: "+",
+                                         attrs: {"aria-hidden": "true"}}));
+            var ownLabel = own ? own.label : current.face.label;
+            var text = choice.kind === "name"
+                ? "Name " + ownLabel + " \u201c" + choice.name + "\u201d"
+                : (current.face.person ? "Just this face: a new person \u201c"
+                   : "A new person \u201c") + choice.name + "\u201d";
+            node.appendChild(el("span", {className: "face-pop-name", text: text}));
+            if (choice.kind === "name") {
+                small = own && typeof own.faces === "number" ? "all " + plural(own.faces, "face")
+                    : "all its faces";
+            }
+        }
+        if (small) {
+            node.appendChild(el("small", {text: small}));
+        }
+        // (The field keeps the keyboard: a press on a choice takes it.)
+        node.addEventListener("pointerdown", function (event) {
+            event.preventDefault();
+        });
+        node.addEventListener("mousedown", function (event) {
+            event.preventDefault();
+        });
+        node.addEventListener("click", function (event) {
+            if (!ghost(current, event)) {
+                take(current, choice);
+            }
+        });
+        return node;
+    }
+
+    function setActive(current, index) {
+        current.active = index;
+        var nodes = current.list.querySelectorAll(".face-pop-option");
+        Array.prototype.forEach.call(nodes, function (node, at) {
+            node.classList.toggle("is-active", at === index);
+            node.setAttribute("aria-selected", at === index ? "true" : "false");
+        });
+        if (index >= 0 && nodes[index]) {
+            current.input.setAttribute("aria-activedescendant", nodes[index].id);
+            var list = current.list;
+            var item = nodes[index];
+            // (In sight in the list, which scrolls.)
+            if (typeof item.offsetTop === "number" && typeof list.scrollTop === "number") {
+                if (item.offsetTop < list.scrollTop) {
+                    list.scrollTop = item.offsetTop;
+                } else if (item.offsetTop + item.offsetHeight >
+                           list.scrollTop + list.clientHeight) {
+                    list.scrollTop = item.offsetTop + item.offsetHeight - list.clientHeight;
+                }
+            }
+        } else {
+            current.input.removeAttribute("aria-activedescendant");
+        }
+    }
+
+    // The popover's keys: the arrows and Enter in the field, Esc, Tab (kept inside).
+    function namingKey(current, event) {
+        var key = event.key;
+        if (event.ctrlKey || event.altKey || event.metaKey) {
+            return;
+        }
+        if (key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            closeNaming(true);
+            return;
+        }
+        if (key === "Tab") {
+            var focusable = Array.prototype.filter.call(
+                current.node.querySelectorAll("input, button, a[href]"), function (node) {
+                    return !node.disabled && !node.hidden;
+                });
+            if (focusable.length) {
+                var at = focusable.indexOf(document.activeElement);
+                var next = event.shiftKey ? (at <= 0 ? focusable.length - 1 : at - 1)
+                    : (at < 0 || at === focusable.length - 1 ? 0 : at + 1);
+                event.preventDefault();
+                focusable[next].focus();
+            }
+            event.stopPropagation();
+            return;
+        }
+        if (event.target === current.input) {
+            var count = current.choices.length;
+            if ((key === "ArrowDown" || key === "ArrowUp") && count) {
+                event.preventDefault();
+                var step = key === "ArrowDown" ? 1 : -1;
+                setActive(current, ((current.active < 0 ? (step > 0 ? -1 : 0) : current.active) +
+                                    step + count) % count);
+            } else if (key === "Enter" && !event.isComposing) {
+                event.preventDefault();
+                if (current.active >= 0 && current.choices[current.active]) {
+                    take(current, current.choices[current.active]);
+                } else if (knownPeople === null && !current.loaded &&
+                           /\S/.test(current.input.value)) {
+                    current.enterWaiting = true;     // (for the people: see openNaming)
+                }
+            }
+        }
+        event.stopPropagation();
+    }
+
+    // A choice taken: the face moves to that person, the face's person takes the
+    // name, or the face alone becomes a new person of that name.
+    function take(current, choice) {
+        var face = current.face;
+        var body;
+        var said;
+        if (choice.kind === "person") {
+            body = {action: "move", faces: [face.id], to: choice.person.id, undo: true};
+            said = function () {
+                return "This face is " + choice.person.label + " now.";
+            };
+        } else if (choice.kind === "name") {
+            var before = (knownPerson(choice.person) || {label: face.label}).label;
+            // (With the face: refused when a grouping moved it to another person since.)
+            send(current, "/people/" + encodeURIComponent(choice.person),
+                 {name: choice.name, face: face.id, undo: true}, function (reply) {
+                     var person = reply && reply.person ? reply.person : {label: choice.name};
+                     return before + " is " + person.label + " now" +
+                         (typeof person.faces === "number" ? " (" + plural(person.faces, "face") +
+                          ")" : "") + ".";
+                 });
+            return;
+        } else {
+            body = {action: "move", faces: [face.id], to: null, name: choice.name, undo: true};
+            said = function (reply) {
+                return "This face is " + (reply && reply.person ? reply.person.label
+                                          : choice.name) + " now (a new person).";
+            };
+        }
+        if (face.person) {
+            body.person = face.person;
+        }
+        send(current, "/people/faces", body, said);
+    }
+
+    // One change (SHELL.admin path, body); said(reply) is its message.
+    function send(current, path, body, said) {
+        if (current.busy || !window.SHELL || !SHELL.admin) {
+            return;
+        }
+        // (Busy, not disabled: a disabled field would lose the keyboard focus.)
+        current.busy = true;
+        current.error.hidden = true;
+        current.node.classList.add("is-busy");
+        current.node.setAttribute("aria-busy", "true");
+        var view = {box: current.pane, rec: current.rec, detail: current.detail,
+                    context: current.context};
+        var faceId = current.face.id;
+        var hadFocus = current.node.contains(document.activeElement);
+        SHELL.admin(path, body, {quiet: true}).then(function (reply) {
+            if (naming === current) {
+                closeNaming(false);
+            }
+            changed(said(reply), reply && typeof reply.undo === "string" ? reply.undo : null,
+                    view, faceId, hadFocus);
+        }, function (problem) {
+            var why = problem && problem.message ? problem.message : "That could not be saved.";
+            if (naming !== current) {
+                toast(why, "error");        // (the popover went meanwhile: said all the same)
+                return;
+            }
+            current.busy = false;
+            current.node.classList.remove("is-busy");
+            current.node.removeAttribute("aria-busy");
+            current.error.textContent = why;
+            current.error.hidden = false;
+            current.input.focus();
+        });
+    }
+
+    /* After a change (text: its message; token: what undoes it, or null): the
+       pane's People line and the boxes are drawn again with the picture's
+       people as they are now, the pages' people are asked for again
+       (SITE.peopleChanged: person:), and the message shows, with Undo. */
+    function changed(text, token, view, faceId, focusBack) {
+        peopleMoved(view, focusBack ? faceId : null);
+        // (Only the last change can be undone: the message of the one before goes.)
+        dropUndo();
+        var undo = null;
+        if (token) {
+            undo = function () {
+                undoChange(token, view);
+            };
+            lastUndo = {token: token, until: Date.now() + UNDO_SECONDS * 1000, run: undo,
+                        message: null, face: faceId};
+            listenForUndo();
+        }
+        if (window.SHELL && SHELL.toast) {
+            // (Its keys show by the button where there is a keyboard: style.css.)
+            var mac = /Mac|iPhone|iPad/.test((window.navigator && navigator.platform) || "");
+            var keys = mac ? {label: "\u2318Z", aria: "Meta+Z"} : {label: "Ctrl+Z",
+                                                                    aria: "Control+Z"};
+            var message = SHELL.toast(text, "ok", UNDO_SECONDS,
+                                      undo ? {text: "Undo", title: "Undo (" + keys.label + ")",
+                                              keys: keys, run: undo} : null);
+            if (lastUndo && lastUndo.token === token) {
+                lastUndo.message = message || null;
+            }
+        }
+    }
+
+    // The last change can be undone no more: its message (with Undo) goes.
+    function dropUndo() {
+        var pending = lastUndo;
+        lastUndo = null;
+        if (pending && pending.message && pending.message.parentNode) {
+            pending.message.parentNode.removeChild(pending.message);
+        }
+    }
+
+    // The Undo button of the last change's message, while it shows (trapFocus).
+    function undoButton() {
+        var message = lastUndo && Date.now() <= lastUndo.until ? lastUndo.message : null;
+        var button = message && message.parentNode ? message.querySelector(".toast-action")
+            : null;
+        return button && !button.disabled ? button : null;
+    }
+
+    // The face whose box (or face of the strip) has the keyboard, or null.
+    function focusedFace() {
+        var active = hasDocument ? document.activeElement : null;
+        var holder = active && active.closest ? active.closest(".face-box, .info-face") : null;
+        var id = holder ? Number(holder.getAttribute("data-face")) : NaN;
+        return isFinite(id) ? id : null;
+    }
+
+    function undoChange(token, view) {
+        var pending = lastUndo && lastUndo.token === token ? lastUndo : null;
+        // The keyboard goes back to the face: the one it was on, else -- from the
+        // message's Undo, gone with it, or from nowhere -- the face changed.
+        var active = hasDocument ? document.activeElement : null;
+        var fromMessage = Boolean(active && active.closest && active.closest(".toast"));
+        var face = focusedFace();
+        if (face === null && (fromMessage || focusGone()) && pending) {
+            face = pending.face;
+        }
+        if (pending) {
+            dropUndo();
+        }
+        if (!window.SHELL || !SHELL.admin) {
+            return;
+        }
+        // (SHELL.admin says why when it cannot be undone.)
+        SHELL.admin("/people/undo", {undo: token}).then(function () {
+            toast("Undone.", "ok");
+            peopleMoved(view, face);
+        }, function () {
+            return null;
+        });
+    }
+
+    // The people changed: the picture's people again, the pages', and the popover's.
+    function peopleMoved(view, focusFace) {
+        if (window.SITE && SITE.peopleChanged) {
+            SITE.peopleChanged();
+        }
+        loadKnownPeople(function () {
+            return null;
+        });
+        if (!window.SITE || !SITE.loadRecord || !view.rec) {
+            return;
+        }
+        SITE.loadRecord(view.rec.i, function (fresh) {
+            if (fresh && view.detail) {
+                if (fresh.people) {
+                    view.detail.people = fresh.people;
+                } else {
+                    delete view.detail.people;
+                }
+            }
+            redrawPeople(view);
+            if (focusFace !== null && focusFace !== undefined) {
+                var box = faceLayer && faceLayer.rec === view.rec
+                    ? faceLayer.layer.querySelector(".face-box[data-face=\"" + focusFace + "\"]")
+                    : null;
+                var pane = view.box && view.box.infoId === view.rec.i ? view.box : null;
+                var target = box || (pane && (pane.querySelector(".info-face[data-face=\"" +
+                                                                 focusFace + "\"]") ||
+                                              pane.querySelector(".info-faces")));
+                if (target && target.focus) {
+                    focusQuietly(target);
+                }
+            }
+            // (Another picture by now, or the face went: the keyboard stays in the viewer.)
+            focusLost(view.context && view.context.stage);
+        });
+    }
+
+    /* The pane's People line (and the face boxes) drawn again in place, from
+       view.detail (the picture's full record, changed in place). Nothing when the
+       pane shows another picture by now, nor boxes over another picture. */
+    function redrawPeople(view) {
+        var box = view.box;
+        if (box && box.infoId === view.rec.i) {
+            var row = box.querySelector(".info-people");
+            var fresh = peopleFact(view.rec, view.detail, view.context);
+            var value = row ? row.parentNode : null;
+            if (value && fresh) {
+                value.replaceChild(fresh, row);
+            } else if (value && value.parentNode) {
+                // (Nobody any more: the line goes, its name too.)
+                var list = value.parentNode;
+                var at = Array.prototype.indexOf.call(list.childNodes, value);
+                var name = at > 0 ? list.childNodes[at - 1] : null;
+                list.removeChild(value);
+                if (name && name.tagName === "DT") {
+                    list.removeChild(name);
+                }
+            }
+        }
+        var stage = view.context && view.context.stage;
+        if (!stage || stage.rec === view.rec) {
+            faceBoxesFor(view.rec, view.detail, view.context);
+        }
+    }
+
+    // Ctrl+Z (or Cmd+Z) undoes the last change while its message shows (but in a
+    // field, where it is the field's).
+    function listenForUndo() {
+        if (undoKeys) {
+            return;
+        }
+        undoKeys = true;
+        document.addEventListener("keydown", function (event) {
+            if (!lastUndo || !(event.ctrlKey || event.metaKey) || event.altKey ||
+                    event.shiftKey || (event.key !== "z" && event.key !== "Z")) {
+                return;
+            }
+            var target = event.target;
+            var tag = target && target.tagName;
+            if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" ||
+                    (target && target.isContentEditable)) {
+                return;
+            }
+            var pending = lastUndo;
+            if (Date.now() > pending.until) {
+                lastUndo = null;
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            pending.run();
+        }, true);
+    }
+
+    /* Where the popover goes: by its box (under it and its name, else above it,
+       within the window), or -- on a narrow upright screen -- a sheet at the
+       foot of the screen, above the on-screen keyboard. */
+    function placeNaming(current) {
+        if (naming !== current) {
+            return;
+        }
+        var node = current.node;
+        var sheet = Boolean(window.matchMedia && window.matchMedia(NAMING_SHEET_QUERY).matches);
+        node.classList.toggle("is-sheet", sheet);
+        var height = window.innerHeight || 800;
+        var width = window.innerWidth || 1200;
+        if (sheet) {
+            var view = window.visualViewport;
+            var covered = view ? Math.max(0, height - view.height - view.offsetTop) : 0;
+            node.style.left = "0px";
+            node.style.top = "auto";
+            node.style.width = "";
+            node.style.bottom = Math.round(covered) + "px";
+            node.style.maxHeight = Math.round(Math.max(200, (view ? view.height : height) * 0.85)) +
+                "px";
+            return;
+        }
+        var anchor = current.anchor();
+        if (!anchor) {
+            return;
+        }
+        var rect = anchor.getBoundingClientRect();
+        var wide = Math.min(340, width - 16);
+        node.style.width = wide + "px";
+        node.style.maxHeight = "";
+        var natural = node.getBoundingClientRect().height || 320;
+        var below = height - 8 - (rect.bottom + current.gap);
+        var above = rect.top - 6 - 8;
+        // (It stays on the side it opened on while it fits there: the list grows and
+        // shrinks as letters are typed.)
+        var side = current.side;
+        if (!(side === "below" && below >= natural) && !(side === "above" && above >= natural)) {
+            side = below >= natural || below >= above ? "below" : "above";
+        }
+        current.side = side;
+        if (side === "below") {
+            node.style.bottom = "auto";
+            node.style.top = Math.round(Math.min(rect.bottom + current.gap, height - 168)) + "px";
+            node.style.maxHeight = Math.max(160, below) + "px";
+        } else {
+            // (Above the face, held by its foot: a shorter list keeps it by the face.)
+            node.style.top = "auto";
+            node.style.bottom = Math.round(Math.max(8, height - (rect.top - 6))) + "px";
+            node.style.maxHeight = Math.max(160, above) + "px";
+        }
+        var left = rect.left + rect.width / 2 - wide / 2;
+        left = Math.max(8, Math.min(left, width - wide - 8));
+        node.style.left = Math.round(left) + "px";
     }
 
     // The "Looks like this" strip: thumbnails of pictures (ids) that open in the viewer
@@ -5493,7 +7910,8 @@ var VIEWER = (function () {
             },
             onState: function (state) {
                 root.classList.toggle("is-pano", state.pano);
-                reset.hidden = !state.pano && !state.zoomed;
+                // (Not at a wide picture's pan view: it opens there.)
+                reset.hidden = !state.pano && !state.moved;
                 // (Not for a 360 video shown unlevelled: views are kept for
                 // its level panorama.)
                 openHere.hidden = !state.pano || !admin() || Boolean(state.unlevelled);
@@ -5857,6 +8275,11 @@ var VIEWER = (function () {
             // The strip of a drive has the focus: the arrows, Page Up, Page
             // Down, Home and End move in the drive.
             event.preventDefault();
+        } else if (event.target && /(^| )stage-minimap( |$)/.test(event.target.className || "") &&
+                   lightbox.stage.minimapKey(key)) {
+            // The minimap of a wide picture has the focus: the arrows, Page
+            // Up, Page Down, Home and End move along the picture.
+            event.preventDefault();
         } else if (event.target === lightbox.handle && (key === "ArrowUp" || key === "ArrowDown")) {
             // (The sheet's handle moves the sheet with them.)
             return;
@@ -5928,18 +8351,31 @@ var VIEWER = (function () {
                 return !node.disabled && !node.hidden && node.offsetParent !== null &&
                     node.tabIndex >= 0;
             });
+        // (The Undo of the last change's message is in the round while it shows: it
+        // comes after the viewer's last control.)
+        var undo = undoButton();
+        if (undo) {
+            focusable.push(undo);
+        }
         if (!focusable.length) {
             return;
         }
         var first = focusable[0];
         var last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
+        var at = focusable.indexOf(document.activeElement);
+        if (event.shiftKey && at === 0) {
             event.preventDefault();
             last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
+        } else if (!event.shiftKey && at === focusable.length - 1) {
             event.preventDefault();
             first.focus();
-        } else if (!lightbox.root.contains(document.activeElement)) {
+        } else if (undo && at === focusable.length - 2 && !event.shiftKey) {
+            event.preventDefault();
+            undo.focus();
+        } else if (undo && at === focusable.length - 1 && event.shiftKey) {
+            event.preventDefault();
+            focusable[at - 1].focus();
+        } else if (at < 0 && !lightbox.root.contains(document.activeElement)) {
             event.preventDefault();
             first.focus();
         }
@@ -6072,7 +8508,8 @@ var VIEWER = (function () {
         if (!lightbox.routeMap) {
             lightbox.routeMap = new ROUTES.MiniMap({tileUrl: SITE.tileUrl,
                                                     tileSize: SITE.tileSize(),
-                                                    tilesMax: SITE.tilesMax()});
+                                                    tilesMax: SITE.tilesMax(),
+                                                    streets: SITE.streets()});
         }
         lightbox.routeSpec = spec;
         lightbox.routeMap.show(route, id);
@@ -6300,6 +8737,12 @@ var VIEWER = (function () {
         lightbox.title.textContent = titleOf(rec);
         renderPane(rec, null);
         lightbox.stage.show(rec, urls);
+        // (A video, not a drive, opened at a moment: open's startAt.)
+        var startAt = lightbox.startAt;
+        if (startAt && startAt.id === id && rec.mv && !lightbox.driveSpec) {
+            lightbox.startAt = null;
+            lightbox.stage.seekTo(startAt.seconds);
+        }
         showBarMarks(rec);
         showStackNote(rec);
         var token = ++lightbox.detailToken;
@@ -6312,6 +8755,12 @@ var VIEWER = (function () {
                     }
                     // (A video may have a playable copy; a drive a sped-up preview.)
                     lightbox.stage.videoDetail(detail);
+                    // (A video found by a search for one of its people: where that
+                    // person is, unless it was played or moved already.)
+                    if (rec.mv && !lightbox.driveSpec && detail.people) {
+                        lightbox.stage.seekTo(personMoment(detail.people.names,
+                                                           lightbox.options.query), true);
+                    }
                 }
             });
         }
@@ -6397,6 +8846,7 @@ var VIEWER = (function () {
             editing = null;                 // (not saved)
         }
         var id = lightbox.id;
+        closeNaming(false);
         lightbox.root.hidden = true;
         setSheetFull(false);
         lightbox.detailToken += 1;

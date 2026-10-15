@@ -57,6 +57,35 @@
    "Save as album" keeps the search (words, filters, sort, words/meaning)
    as a smart album; a search of one album shows it in its own order.
 
+   People (people_groups.py): person:"Name" finds the pictures of a person
+   whose face People recognised. The people come from SITE.peopleForSearch
+   (the server's /api/people: the admin's, hidden people too, so the People
+   page's Pictures of a hidden person work; others' only when the server
+   shows them people; never an export's), loaded when a search first names
+   person: (SearchCore's people option; until they come, person: warns of
+   nothing), or has any word while plain-language search is on.
+
+   Plain-language search (SearchCore.interpret; off with config.json's
+   "plain_language": false, capabilities.plain): what is typed is searched
+   as interpreted -- a person's name as person: (or, in an export that
+   publishes names, as those words only), a town, region or country of the
+   pictures as place:, a kind of place pictures were taken at ("beaches",
+   "at the zoo": the kinds of their named places on the street maps) as
+   kind:, years, months and seasons ("last summer", "November
+   2024") as date: -- and the chips above the results (#plain-chips) say
+   so: each with an x that leaves that part as typed (state.typed, kept in
+   the address), the words left over with how they are searched (and the
+   words searched by their words only: names, see SearchCore's Per-term
+   coverage), the rest of the search as typed, and "Search the words as
+   typed" (all of it, for this search: a new one is understood again). A
+   word that may be a person or a place, or is also a common word, is asked
+   about with buttons that write the choice into the box. The search box
+   keeps what was typed; "Save as album" saves the interpreted search
+   (where People is not shown, its people are searched as the words typed:
+   albums.alternative_spans). When an understood part leaves nothing, the
+   empty page says which, with a button that searches it as typed or
+   leaves it out.
+
    Drives (runs of video clips recorded one after the other, record key
    dv, see drives.py and search-core's Drives) show as one tile each while
    "Fold drives" is on (the default; state.drives): the clip that stands
@@ -66,6 +95,15 @@
    order, those that match by themselves marked). A clip of a drive, folded
    or not, opens the viewer on the whole drive (VIEWER's driveOf), at
    that clip.
+
+   An area of the map ("Search an area" on the map page: state.area and
+   state.aname, see search-core.js "Areas on the map") limits the search to
+   the pictures taken in it, with an "Area: ..." chip that takes it away;
+   where the pictures were taken (SITE.loadPlaces) is loaded when a search
+   has one (or names a smart album that has one), and until it is in the
+   page says so instead of finding nothing. A published site without
+   locations has no areas: an area in its address is left out, with a note.
+   "Save as album" keeps the area.
 
    The grid is laid out in rows by this script (columns from the width and
    the size slider; a header row per month when sorted by date) and cut
@@ -145,8 +183,9 @@
         var value = /[?&]album=(\d{1,18})(?:&|$)/.exec(window.location.search || "");
         return value ? Number(value[1]) : null;
     })();
-    var data = null;            // {records, libraries, names, byId, index}
+    var data = null;            // {records, libraries, names, byId, index, personNames}
     var result = null;          // the last SearchCore.search answer
+    var interp = null;          // the last SearchCore.interpret answer (what was searched)
     var display = [];           // [{id, stack: [ids] | null, member: bool}]
     var positions = {};         // id -> place in display
     var coverOf = {};           // stack member id -> the id of its stack's cover
@@ -175,11 +214,12 @@
     var initialHistory = window.history.state || {};
     var vectors = null;         // the meaning vectors (SITE.loadVectors), once loaded
     var queryVectors = {};      // meaning text -> its vector (Int8Array)
+    var noTermVector = {};      // a word's text -> true: no vector came for it (by the whole query)
     var queryOrder = [];
-    var queryWanted = "";       // the meaning text whose vector is wanted now
+    var queryWanted = "";       // the meaning texts (queryKey) whose vectors are wanted now
     var meaningTimer = 0;
     var meaningAsking = false;
-    var askingText = "";        // the meaning text asked for last
+    var askingText = "";        // the meaning texts (queryKey) asked for last
     var meaningTries = 0;
     // "" (fine), "starting" (the model is loading), "loading" (an export
     // downloads its model: meaningProgress), "ask" (an export waits for the
@@ -194,6 +234,7 @@
     var vectorsAsked = false;
     var restoreTimer = 0;
     var looks = null;           // the look vectors (SITE.loadLooks), once loaded
+    var peopleSearch = null;    // the people for person: (SITE.peopleForSearch)
     var looksWaiting = [];      // called once the look vectors have settled
     var looksSettled = false;
     var looksAsked = false;
@@ -240,7 +281,7 @@
         return SITE.searchState.params({q: state.q, lib: SHELL.library(), filters: state.filters,
                                         hidden: state.hidden, junk: state.junk,
                                         sensitive: state.sensitive, from: state.from,
-                                        to: state.to});
+                                        to: state.to, typed: state.typed, area: state.area});
     }
 
     var viewSearch = "";        // mapSearch() of the search state.view belongs to
@@ -261,8 +302,9 @@
                 group: state.group, drives: state.drives,
                 size: state.size === "m" ? "" : state.size,
                 hidden: state.hidden, junk: state.junk, sensitive: state.sensitive,
-                ids: state.ids, view: state.view, from: state.from, to: state.to,
-                by: state.by};
+                ids: state.ids, pick: state.pick, view: state.view, from: state.from,
+                to: state.to, by: state.by, typed: state.typed, area: state.area,
+                aname: state.aname};
     }
 
     // The search state for links to other pages (without the view settings).
@@ -339,7 +381,7 @@
             count += state.filters[key].length;
         });
         return count + (state.junk ? 1 : 0) + (state.sensitive ? 1 : 0) + (state.hidden ? 1 : 0) +
-            (state.ids ? 1 : 0) + (state.from || state.to ? 1 : 0);
+            (state.ids ? 1 : 0) + (state.from || state.to ? 1 : 0) + (state.area ? 1 : 0);
     }
 
     /* The pictures picked on the map (state.ids): {ids, stale} once the
@@ -359,6 +401,64 @@
     }
 
     var droppedPicks = false;
+
+    /* Where the pictures were taken, for an area of the map: loaded once a
+       search has an area (or names a smart album with one), then set on the
+       index (setPlaces) every time it is made. */
+    var places = null;          // SITE.loadPlaces' answer, once in
+    var placesAsked = false;
+    var placesFailed = false;   // (asked again with the next search: changed)
+    var placesStale = false;    // the index changed since: loaded afresh when wanted
+    var droppedArea = false;    // an area that cannot be searched here was left out
+
+    function wantsPlaces() {
+        if (state.area) {
+            return true;
+        }
+        return /(^|\s)-?albums?:/i.test(state.q) && data.albums.some(function (album) {
+            return album && album.kind === "smart" && album.options &&
+                typeof album.options.area === "string" && album.options.area;
+        });
+    }
+
+    function wantPlaces() {
+        if (state.area && (!SITE.hasAreas() || !SearchCore.areas.read(state.area))) {
+            // (A published site without locations, or an area that cannot be read.)
+            state.area = "";
+            state.aname = "";
+            droppedArea = true;
+        }
+        if (placesAsked || !data || !wantsPlaces()) {
+            return;
+        }
+        placesAsked = true;
+        var fresh = placesStale;
+        placesStale = false;
+        SITE.loadPlaces(function (answer) {
+            if (!answer) {
+                placesFailed = true;
+            } else {
+                places = answer;
+                placesFailed = false;
+                setPlaces();
+            }
+            run({keepScroll: true});
+        }, fresh);
+    }
+
+    // The pictures changed (an edit, new ones): where they were taken may have too.
+    function placesChanged() {
+        if (places) {
+            placesStale = true;
+            placesAsked = false;
+        }
+    }
+
+    function setPlaces() {
+        if (data && places) {
+            data.index.setPlaces(places.points, places.routes);
+        }
+    }
 
     // Drops a list of picked pictures that cannot be read (before a search).
     function checkPicked() {
@@ -391,7 +491,9 @@
             albums: Array.isArray(loaded.albums) ? loaded.albums : [],
             names: names,
             byId: lookup,
-            index: SearchCore.prepare(loaded.records)
+            index: SearchCore.prepare(loaded.records),
+            // (An export's published names of people, for plain-language search.)
+            personNames: Array.isArray(loaded.names) ? loaded.names : null
         };
         if (vectors) {
             data.index.setVectors(vectors);
@@ -399,6 +501,8 @@
         if (looks) {
             data.index.setLooks(looks);
         }
+        setPlaces();
+        placesChanged();
         loadedAt = Date.now();
     }
 
@@ -416,6 +520,8 @@
             if (looks) {
                 data.index.setLooks(looks);
             }
+            setPlaces();
+            placesChanged();
             run({keepScroll: true});
         }
     }
@@ -448,20 +554,142 @@
         if (chosen && !chosen.stale) {
             options.ids = chosen.ids;
         }
+        if (state.area) {
+            options.area = state.area;
+        }
         options.meaning = state.by || "hybrid";
         options.vector = meaningVector();
+        // (The words of the query on their own: Per-term coverage.)
+        options.termVectors = function (text) {
+            return queryVectors[text] || null;
+        };
         if (example && example.vec) {
             options.lookVector = example.vec;
         }
         options.albums = data.albums;
         options.vectorFor = albumVector;
+        // (An export's published names: tags of their pictures, which do not
+        // say what the pictures show: a name is covered by its words only.)
+        if (data.personNames) {
+            options.names = data.personNames;
+        }
+        if (peopleSearch) {
+            peopleSearch.options(options);
+        }
         return options;
+    }
+
+    /* ---------- People ------------------------------------------------------------- */
+
+    // Load the people when the query (or a smart album it names) has a person:
+    // term, or any word while plain-language search is on (once), then search
+    // again with them.
+    function wantPeople() {
+        if (!peopleSearch) {
+            peopleSearch = SITE.peopleForSearch(function () {
+                if (data) {
+                    run({keepScroll: true});
+                }
+            }, adminOn);
+        }
+        peopleSearch.want(state.q + " " + albumQueries(),
+                          plainOn() && state.typed !== "*" && !SITE.isStatic);
+    }
+
+    /* ---------- Plain language ---------------------------------------------------- */
+
+    // Plain-language search is on here (config.json's "plain_language").
+    function plainOn() {
+        return (SITE.capabilities || {}).plain !== false;
+    }
+
+    /* What plain-language search understands on this page, in words: the
+       names of people (the server's when it shows them People; an export's
+       when it publishes names) and of places (when the pictures have
+       places), kinds of place (when some have a named place of the street
+       maps), and always years, months and seasons. */
+    function plainKinds() {
+        var caps = SITE.capabilities || {};
+        var people = SITE.isStatic ? Boolean(data && data.personNames && data.personNames.length)
+            : caps.people === true;
+        var places = data ? Object.keys(data.index.placeLookup()).length > 0
+            : !SITE.isStatic || caps.places === true;
+        var kinds = data ? data.index.kindCounts().total > 0
+            : SITE.isStatic && caps.named_places === true;
+        var names = people && places ? "names of people and places, "
+            : people ? "names of people, " : places ? "names of places, " : "";
+        // (Examples: the kinds the most pictures were taken at.)
+        var examples = data ? data.index.commonKinds(2).map(function (line) {
+            return line.label.split(" and ")[0];
+        }) : [];
+        return names + (kinds ? "kinds of place (" + (examples.length ? examples.join(", ")
+            : "beaches, museums") + "), " : "") + "years, months and seasons";
+    }
+
+    // The search "Search the words as typed" was chosen for (state.typed
+    // "*"): another one is understood again. null: the one shown now.
+    var typedAllFor = null;
+
+    // SearchCore.interpret's typed option (state.typed).
+    function typedOption() {
+        return state.typed === "*" ? "*" : state.typed ? state.typed.split(",") : [];
+    }
+
+    // What the query asks for (SearchCore.interpret), with the people known now.
+    function interpretQuery(typed) {
+        if (!data) {
+            return {text: state.q, query: state.q, parts: [], choices: [], rest: "", others: "",
+                    kept: [], changed: false};
+        }
+        var options = {typed: typed === undefined ? typedOption() : typed, plain: plainOn(),
+                       names: data.personNames};
+        if (peopleSearch) {
+            options.people = peopleSearch.options({}).people;
+        }
+        return data.index.interpret(state.q, options);
+    }
+
+    // The query as it is searched (interpreted).
+    function searched() {
+        return interp ? interp.query : state.q;
+    }
+
+    /* Leaves a part of the query as typed (a chip's x), or every part (all:
+       "Search the words as typed"), or interprets it all again (key "",
+       all false). */
+    function keepTyped(key, all) {
+        if (all) {
+            state.typed = "*";
+            typedAllFor = state.q;
+        } else if (!key) {
+            state.typed = "";
+        } else {
+            var keys = typedOption().filter(function (item) {
+                return item !== "*" && item !== key;
+            });
+            keys.push(key);
+            state.typed = keys.join(",");
+        }
+        changed({top: false});
+    }
+
+    // A choice of an ambiguous word: written into the search box.
+    function chooseMeaning(choice, option) {
+        if (!option.query) {
+            keepTyped(choice.key);
+            return;
+        }
+        setQuery(state.q.slice(0, choice.start) + option.query + state.q.slice(choice.end));
     }
 
     /* The meaning vector of a smart album's search (SearchCore's vectorFor):
        kept like the query's, asked for once (the server's; an export's model
-       is not loaded for it), and the search runs again when it comes. */
-    var albumAsked = {};
+       is not loaded for it), and the search runs again when it comes. The
+       texts asked for while a search runs (an album's search and its words,
+       other albums') go in one request (SearchCore.MEANING_TEXTS at most). */
+    var albumAsked = {};        // text -> tries so far (-1: asking now)
+    var albumWanted = [];       // texts for the next request
+    var albumTimer = 0;
 
     function albumVector(text) {
         if (!meaningOn() || !vectors || !text) {
@@ -480,30 +708,55 @@
             return null;
         }
         albumAsked[text] = -1;                  // (asking now)
-        SITE.queryVector(text, function (answer) {
+        albumWanted.push({text: text, tries: tries});
+        if (!albumTimer) {
+            albumTimer = window.setTimeout(askAlbumVectors, 0);
+        }
+        return null;
+    }
+
+    function askAlbumVectors() {
+        albumTimer = 0;
+        var asked = albumWanted.splice(0, SearchCore.MEANING_TEXTS);
+        if (!asked.length) {
+            return;
+        }
+        if (albumWanted.length) {
+            albumTimer = window.setTimeout(askAlbumVectors, 0);
+        }
+        var texts = asked.map(function (entry) {
+            return entry.text;
+        });
+        SITE.queryVector(texts.length > 1 ? texts : texts[0], function (answer) {
             answer = answer || {};
-            var vector = answer.state === "ready" && vectors && answer.model === vectors.model &&
-                answer.dims === vectors.dims ? SearchCore.queryVector(answer.vec, vectors.dims)
-                : null;
-            if (vector) {
-                rememberVector(text, vector);
-                keepVector(text, answer);
-                albumAsked[text] = MEANING_TRIES;
-                if (data) {
-                    run({keepScroll: true});
+            var ready = answer.state === "ready" && vectors && answer.model === vectors.model &&
+                answer.dims === vectors.dims;
+            var encoded = texts.length > 1 ? answer.vecs || [] : [answer.vec];
+            var again = answer.state === "starting" || answer.state === "busy";
+            var found = false;
+            asked.forEach(function (entry, k) {
+                var vector = ready ? SearchCore.queryVector(encoded[k], vectors.dims) : null;
+                if (vector) {
+                    rememberVector(entry.text, vector);
+                    keepVector(entry.text, {model: answer.model, dims: answer.dims,
+                                            vec: encoded[k]});
+                    albumAsked[entry.text] = MEANING_TRIES;
+                    found = true;
+                } else {
+                    // (Asked again a while later; else by its words only.)
+                    albumAsked[entry.text] = again ? entry.tries + 1 : MEANING_TRIES;
                 }
-            } else if (answer.state === "starting" || answer.state === "busy") {
-                albumAsked[text] = tries + 1;
+            });
+            if (found && data) {
+                run({keepScroll: true});
+            } else if (again) {
                 window.setTimeout(function () {
                     if (data) {
                         run({keepScroll: true});
                     }
                 }, MEANING_RETRY);
-            } else {
-                albumAsked[text] = MEANING_TRIES;   // (words only)
             }
         });
-        return null;
     }
 
     /* ---------- Search by meaning ------------------------------------------------- */
@@ -518,35 +771,56 @@
             : Boolean(SITE.meaningInBrowser && SITE.meaningInBrowser());
     }
 
-    // The text of the query that search by meaning looks for ("" for none;
-    // also while an example picture is searched by: then its looks rank the
-    // pictures, and the words only choose among them).
-    function queryText() {
-        return example && example.vec ? "" : SearchCore.meaningText(state.q);
+    // The texts search by meaning embeds for the query searched
+    // (SearchCore.meaningTexts: the whole query, then its words on their own
+    // when it has several); none while an example picture is searched by:
+    // then its looks rank the pictures, and the words only choose among them.
+    function queryTexts() {
+        return example && example.vec ? [] : SearchCore.meaningTexts(searched());
     }
 
-    // The query's meaning vector when there is one now, else null; when it
-    // is not there yet it is asked for, and the search runs again once it
-    // has come.
-    function meaningVector() {
-        if (!meaningOn() || state.by === "words") {
-            return null;
-        }
-        var text = queryText();
-        if (!text) {
-            return null;
-        }
+    // The text of the query that search by meaning looks for ("" for none).
+    function queryText() {
+        return queryTexts()[0] || "";
+    }
+
+    // What is asked for at once: the query's texts, joined by new lines.
+    function queryKey() {
+        return queryTexts().join("\n");
+    }
+
+    // The vector of a text when there is one now (also one kept for the tab).
+    function knownVector(text) {
         if (queryVectors[text]) {
             return queryVectors[text];
         }
         var kept = keptVector(text);
         if (kept) {
-            queryVectors[text] = kept;
-            queryOrder.push(text);
-            return kept;
+            rememberVector(text, kept);
+        }
+        return kept;
+    }
+
+    // The query's meaning vector when there is one now (and the vectors of
+    // its words, SearchCore's termVectors), else null; when they are not
+    // there yet they are asked for, and the search runs again once they have
+    // come.
+    function meaningVector() {
+        if (!meaningOn() || state.by === "words") {
+            return null;
+        }
+        var texts = queryTexts();
+        if (!texts.length) {
+            return null;
+        }
+        var missing = texts.filter(function (text, k) {
+            return !knownVector(text) && !(k > 0 && noTermVector[text]);
+        });
+        if (!missing.length) {
+            return queryVectors[texts[0]];
         }
         if (meaningState !== "ask") {
-            askMeaning(text);       // (Save-Data: until the visitor chooses to download)
+            askMeaning(texts.join("\n"));     // (Save-Data: until the visitor chooses)
         }
         return null;
     }
@@ -593,11 +867,13 @@
         if (!meaningOn() || state.by === "words") {
             return false;
         }
-        var text = queryText();
-        return Boolean(text) && !queryVectors[text] && text === queryWanted &&
-            Boolean(meaningTimer || meaningAsking);
+        var texts = queryTexts();
+        return texts.length > 0 && texts.some(function (text, k) {
+            return !queryVectors[text] && !(k > 0 && noTermVector[text]);
+        }) && texts.join("\n") === queryWanted && Boolean(meaningTimer || meaningAsking);
     }
 
+    // text: queryKey(), the texts to embed joined by new lines.
     function askMeaning(text) {
         // (Not again for the query that just failed: the page renders it again
         // and again, and would ask in a loop; word matches until the next one.)
@@ -633,9 +909,11 @@
         }
     }
 
+    // (text: a queryKey(): the query's texts, joined by new lines.)
     function fetchMeaning(text) {
         meaningAsking = true;
         askingText = text;
+        var texts = text.split("\n");
         if (!serverMode && !vectorsSettled) {
             // An export: the vectors first (a reload may then find the
             // query's vector kept for the tab), then its model.
@@ -656,19 +934,20 @@
             restoreWhenSettled();
             return;
         }
-        if (!serverMode) {
-            var kept = keptVector(text);
-            if (kept) {
-                meaningAsking = false;
-                rememberVector(text, kept);
-                if (data && queryText() === text && state.by !== "words") {
-                    run({keepScroll: !restored});
-                }
-                restoreWhenSettled();
-                return;
+        var missing = texts.filter(function (one, k) {
+            return !knownVector(one) && !(k > 0 && noTermVector[one]);
+        });
+        if (!serverMode && !missing.length) {
+            meaningAsking = false;
+            if (data && queryKey() === text && state.by !== "words") {
+                run({keepScroll: !restored});
             }
+            restoreWhenSettled();
+            return;
         }
-        SITE.queryVector(text, function (answer) {
+        // (One text alone as before; several in one request.)
+        var asked = missing.length > 1 ? missing : missing[0] || texts[0];
+        SITE.queryVector(asked, function (answer) {
             if (askingText === text) {
                 meaningAsking = false;
             }
@@ -683,8 +962,15 @@
                 return;
             }
             if (answer.state === "ready") {
-                var vector = SearchCore.queryVector(answer.vec, vectors.dims);
-                if (!vector || answer.model !== vectors.model || answer.dims !== vectors.dims) {
+                var list = Array.isArray(asked) ? asked : [asked];
+                var encoded = Array.isArray(asked) ? answer.vecs || [] : [answer.vec];
+                var made = list.map(function (one, k) {
+                    return SearchCore.queryVector(encoded[k], vectors.dims);
+                });
+                // (A word without a vector is searched by the whole query's
+                // meaning, as before; the query itself must have one.)
+                if ((list[0] === texts[0] && !made[0]) || !made.some(Boolean) ||
+                        answer.model !== vectors.model || answer.dims !== vectors.dims) {
                     // Another model than the pictures' vectors were made
                     // with: they must be made again first (Manage page;
                     // an export with a model of its own is damaged).
@@ -693,13 +979,19 @@
                     return;
                 }
                 // (Kept also when another query is wanted by now.)
-                rememberVector(text, vector);
-                keepVector(text, answer);
+                list.forEach(function (one, k) {
+                    if (made[k]) {
+                        rememberVector(one, made[k]);
+                        keepVector(one, {model: answer.model, dims: answer.dims, vec: encoded[k]});
+                    } else {
+                        noTermVector[one] = true;
+                    }
+                });
                 if (text !== queryWanted) {
                     return;
                 }
                 setMeaningState("");
-                if (data && queryText() === text && state.by !== "words") {
+                if (data && queryKey() === text && state.by !== "words") {
                     run({keepScroll: !restored});
                 }
                 restoreWhenSettled();
@@ -1383,9 +1675,35 @@
             // everyone else when a search or the viewer needs them.)
             wantLooks();
         }
+        if (!/\S/.test(state.q)) {
+            state.typed = "";
+        }
+        if (state.typed === "*") {
+            // (All words as typed: only for the search it was chosen for.)
+            if (typedAllFor === null) {
+                typedAllFor = state.q;
+            } else if (typedAllFor !== state.q) {
+                state.typed = "";
+            }
+        }
+        if (state.typed !== "*") {
+            typedAllFor = null;
+        }
+        wantPeople();
+        wantPlaces();
+        if (state.typed && state.typed !== "*") {
+            // (Only the parts whose words are still in the query stay as typed:
+            // by the words, as a name may only be known once the people come.)
+            var words = " " + SearchCore.tokens(state.q).join(" ") + " ";
+            state.typed = typedOption().filter(function (key) {
+                // (Anna's is the key "anna".)
+                return words.indexOf(" " + key + " ") >= 0 || words.indexOf(" " + key + "s ") >= 0;
+            }).join(",");
+        }
+        interp = interpretQuery();
         var search = searchOptions();
         search.timeline = true;
-        result = SearchCore.search(data.index, state.q, search);
+        result = SearchCore.search(data.index, interp.query, search);
         meaningOnly = {};
         (result.byMeaning || []).forEach(function (id) {
             meaningOnly[id] = true;
@@ -1394,6 +1712,7 @@
         trimSelection();
         renderControls();
         renderHead();
+        renderPlain();
         renderChips();
         renderFacets();
         renderBanner();
@@ -1431,6 +1750,10 @@
         expandedDrives = {};
         anchor = null;
         droppedPicks = false;
+        droppedArea = false;
+        if (placesFailed) {
+            placesAsked = false;
+        }
         run({top: options.top !== false});
         writeUrl({push: options.push === true});
     }
@@ -1450,8 +1773,8 @@
     }
 
     /* Places are chosen one level at a time: choosing a place drops the
-       places it is in and the places in it (Hawaii instead of the United
-       States), and taking a town or region away goes back to the place it
+       places it is in and the places in it (the Algarve instead of
+       Portugal), and taking a town or region away goes back to the place it
        is in, unless another place there is still chosen. */
     function placeChoice(values, value) {
         var at = values.indexOf(value);
@@ -1517,6 +1840,8 @@
         state.sensitive = "";
         state.hidden = false;
         state.ids = "";
+        state.area = "";
+        state.aname = "";
         changed();
     }
 
@@ -1533,6 +1858,8 @@
         state.ids = "";
         state.from = "";
         state.to = "";
+        state.area = "";
+        state.aname = "";
         state.q = "";
         if (group === "q") {
             state.q = value;
@@ -1552,6 +1879,8 @@
         target.view = "";
         target.from = "";
         target.to = "";
+        target.area = "";
+        target.aname = "";
         if (group !== "q") {
             target.filters[group] = [value];
         }
@@ -1714,19 +2043,43 @@
 
     // SearchCore.SYNTAX, in an export without what it cannot have: other
     // libraries, hidden and undescribed pictures (never exported),
-    // screenshots (left out unless chosen), and folder and file names or
-    // GPS when they were not exported. Others than the admin cannot find
-    // hidden or edited pictures.
+    // screenshots (left out unless chosen), person: (an export has no
+    // People; the names it publishes are words, which plain language
+    // understands), and folder and file names or GPS when they were not
+    // exported. Others than the admin cannot find hidden or edited
+    // pictures; person: only where People is shown to the requester
+    // (capabilities.people). Without plain-language search, not its row.
     function syntaxRows() {
+        return allSyntaxRows().filter(function (row) {
+            return !row.plain || plainOn();
+        }).map(function (row) {
+            if (!row.plain) {
+                return row;
+            }
+            var kinds = plainKinds();
+            return {example: /^names of people and places/.test(kinds) ? row.example
+                        : "beach last summer",
+                    meaning: "plain language: the " + kinds + " become filters (shown as " +
+                        "chips over the results; \u00d7 searches that part as typed)"};
+        });
+    }
+
+    function allSyntaxRows() {
+        var caps = SITE.capabilities || {};
         if (!SITE.isStatic) {
-            return adminOn ? SearchCore.SYNTAX : SearchCore.SYNTAX.map(function (row) {
+            // (person: finds nobody for a requester People is not shown to:
+            // visitors without "visitors", or People off and no face data.)
+            var rows = caps.people === true ? SearchCore.SYNTAX
+                : SearchCore.SYNTAX.filter(function (row) {
+                    return row.example.split(":")[0] !== "person";
+                });
+            return adminOn ? rows : rows.map(function (row) {
                 return row.example.split(":")[0] !== "is" || row.example === "is:favorite" ? row : {
                     example: row.example,
                     meaning: "360\u00b0 photos and videos; also is:video, is:drive, " +
                         "is:duplicate, is:undescribed"};
             });
         }
-        var caps = SITE.capabilities || {};
         var marked = caps.marks === true;
         var fields = ["tag", "subject", "title", "text (the text in the picture)", "description",
                       "scene", "animal", "food", "vehicle", "color", "camera"];
@@ -1739,7 +2092,10 @@
         var rows = [];
         SearchCore.SYNTAX.forEach(function (row) {
             var field = row.example.split(":")[0];
-            if (field === "lib" || (field === "place" && caps.places !== true)) {
+            // (No person: in an export: site.js never loads people there.)
+            if (field === "lib" || field === "person" ||
+                    (field === "place" && caps.places !== true) ||
+                    (field === "kind" && caps.named_places !== true)) {
                 return;
             }
             if (!marked && (field === "rating" || field === "album" ||
@@ -1770,6 +2126,44 @@
     function setupSyntaxHelp() {
         var button = byId("syntax-button");
         var box = byId("syntax-help");
+        // (Drawn when opened: what plain language understands depends on the
+        // pictures and people loaded.)
+        function fill() {
+            clear(box);
+            fillSyntaxHelp(box, close);
+        }
+        fill();
+        function close() {
+            box.hidden = true;
+            button.setAttribute("aria-expanded", "false");
+        }
+        button.addEventListener("click", function () {
+            var open = box.hidden;
+            if (open) {
+                fill();
+            }
+            box.hidden = !open;
+            button.setAttribute("aria-expanded", open ? "true" : "false");
+        });
+        document.addEventListener("click", function (event) {
+            if (!box.hidden && !box.contains(event.target) && event.target !== button) {
+                close();
+            }
+        });
+        // Esc closes the tips wherever the focus is (usually still on the
+        // "?" button), before anything else hears it (the search box would
+        // clear, selection mode would end).
+        document.addEventListener("keydown", function (event) {
+            if (event.key === "Escape" && !box.hidden && !VIEWER.isOpen()) {
+                event.preventDefault();
+                event.stopPropagation();
+                close();
+                button.focus();
+            }
+        }, true);
+    }
+
+    function fillSyntaxHelp(box, close) {
         box.appendChild(el("h2", {text: "Search tips"}));
         var table = el("table", {className: "syntax-table"});
         syntaxRows().forEach(function (row) {
@@ -1790,32 +2184,9 @@
                                        "finds sunset). Small words like \u201cthe\u201d, " +
                                        "\u201cmy\u201d or \u201cpictures of\u201d are skipped. " +
                                        "Accents and capitals do not matter. Press / to jump to " +
-                                       "the search box."}));
-        function close() {
-            box.hidden = true;
-            button.setAttribute("aria-expanded", "false");
-        }
-        button.addEventListener("click", function () {
-            var open = box.hidden;
-            box.hidden = !open;
-            button.setAttribute("aria-expanded", open ? "true" : "false");
-        });
-        document.addEventListener("click", function (event) {
-            if (!box.hidden && !box.contains(event.target) && event.target !== button) {
-                close();
-            }
-        });
-        // Esc closes the tips wherever the focus is (usually still on the
-        // "?" button), before anything else hears it (the search box would
-        // clear, selection mode would end).
-        document.addEventListener("keydown", function (event) {
-            if (event.key === "Escape" && !box.hidden && !VIEWER.isOpen()) {
-                event.preventDefault();
-                event.stopPropagation();
-                close();
-                button.focus();
-            }
-        }, true);
+                                       "the search box." + (plainOn() ? " The " + plainKinds() +
+                                       " are understood: the chips over the results say how."
+                                           : "")}));
     }
 
     /* ---------- Facet sidebar ---------------------------------------------------- */
@@ -2340,6 +2711,15 @@
             warnings.push("The pictures picked on the map could not be found any more (the " +
                           "pictures have changed since): showing the whole search.");
         }
+        if (droppedArea) {
+            warnings.push(SITE.hasAreas() ? "The area of the map could not be read: " +
+                          "showing the whole search." : "This site does not publish where " +
+                          "the pictures were taken, so the area of the map was left out.");
+        }
+        if (placesFailed && state.area) {
+            warnings.push("Where the pictures were taken could not be loaded, so the area " +
+                          "finds nothing for now.");
+        }
         if (looksSettled && !looks && result.meaning && result.meaning.mode === "look") {
             // (look: with no look vectors here: only the picture itself is found.)
             warnings.push("Looks like this needs the pictures' look vectors, and " +
@@ -2389,7 +2769,7 @@
         // (Not for a visibility switch alone, such as "Hide blurry ...":
         // a smart album does not keep those.)
         var searching = Boolean(state.q.replace(/\s+/g, "") || savedFilterCount() ||
-                                state.from || state.to || SHELL.library());
+                                state.from || state.to || SHELL.library() || state.area);
         save.hidden = !adminOn || !serverMode || !searching || Boolean(example) ||
             Boolean(state.ids);
         var changing = albumBeingChanged();
@@ -2466,6 +2846,12 @@
         if (state.to) {
             options.to = state.to;
         }
+        if (state.area) {
+            options.area = state.area;
+            if (state.aname) {
+                options.aname = state.aname;
+            }
+        }
         return options;
     }
 
@@ -2477,22 +2863,42 @@
         var changing = albumBeingChanged();
         var box = SHELL.modal({title: changing ? "Save the search of " + changing.name
             : "Save this search as a smart album"});
+        // (Its words, or the name of its area of the map when it has no words.)
+        var words = state.q.replace(/^\s+|\s+$/g, "");
         var name = el("input", {type: "text", className: "input", maxLength: 100,
                                 autocomplete: "off", spellcheck: false,
                                 value: changing ? changing.name
-                                    : state.q.replace(/^\s+|\s+$/g, "").slice(0, 100)});
+                                    : (words || (state.area && state.aname) || "").slice(0, 100)});
         var field = SHELL.field("Album name", name);
         box.body.appendChild(field.node);
         var parts = [];
-        if (state.q.replace(/\s+/g, "")) {
-            parts.push("the words \u201c" + state.q.replace(/^\s+|\s+$/g, "") + "\u201d");
+        // (What is saved is the search as understood: plain-language names,
+        // places and dates as the filters they became.)
+        var query = searched().replace(/^\s+|\s+$/g, "");
+        if (query) {
+            parts.push("the words \u201c" + query + "\u201d");
         }
+        // (Where People or places are not shown: albums.alternative_spans.)
+        var kinds = (interp ? interp.parts : []).map(function (part) {
+            return part.kind;
+        });
+        var named = (kinds.indexOf("person") >= 0 ? " Visitors who cannot see People get " +
+                     "it with the words typed for the person; an export publishes it only " +
+                     "with the names of people." : "") +
+            (kinds.indexOf("place") >= 0 ? " An export without places gets it with the words " +
+             "typed for the place." : "") +
+            (kinds.indexOf("kind") >= 0 ? " An export without named places gets it with the " +
+             "words typed for the kind of place." : "");
         var filters = savedFilterCount();
         if (filters > 0) {
             parts.push(fmt.plural(filters, "filter"));
         }
         if (state.from || state.to) {
             parts.push(SearchCore.rangeLabel(state.from || "", state.to || ""));
+        }
+        if (state.area) {
+            parts.push("the area of the map (" + SearchCore.areas.label(state.area, state.aname) +
+                       ")");
         }
         if (SHELL.library()) {
             parts.push("the library " + (SHELL.libraryName() || SHELL.library()));
@@ -2502,8 +2908,9 @@
             (state.sort ? ", the sort" : "") + (state.by ? ", " + (state.by === "words"
                 ? "words only" : "by meaning") : "") + ") and always shows the pictures it " +
             "finds now: new pictures join it by themselves. Open it from Albums, or search " +
-            "album:\u201cname\u201d." + (changing ? " Update changes the search of " +
-                changing.name + "; Save as a new album keeps it as it was." : "")}));
+            "album:\u201cname\u201d." + named + (changing ? " Update changes the " +
+                "search of " + changing.name + "; Save as a new album keeps it as it was."
+                : "")}));
         var showError = function (message) {
             field.error.textContent = message;
             field.error.hidden = !message;
@@ -2554,7 +2961,7 @@
                 return;
             }
             busy(true);
-            var body = {query: state.q.replace(/^\s+|\s+$/g, ""), options: savedSearch()};
+            var body = {query: query, options: savedSearch()};
             var request;
             if (update) {
                 if (wanted !== changing.name) {
@@ -2641,7 +3048,7 @@
         } else if (mode === "meaning") {
             var options = searchOptions();
             options.meaning = "words";
-            var words = SearchCore.search(data.index, state.q, options).total;
+            var words = SearchCore.search(data.index, searched(), options).total;
             box.appendChild(document.createTextNode("By meaning only" + (words
                 ? ": " + fmt.plural(words, "picture") + " " + (words === 1 ? "has" : "have") +
                   " these words. "
@@ -2715,13 +3122,179 @@
         });
     }
 
-    function chipButton(text, onRemove, title) {
+    // (label: what a screen reader says it does, "<text>: remove" by default.)
+    function chipButton(text, onRemove, title, label) {
         var button = el("button", {type: "button", className: "filter-chip", title: title || "Remove"},
                         [el("span", {text: text}),
                          el("span", {className: "filter-chip-x", text: "\u00d7", attrs: {"aria-hidden": "true"}})]);
-        button.setAttribute("aria-label", text + ": remove");
+        button.setAttribute("aria-label", label || text + ": remove");
         button.addEventListener("click", onRemove);
         return button;
+    }
+
+    // How the words left in the query are searched (for #plain-chips).
+    function wordsHow() {
+        if (state.by === "words" || !result || !result.meaning) {
+            return state.by === "meaning" ? "by meaning" : "by words";
+        }
+        return result.meaning.mode === "meaning" ? "by meaning"
+            : result.meaning.mode === "hybrid" ? "by words and meaning" : "by words";
+    }
+
+    // The free words searched by their words only (names: Per-term coverage).
+    function nameTerms() {
+        var terms = result && result.meaning && result.meaning.terms ? result.meaning.terms : [];
+        return terms.filter(function (term) {
+            return term.name;
+        });
+    }
+
+    function plainNote(text, title) {
+        return el("span", {className: "plain-words", text: text, title: title || ""});
+    }
+
+    // After a click in #plain-chips the row is drawn anew: the place of the
+    // button that was clicked, to give the focus to the one there now.
+    var plainFocus = -1;
+
+    function plainButton(button, onClick) {
+        button.addEventListener("click", function () {
+            plainFocus = plainButtons.indexOf(button);
+            onClick();
+        });
+        plainButtons.push(button);
+        return button;
+    }
+
+    var plainButtons = [];
+
+    /* What plain-language search took the query to mean (#plain-chips, see
+       the notes at the top): a chip per person, place or date (x: as typed
+       words), the words left and how they are searched, the words searched
+       by their words only, questions about ambiguous words, and "Search the
+       words as typed" (or the chips that undo that). */
+    function renderPlain() {
+        var box = byId("plain-chips");
+        if (!box) {
+            return;
+        }
+        clear(box);
+        var focusAt = plainFocus;
+        plainFocus = -1;
+        plainButtons = [];
+        if (!interp || !state.q) {
+            box.hidden = true;
+            return;
+        }
+        var items = [];
+        interp.parts.forEach(function (part) {
+            var asTyped = "Search \u201c" + part.text + "\u201d as typed words instead";
+            // (A year typed: taken then, or with the year in its words.)
+            var year = part.kind === "date" && / OR /.test(part.query || "");
+            var title = asTyped + (year ? " (now: taken in " + part.from + ", or with " +
+                                   part.from + " in its words)" : "");
+            var label = part.label + " \u2013 " + asTyped.charAt(0).toLowerCase() +
+                asTyped.slice(1);
+            items.push(plainButton(chipButton(part.label, function () {}, title, label),
+                                   function () {
+                                       keepTyped(part.key);
+                                   }));
+        });
+        var names = nameTerms();
+        if (interp.rest && (items.length || names.length)) {
+            items.push(plainNote("\u201c" + interp.rest + "\u201d " + wordsHow(),
+                                 "The other words of the search"));
+        }
+        if (interp.others && items.length) {
+            // (Field words, phrases, -words and OR: searched as typed.)
+            items.push(plainNote("\u201c" + interp.others + "\u201d as typed",
+                                 "The rest of the search, as written"));
+        }
+        names.forEach(function (term) {
+            items.push(plainNote("\u201c" + term.text + "\u201d by its words only",
+                                 "A name (of a person, a place, a folder or a file) is not " +
+                                 "something a picture's description says: pictures need " +
+                                 "the word itself, never only a meaning like it"));
+        });
+        interp.kept.forEach(function (key) {
+            items.push(plainButton(chipButton("As typed: " + key, function () {}, "Understand " +
+                                              "\u201c" + key + "\u201d again",
+                                              "As typed: " + key + " \u2013 understand it again"),
+                                   function () {
+                                       state.typed = typedOption().filter(function (item) {
+                                           return item !== key;
+                                       }).join(",");
+                                       changed({top: false});
+                                   }));
+        });
+        if (state.typed === "*" && plainOn()) {
+            var again = interpretQuery([]);
+            if (again.parts.length || again.choices.length) {
+                items.push(plainButton(chipButton("Words as typed", function () {},
+                                                  "Understand names, places, kinds of place " +
+                                                  "and dates in the search again",
+                                                  "Words as typed \u2013 understand names, " +
+                                                  "places, kinds of place and dates again"),
+                                       function () {
+                                           keepTyped("", false);
+                                       }));
+            }
+        }
+        var asking = !items.length;
+        interp.choices.forEach(function (choice) {
+            var kinds = choice.options.map(function (option) {
+                return option.kind === "words" ? "words" : option.kind;
+            });
+            var group = el("span", {className: "plain-choice",
+                                    attrs: {role: "group", "aria-label": "\u201c" + choice.text +
+                                            "\u201d: " + kinds.join(", ").replace(/, ([^,]*)$/,
+                                                                                    " or $1") +
+                                            "?"}},
+                           [el("span", {className: "plain-ask",
+                                        text: "\u201c" + choice.text + "\u201d:"})]);
+            choice.options.forEach(function (option) {
+                var button = el("button", {type: "button", className: "plain-option",
+                                           text: option.label,
+                                           title: option.query ? "Search for " + option.query
+                                               : "Search the word as typed"});
+                group.appendChild(plainButton(button, function () {
+                    chooseMeaning(choice, option);
+                }));
+            });
+            items.push(group);
+        });
+        if (interp.parts.length) {
+            var literal = el("button", {type: "button", className: "button subtle small",
+                                        text: "Search the words as typed"});
+            items.push(plainButton(literal, function () {
+                keepTyped("", true);
+            }));
+        }
+        if (!items.length) {
+            box.hidden = true;
+            if (focusAt >= 0) {
+                input.focus();
+            }
+            return;
+        }
+        // (Only a question: "Did you mean".)
+        box.appendChild(el("span", {className: "plain-label",
+                                    text: asking && interp.choices.length ? "Did you mean"
+                                        : "Searching for"}));
+        items.forEach(function (item) {
+            box.appendChild(item);
+        });
+        box.hidden = false;
+        if (focusAt >= 0) {
+            // (The focus stays in the row: on the button now where the one
+            // clicked was, or the last one.)
+            var next = plainButtons[Math.min(focusAt, plainButtons.length - 1)];
+            if (next) {
+                next.focus();
+            } else {
+                input.focus();
+            }
+        }
     }
 
     function renderChips() {
@@ -2777,6 +3350,14 @@
                 changed();
             }));
         }
+        if (state.area) {
+            chips.push(chipButton("Area: " + SearchCore.areas.label(state.area, state.aname),
+                                  function () {
+                                      state.area = "";
+                                      state.aname = "";
+                                      changed();
+                                  }, "Show every place again"));
+        }
         var chosen = picked();
         if (chosen && !chosen.stale) {
             // (The pictures that are still there and shown, as the grid
@@ -2789,7 +3370,9 @@
                 return rec !== null && !(rec.h && !shown.hidden) &&
                     !(shown.library && rec.l !== shown.library);
             }).length;
-            chips.push(chipButton("Picked on the map: " + fmt.plural(pickedCount, "picture"),
+            // (A trip page's pictures say so: state.pick, "Trip: Name".)
+            chips.push(chipButton((state.pick ? state.pick + " \u00b7 " : "Picked on the map: ") +
+                                  fmt.plural(pickedCount, "picture"),
                                   function () {
                                       state.ids = "";
                                       changed();
@@ -3354,6 +3937,11 @@
         if (result.total) {
             return;
         }
+        if (result.areaPending && !placesFailed) {
+            // (The places are on their way: the area finds its pictures in a moment.)
+            emptyBox("Loading where the pictures were taken\u2026", [], []);
+            return;
+        }
         var lines = [];
         var actions = [];
         var looking = false;
@@ -3442,6 +4030,13 @@
             } else if (waiting === "broken") {
                 lines.push("Search by meaning does not work in this browser, so only the words " +
                            "were looked for. Try other words.");
+            } else if (state.q && nameTerms().length) {
+                // (A name is never found by meaning: Per-term coverage.)
+                lines.push(nameTerms().map(function (term) {
+                    return "\u201c" + term.text + "\u201d";
+                }).join(", ") + (nameTerms().length > 1 ? " look" : " looks") + " like a name " +
+                           "(of a person, a place, a folder or a file), so pictures need the " +
+                           "word itself, and none has all the words.");
             } else if (state.q && result.meaning && result.meaning.mode === "hybrid") {
                 // (Search by meaning ran too: no picture is close enough.)
                 lines.push("No picture has these words, and none is close enough in " +
@@ -3491,6 +4086,56 @@
         return parts.join(", ");
     }
 
+    /* Why an understood part of the search (SearchCore.interpret's parts)
+       may leave nothing: {text, label, run} -- searched as typed words, or
+       left out, it finds pictures (byWords(query) counts them); a date no
+       picture was taken in says so -- or null. */
+    function partReason(part, byWords) {
+        var options = {typed: typedOption().concat([part.key]), plain: plainOn(),
+                       names: data.personNames};
+        if (peopleSearch) {
+            options.people = peopleSearch.options({}).people;
+        }
+        var asTyped = byWords(data.index.interpret(state.q, options).query);
+        var restText = (state.q.slice(0, part.start) + " " + state.q.slice(part.end))
+            .replace(/\s+/g, " ").replace(/^\s+|\s+$/g, "");
+        options.typed = typedOption();
+        var without = asTyped || !restText ? 0
+            : byWords(data.index.interpret(restText, options).query);
+        var lines = [];
+        if (part.kind === "date" && !byWords(part.query)) {
+            var span = data.index.takenSpan();
+            var note = "";
+            if (span && part.from && span.to < part.from) {
+                note = "; the newest is from " + SearchCore.dateLabel(span.to.slice(0, 7));
+            } else if (span && part.to && span.from.slice(0, part.to.length) > part.to) {
+                note = "; the oldest is from " + SearchCore.dateLabel(span.from.slice(0, 7));
+            }
+            lines.push("No picture was taken then (" + part.label.replace(/^Taken: /, "") +
+                       ")" + note + ".");
+        }
+        if (asTyped) {
+            lines.push(fmt.plural(asTyped, "picture") + " " + (asTyped === 1 ? "matches" :
+                       "match") + " " + "\u201c" + state.q + "\u201d" + " with " +
+                       "\u201c" + part.text + "\u201d" + " as typed words, not " + part.label + ".");
+        } else if (without) {
+            lines.push(fmt.plural(without, "picture") + " " + (without === 1 ? "matches" :
+                       "match") + " without " + part.label + " (" + "\u201c" + part.text + "\u201d" + ").");
+        }
+        if (!lines.length) {
+            return null;
+        }
+        return asTyped ? {text: lines.join(" "),
+                          label: "Search " + "\u201c" + part.text + "\u201d" + " as typed",
+                          run: function () {
+                              keepTyped(part.key);
+                          }}
+            : {text: lines.join(" "), label: "Leave out " + "\u201c" + part.text + "\u201d",
+               run: function () {
+                   setQuery(restText);
+               }};
+    }
+
     /* Why a search found nothing: [{text, label, run}] for each change of
        one setting (the filters, an option, the library) that would find
        pictures, with a button that makes it. */
@@ -3504,12 +4149,47 @@
                 options[key] = base[key];
             });
             change(options);
-            return SearchCore.search(data.index, state.q, options).total;
+            return SearchCore.search(data.index, searched(), options).total;
         }
         function matching(count, extra) {
             var verb = count === 1 ? " matches" : " match";
             return fmt.plural(count, extra ? extra + " picture" : "picture") +
                 (state.q ? verb + " \u201c" + state.q + "\u201d" : verb + " the search");
+        }
+        if (interp && interp.changed) {
+            // (The names, places and dates understood are what leaves nothing:
+            // each part as typed words, or left out; a date no picture was
+            // taken in. By the words: the meaning vectors of other searches
+            // are not there.)
+            var typedOptions = {};
+            Object.keys(base).forEach(function (key) {
+                typedOptions[key] = base[key];
+            });
+            typedOptions.meaning = "words";
+            var byWords = function (text) {
+                return SearchCore.search(data.index, text, typedOptions).total;
+            };
+            var partReasons = 0;
+            interp.parts.forEach(function (part) {
+                var reason = partReason(part, byWords);
+                if (reason) {
+                    reasons.push(reason);
+                    partReasons += 1;
+                }
+            });
+            var typedCount = partReasons ? 0 : byWords(state.q);
+            if (typedCount) {
+                reasons.push({text: fmt.plural(typedCount, "picture") + " " +
+                                    (typedCount === 1 ? "has" : "have") + " the words as typed " +
+                                    "(\u201c" + state.q + "\u201d), but not " +
+                                    interp.parts.map(function (part) {
+                                        return part.label;
+                                    }).join(" and ") + ".",
+                              label: "Search the words as typed",
+                              run: function () {
+                                  keepTyped("", true);
+                              }});
+            }
         }
         if (state.ids) {
             var everywhere = found(function (options) {
@@ -3517,10 +4197,44 @@
             });
             if (everywhere) {
                 reasons.push({text: matching(everywhere) + " but " + isAre(everywhere) +
-                                    " not among the pictures picked on the map.",
+                                    " not among " + (state.pick ? "the pictures of " +
+                                                     "\u201c" + state.pick + "\u201d."
+                                        : "the pictures picked on the map."),
                               label: "Show all of them",
                               run: function () {
                                   state.ids = "";
+                                  changed();
+                              }});
+            }
+        }
+        if (state.area) {
+            var anywhere = found(function (options) {
+                delete options.area;
+            });
+            var everywhereIds = anywhere ? SearchCore.search(data.index, searched(), (function () {
+                var options = {};
+                Object.keys(base).forEach(function (key) {
+                    options[key] = base[key];
+                });
+                delete options.area;
+                return options;
+            })()).items : [];
+            // (None of them with a position: a place named without one is in no area.)
+            var unplaced = anywhere && data.index.placedCount(everywhereIds) === 0;
+            var areaLabel = " (" + SearchCore.areas.label(state.area, state.aname) + ").";
+            var what = state.q ? " \u201c" + state.q + "\u201d" : " the search";
+            if (anywhere) {
+                reasons.push({text: !unplaced ? matching(anywhere) + " but none was taken in " +
+                                  "the area of the map" + areaLabel
+                                  : anywhere === 1 ? "The picture that matches" + what + " has " +
+                                    "no position, so it is in no area of the map" + areaLabel
+                                      : "None of the " + fmt.plural(anywhere, "picture") +
+                                        " that match" + what + " has a position, so none is " +
+                                        "in an area of the map" + areaLabel,
+                              label: "Search everywhere",
+                              run: function () {
+                                  state.area = "";
+                                  state.aname = "";
                                   changed();
                               }});
             }
@@ -5176,6 +5890,7 @@
             var sameSearch = SITE.searchState.params(wanted) === SITE.searchState.params(urlState());
             if (!sameSearch) {
                 state = wanted;
+                typedAllFor = null;
                 keepView();
                 if (!state.size) {
                     state.size = "m";

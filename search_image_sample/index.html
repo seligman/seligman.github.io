@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="robots" content="noindex, noimageindex">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Example</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="assets/style.css?v=25e15d3d1f">
+<link rel="stylesheet" href="assets/style.css?v=ac2731f43d">
 </head>
 <body class="search-page">
 <div id="search-bar">
@@ -65,6 +66,7 @@
 </div>
 <p id="query-notes" hidden></p>
 <p id="meaning-notes" hidden></p>
+<div id="plain-chips" role="group" aria-label="How the search was understood" aria-live="polite" hidden></div>
 <div id="active-filters" hidden></div>
 <div id="selection-bar" hidden></div>
 <section id="timeline" aria-label="Timeline" hidden></section>
@@ -74,13 +76,14 @@
 </main>
 </div>
 <div id="facets-backdrop" hidden></div>
-<footer class="export-credits">Photos: 19 Creative Commons pictures. Eighteen were found through Openverse, by Ivan Radic, Alan Levine, striatic, DanBrady, Matthew Paul Argall, Tobyotter, londoncyclist, Calgary Reviews, lindsay.dee.bunny, Julien.Belli, magnetismus, Archives Branch USMC History Division, Kt Ann and Ruth and Dave (CC BY 2.0, https://creativecommons.org/licenses/by/2.0/), and Vovogov90 and rawpixel (CC0 1.0). The 360-degree panorama of Roy&#x27;s Motel is by G. Edward Johnson (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/), from Wikimedia Commons (https://commons.wikimedia.org/w/index.php?curid=189899422), resized. Each picture&#x27;s title, creator, license and source is listed in sample/images/CREDITS.md of the Search Images project (https://github.com/seligman/search_images/blob/main/sample/images/CREDITS.md). The descriptions are examples written for this demo, except the 360-degree panorama&#x27;s, which was written by the Qwen3.5-9B model running locally; the dates taken are invented for the demo too, except the panorama&#x27;s.<br>Search by meaning: mdbr-leaf-ir by MongoDB (Apache-2.0) &middot; <a href="data/meaning/LICENSE.txt" rel="license">license</a></footer>
-<script type="application/json" id="app-config">{"mode": "static", "page": "search", "libraries": ["Example"], "libraryList": [{"id": "23f9191940b798bd", "name": "Example"}], "capabilities": {"admin": false, "static": true, "map": false, "images": true, "originals": false, "panos": true, "file_names": false, "folders": false}, "data": "data/", "tiles": null, "tilesMax": null, "tileSize": 256, "title": "Example", "dataVersion": "9d595f1bd6"}</script>
-<script src="assets/site.js?v=c4c0953c05"></script>
-<script src="assets/shell.js?v=4380b85ef7"></script>
-<script src="assets/search-core.js?v=5ef177d5f6"></script>
-<script src="assets/routes.js?v=7841407e12"></script>
-<script src="assets/viewer.js?v=64f5bd10a8"></script>
-<script src="assets/app.js?v=b38b833cc9"></script>
+<footer class="export-credits">Photos: 63 pictures and videos under Creative Commons licenses or in the public domain. The first 19 are the Search Images sample pictures: eighteen were found through Openverse, by Ivan Radic, Alan Levine, striatic, DanBrady, Matthew Paul Argall, Tobyotter, londoncyclist, Calgary Reviews, lindsay.dee.bunny, Julien.Belli, magnetismus, Archives Branch, USMC History Division, Kt Ann and Ruth and Dave (CC BY 2.0, https://creativecommons.org/licenses/by/2.0/), and Vovogov90 and three unknown photographers via rawpixel (CC0 1.0). The 360-degree panorama of Roy&#x27;s Motel is by G. Edward Johnson (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/), from Wikimedia Commons (https://commons.wikimedia.org/w/index.php?curid=189899422), resized. Their descriptions are examples written for this demo, except the 360-degree panorama&#x27;s, which was written by the Qwen3.5-9B model running locally; their dates taken are invented for the demo too, except the panorama&#x27;s. The other 39 pictures and 5 videos are from Wikimedia Commons and Flickr: by Michael Gaylard, Lukas Beck, Nesnad, Mike Dickison, FoxBill (Viljam Takis), Thomas Bresson, Jakub Hałun, Supanut Arunoprayote and Alexis Lours (CC BY 4.0); by Theo Crazzolara, Andy Reago &amp; Chrissy McClarren, Laineys Repertoire, Ananta Bhadra Lamichhane, Peter Lindberg, Kecko, Futurilla, liz west and Jorge Láscar (CC BY 2.0); by MdeVicente, Cbaile19, Bernard Gagnon, Hobbyfotowiki and Ocdp (CC0 1.0); and a circus poster from the Ashtabula Archive (Public Domain Mark 1.0). They were resized for the demo (the videos made into 720p H.264 copies), some files were given the date or place their source pages give, and their descriptions were written by the Qwen3.5-9B model running locally (one video&#x27;s by Qwen3.6-35B-A3B). Each picture&#x27;s title, creator, license and source is listed at https://github.com/seligman/search_images/blob/main/sample/images/CREDITS.md (the first 19) and https://github.com/seligman/search_images/blob/main/sample/demo-set/CREDITS.md (the others).<br>Place names: <a href="https://www.geonames.org/">GeoNames</a> (<a href="https://creativecommons.org/licenses/by/4.0/" rel="license">CC BY 4.0</a>)<br>Street maps: &copy; OpenStreetMap contributors (<a href="maps/LICENSE.txt" rel="license">ODbL</a>)<br>Search by meaning: mdbr-leaf-ir by MongoDB (Apache-2.0) &middot; <a href="data/meaning/LICENSE.txt" rel="license">license</a></footer>
+<script type="application/json" id="app-config">{"mode": "static", "page": "search", "libraries": ["Example"], "libraryList": [{"id": "23f9191940b798bd", "name": "Example"}], "capabilities": {"admin": false, "static": true, "map": true, "images": true, "originals": false, "panos": true, "file_names": false, "folders": false, "videos": true, "places": true, "streets": true, "named_places": true}, "data": "data/", "tiles": "tiles/", "tilesMax": 5, "tileSize": 256, "streets": {"url": "maps/", "v": "b21275d369"}, "title": "Example", "dataVersion": "76574b9279"}</script>
+<script src="assets/site.js?v=06b8c3c075"></script>
+<script src="assets/shell.js?v=200593104b"></script>
+<script src="assets/search-core.js?v=e86f641111"></script>
+<script src="assets/streets.js?v=2605e7d2d2"></script>
+<script src="assets/routes.js?v=daf048f082"></script>
+<script src="assets/viewer.js?v=0d46406029"></script>
+<script src="assets/app.js?v=64d8c19b61"></script>
 </body>
 </html>

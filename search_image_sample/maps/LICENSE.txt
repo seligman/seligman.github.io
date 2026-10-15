@@ -1,0 +1,15 @@
+Street maps
+
+The street map tiles are made from OpenStreetMap data:
+(c) OpenStreetMap contributors.
+
+OpenStreetMap data is available under the Open Database License (ODbL)
+1.0, https://opendatacommons.org/licenses/odbl/1-0/ ; see
+https://www.openstreetmap.org/copyright . The tiles are of the Protomaps
+basemap (https://protomaps.com).
+
+The land cover of its least detailed tiles (zoom 0 to 7) is derived from
+ESA WorldCover: (c) ESA WorldCover project 2020 / Contains modified
+Copernicus Sentinel data (2020) processed by ESA WorldCover consortium,
+under the Creative Commons Attribution 4.0 International license,
+https://creativecommons.org/licenses/by/4.0/ .

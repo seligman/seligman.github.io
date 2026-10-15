@@ -456,6 +456,14 @@ body.map-panel-open #map-note {
     color: var(--text-muted);
 }
 
+.map-panel-place {
+    font-size: 11px;
+    color: var(--text-muted);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 #map-panel-more {
     margin: 0 10px 10px;
 }
@@ -699,6 +707,33 @@ body.map-page #shell-header {
     line-height: 1;
     cursor: pointer;
     padding: 0 2px;
+}
+
+/* (A message's action, such as Undo: SHELL.toast.) */
+.toast-action {
+    flex: none;
+    padding: 2px 10px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.toast-action:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+/* (Its keyboard shortcut, where there is a keyboard: "Undo Ctrl+Z".) */
+@media (hover: hover) and (pointer: fine) {
+    .toast-action[data-keys]::after {
+        content: " " attr(data-keys);
+        font-weight: 400;
+        opacity: 0.8;
+    }
 }
 
 /* Admin pages (Manage, Settings): buttons, forms, cards, dialogs */
@@ -1534,6 +1569,27 @@ details.more > summary {
     color: var(--danger-fg);
 }
 
+/* A job's command line (jobs.py log_command): in the log, and the Copy buttons
+   there and under the recent jobs, inline with the text */
+.log-line.log-command code {
+    font-family: inherit;
+    color: var(--text);
+    background: var(--surface);
+    border-radius: 4px;
+    padding: 1px 4px;
+}
+
+.button.command-copy {
+    display: inline;
+    min-height: 0;
+    padding: 0 4px;
+    border: none;
+    font-size: inherit;
+    line-height: inherit;
+    white-space: nowrap;
+    vertical-align: baseline;
+}
+
 /* Settings page */
 
 .table-wrap {
@@ -1937,6 +1993,21 @@ dialog.export-dialog {
 
 .export-choices.two {
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+/* A trip's export: the size of the area around home (a short choice). */
+.export-dialog .export-home-km {
+    width: auto;
+    max-width: 100%;
+}
+
+/* Saved options an export cannot use (left at their defaults). */
+.export-option-warnings p {
+    margin: 0 0 6px;
+}
+
+.export-option-warnings .warning-list {
+    margin-bottom: 6px;
 }
 
 .export-summary {
@@ -2721,6 +2792,62 @@ button.facet-title::after {
     margin: 0 0 12px;
 }
 
+/* How plain-language search understood the query (app.js renderPlain) */
+#plain-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px;
+    font-size: 13px;
+}
+
+.plain-label {
+    color: var(--text-muted);
+}
+
+.plain-words {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    padding: 3px 11px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 16px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+}
+
+.plain-choice {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.plain-ask {
+    color: var(--text-muted);
+}
+
+.plain-option {
+    padding: 3px 11px;
+    border: 1px solid var(--info-border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--info-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.plain-option:hover {
+    border-color: var(--accent);
+    background: var(--info-soft);
+}
+
+.plain-option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
 .filter-chip {
     display: inline-flex;
     align-items: center;
@@ -3008,6 +3135,94 @@ button.facet-title::after {
     margin: 8px 0 0;
     color: var(--text-muted);
     font-size: 12px;
+}
+
+/* The street maps panel of the Manage page (street-maps.js) */
+
+.street-maps-status,
+.street-maps-plan,
+.street-maps-job {
+    margin: 8px 0;
+    font-size: 14px;
+}
+
+.street-maps-plan,
+.street-maps-job {
+    color: var(--text-muted);
+}
+
+/* The named places found on them (named_places.py) */
+
+.street-maps-named-title {
+    margin: 16px 0 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+}
+
+.street-maps-named {
+    margin: 4px 0 8px;
+    font-size: 14px;
+}
+
+/* The credit in a corner of a map (streets.js creditNode): the world
+   image's (NASA's Blue Marble) while it shows, and OpenStreetMap's while
+   street maps show -- the map page's (above the GeoNames credit of an
+   export), a trip's map's and the viewer's map of a drive */
+
+#map-credit ~ #map-streets-credit {
+    bottom: 34px;
+}
+
+/* The note keeps clear of the credits below it (on a phone the note is as
+   wide as the map) */
+
+#map-streets-credit:not([hidden]) ~ #map-note {
+    bottom: 40px;
+}
+
+#map-credit ~ #map-streets-credit:not([hidden]) ~ #map-note {
+    bottom: 66px;
+}
+
+#map-credit ~ #map-note {
+    bottom: 40px;
+}
+
+.route-map {
+    position: relative;
+}
+
+.trip-map-credit,
+.route-map-credit {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    margin: 0;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 11px;
+    opacity: 0.92;
+    pointer-events: none;
+}
+
+.route-map-credit {
+    right: 4px;
+    bottom: 4px;
+    font-size: 10px;
+}
+
+.trip-map-credit[hidden],
+.route-map-credit[hidden] {
+    display: none;
+}
+
+/* (The licence link in a credit: the credit itself lets clicks through.) */
+.trip-map-credit a,
+.route-map-credit a {
+    pointer-events: auto;
 }
 
 /* The grid: blocks placed by app.js, thumbnails inside them */
@@ -3898,6 +4113,11 @@ html.viewer-open body {
     touch-action: pan-y;
 }
 
+/* (So does the pan view of a wide picture: dragging sideways pans it.) */
+.detail-page .stage.is-filling {
+    touch-action: pan-y;
+}
+
 .stage.is-zoomed,
 .stage.is-pano {
     cursor: grab;
@@ -4083,10 +4303,532 @@ html.viewer-open body {
     pointer-events: auto;
 }
 
+/* A wide picture's pan view (viewer.js Stage.drawMinimap): at the foot of
+   the stage the whole picture small, the part in view framed. A tap or a
+   drag on it moves the view there; with the focus, the arrow keys. The
+   stage is dark in both themes. It lies above the face boxes (.face-layer),
+   whose names would otherwise take its taps. */
+.stage-minimap {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    z-index: 3;
+    padding: 4px;
+    cursor: pointer;
+    touch-action: none;
+    transform: translateX(-50%);
+}
+
+.stage-minimap:focus {
+    outline: none;
+}
+
+.stage-minimap:focus-visible .stage-minimap-frame {
+    outline: 2px solid #6db3f2;
+    outline-offset: 2px;
+}
+
+.stage-minimap-frame {
+    position: relative;
+    display: block;
+    overflow: hidden;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55), 0 2px 10px rgba(0, 0, 0, 0.6);
+}
+
+.stage-minimap-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    -webkit-user-drag: none;
+}
+
+/* (Outside the frame the picture is darker.) */
+.stage-minimap-view {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #ffffff;
+    border-radius: 2px;
+    box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
+.stage.has-minimap .stage-note {
+    bottom: 58px;
+}
+
+/* (On touch screens it is at least 40 px to the finger.) */
+@media (pointer: coarse) {
+    .stage-minimap {
+        padding: 8px 6px;
+    }
+
+    .stage.has-minimap .stage-note {
+        bottom: 66px;
+    }
+}
+
 .stage-note a {
     color: #ffffff;
     font-weight: 600;
     text-decoration: underline;
+}
+
+/* People: the admin's boxes of the faces over the picture (viewer.js
+   faceBoxesFor: a layer laid over the picture as it is shown). */
+.face-layer {
+    position: absolute;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.face-box {
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid #ffd54a;
+    border-radius: 4px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+    /* (A button: a click, a tap or Enter says who it is, see viewer.js openNaming.) */
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.face-box:hover,
+.face-box.is-naming {
+    border-color: #ffffff;
+    border-style: solid;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 0 0 4px rgba(255, 213, 74, 0.45);
+}
+
+.face-box:focus {
+    outline: none;
+}
+
+.face-box:focus-visible {
+    border-color: #ffffff;
+    border-style: solid;
+    box-shadow: 0 0 0 2px #000000, 0 0 0 5px #ffffff;
+}
+
+.face-box.is-unknown,
+.face-box.is-hidden {
+    border-style: dashed;
+    border-color: rgba(255, 255, 255, 0.85);
+}
+
+/* The face the People page's link asked for (detail?face=...): a ring around
+   it that shows even where the face is a few pixels across (a panorama). */
+.face-box.is-chosen {
+    border-style: solid;
+    border-color: #ffd54a;
+}
+
+.face-box.is-chosen::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    margin: -22px 0 0 -22px;
+    border: 3px solid #ffd54a;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+.face-box.is-chosen .face-name {
+    margin-top: 24px;           /* (below the ring) */
+}
+
+.face-name {
+    position: absolute;
+    left: -2px;
+    top: 100%;
+    max-width: 14em;
+    margin-top: 3px;
+    padding: 1px 6px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.72);
+    color: #ffffff;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    text-decoration: none;
+    pointer-events: auto;
+}
+
+.face-box:hover .face-name,
+.face-box:focus-visible .face-name,
+.face-box.is-naming .face-name {
+    background: #000000;
+}
+
+/* A face in a crowd, whose name would cover its neighbour's face or name
+   (viewer.js markTight): the name shows on hover, on focus and while the
+   face is being named, over the others. */
+.face-box.is-tight .face-name {
+    display: none;
+}
+
+.face-box.is-tight:hover .face-name,
+.face-box.is-tight:focus-visible .face-name,
+.face-box.is-tight.is-naming .face-name {
+    display: block;
+    z-index: 1;
+}
+
+/* (To a finger, a small face takes a tap a little around it too: 44 px, but
+   under every box, so a tap on a face is always that face's.) */
+@media (pointer: coarse) {
+    .face-box::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        z-index: -1;
+        width: 100%;
+        height: 100%;
+        min-width: 44px;
+        min-height: 44px;
+        transform: translate(-50%, -50%);
+    }
+}
+
+/* The popover that says who a face is (viewer.js openNaming): by its box (or
+   its face in the pane's strip), a sheet at the foot of a phone's screen. */
+.face-popover {
+    position: fixed;
+    inset: auto;
+    z-index: 950;
+    box-sizing: border-box;
+    width: 340px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    margin: 0;
+    padding: 12px;
+    overflow: auto;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--shadow-lg);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.face-popover.is-busy {
+    cursor: progress;
+}
+
+.face-popover.is-sheet {
+    right: 0;
+    width: auto;
+    max-width: none;
+    padding: 14px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 14px 14px 0 0;
+}
+
+.face-pop-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.face-pop-face {
+    flex: none;
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    background: var(--surface-3);
+    object-fit: cover;
+}
+
+.face-pop-who {
+    flex: 1;
+    min-width: 0;
+}
+
+.face-pop-title {
+    margin: 0;
+    font-size: 15px;
+}
+
+.face-pop-now {
+    margin: 2px 0 0;
+    color: var(--text-muted);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.face-pop-now a {
+    color: var(--link);
+}
+
+.face-pop-x {
+    flex: none;
+    align-self: flex-start;
+    min-width: 32px;
+    min-height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.face-pop-x:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.face-pop-x:focus-visible {
+    outline: 2px solid var(--accent);
+}
+
+.face-pop-input {
+    display: block;
+}
+
+.face-pop-list {
+    max-height: 264px;
+    margin: 8px 0 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.face-pop-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.face-pop-option:hover {
+    background: var(--surface-2);
+}
+
+.face-pop-option.is-active {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.face-pop-option img,
+.face-pop-plus {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--surface-3);
+    object-fit: cover;
+}
+
+.face-pop-plus {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-weight: 700;
+}
+
+.face-pop-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.face-pop-option small {
+    flex: none;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.face-pop-hint {
+    margin: 8px 2px 0;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.face-pop-error {
+    margin: 8px 2px 0;
+    color: var(--danger-fg);
+    font-size: 13px;
+}
+
+.face-pop-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+}
+
+/* A video's (or a 360 picture's) faces in the pane, "Show faces" on: each
+   says who it is when pressed (viewer.js faceStrip). */
+.info-face-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.info-face {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    width: 64px;
+    padding: 4px 3px 3px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.3;
+    cursor: pointer;
+}
+
+.info-face:hover,
+.info-face:focus-visible,
+.info-face.is-naming {
+    border-color: var(--accent);
+}
+
+.info-face:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+
+.info-face img {
+    width: 52px;
+    height: 52px;
+    border-radius: 6px;
+    background: var(--surface-3);
+    object-fit: cover;
+}
+
+.info-face.is-unknown img {
+    outline: 2px dashed var(--border-strong);
+    outline-offset: -2px;
+}
+
+.info-face-name,
+.info-face-at {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.info-face-at {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* (Fingers: large choices and buttons; a field that phones do not zoom into.) */
+@media (pointer: coarse) {
+    .face-pop-input {
+        font-size: 16px;
+        min-height: 44px;
+    }
+
+    .face-pop-option {
+        min-height: 48px;
+    }
+
+    .face-pop-option img,
+    .face-pop-plus {
+        width: 40px;
+        height: 40px;
+    }
+
+    .face-pop-actions .button {
+        min-height: 44px;
+    }
+
+    .face-pop-x {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .info-face {
+        width: 72px;
+    }
+}
+
+.info-people .info-chip.is-unnamed {
+    font-style: italic;
+}
+
+.info-people .info-faces[aria-pressed="true"] {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* The moments of a video a person was seen at (viewer.js momentButtons): a
+   line for each person, the name and then its moments. */
+.info-people.has-moments .info-person {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+
+.info-moments {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.info-moment {
+    padding: 1px 7px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.info-moment:hover,
+.info-moment:focus-visible {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* (Fingers: the moments are buttons as large as the pane's other ones.) */
+@media (pointer: coarse) {
+    .info-moments {
+        gap: 6px;
+    }
+
+    .info-moment {
+        min-width: 44px;
+        min-height: 40px;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 14px;
+    }
 }
 
 /* A drive in the viewer (viewer.js showDrive): under the stage, a strip
@@ -4705,6 +5447,60 @@ a.info-chip:focus-visible {
     font-size: 12px;
 }
 
+/* The named place on the street maps (named_places.py) before the town */
+
+.info-place-named {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+}
+
+.info-place-sep {
+    color: var(--text-muted);
+}
+
+.info-named-note {
+    flex-basis: 100%;
+}
+
+/* The camera's clock under a time shown in the local time of its place
+   (local_times.py) */
+
+.info-date {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    max-width: 100%;
+}
+
+.info-clock-note {
+    color: var(--text-muted);
+    font-size: 12px;
+    white-space: normal;
+}
+
+/* A picture's camera RAW file (viewer.js rawFact; raw_photos.py): its name and
+   size, and a link that downloads it (the owner's; a published site's when
+   it carries RAW files). */
+
+.info-raw {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 10px;
+}
+
+.info-raw-link {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.info-badge.is-raw {
+    background: var(--surface-3);
+    letter-spacing: 0.04em;
+}
+
 .info-place-estimate {
     margin: 0 0 8px;
     padding: 8px 10px;
@@ -5116,6 +5912,238 @@ body.detail-page {
 
 #map-route-tip[hidden] {
     display: none;
+}
+
+/* An area of the map (map.js "Search an area"): its chip in the bar, the
+   tools over the map, and the menu of what is named where it was picked */
+
+#map-area-chip {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+}
+
+#map-area-chip[hidden] {
+    display: none;
+}
+
+#map-area-button {
+    white-space: nowrap;
+}
+
+#map-area-tools {
+    position: absolute;
+    z-index: 4;
+    top: 12px;
+    left: 12px;
+    width: min(560px, calc(100% - 72px));
+    padding: 10px 12px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+}
+
+#map-area-tools[hidden] {
+    display: none;
+}
+
+body.map-panel-open #map-area-tools {
+    left: 344px;
+    width: min(560px, calc(100% - 404px));
+}
+
+.map-area-modes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+.map-area-modes .button[aria-pressed="true"] {
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: var(--accent-text);
+}
+
+#map-area-close {
+    margin-left: auto;
+}
+
+#map-area-hint {
+    margin: 8px 0 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    white-space: normal;
+}
+
+#map-area-find {
+    margin-top: 8px;
+}
+
+#map-area-find[hidden] {
+    display: none;
+}
+
+.map-area-find-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.map-area-find-row .input {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+}
+
+.map-area-width {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.map-area-width select {
+    font: inherit;
+    padding: 4px 6px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+}
+
+#map-area-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.map-area-name {
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.map-area-name:hover,
+.map-area-name.is-active {
+    background: var(--surface-2);
+}
+
+.map-area-what,
+.map-area-note {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.map-area-note {
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+#map-canvas.drawing,
+#map-canvas.picking {
+    cursor: crosshair;
+}
+
+#map-area-menu {
+    position: absolute;
+    z-index: 5;
+    min-width: 200px;
+    max-width: min(320px, calc(100% - 16px));
+    padding: 6px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+}
+
+#map-area-menu[hidden] {
+    display: none;
+}
+
+.map-area-menu-title {
+    margin: 2px 6px 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.map-area-option {
+    display: block;
+    width: 100%;
+    padding: 7px 8px;
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+    color: var(--text);
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    overflow-wrap: anywhere;
+}
+
+.map-area-option:hover {
+    background: var(--surface-2);
+}
+
+.map-area-option:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+@media (max-width: 600px) {
+    #map-area-tools,
+    body.map-panel-open #map-area-tools {
+        top: 8px;
+        left: 8px;
+        width: calc(100% - 64px);
+        padding: 8px 10px;
+    }
+
+    .map-area-find-row {
+        flex-wrap: wrap;
+    }
+
+    #map-area-list {
+        max-height: 30vh;
+    }
+
+    #map-area-button,
+    .map-area-modes .button,
+    .map-area-option {
+        min-height: 40px;
+    }
+
+    /* A searched area keeps the bar as it was: its chip (the name cut short)
+       and a short "Change" share the first row. While a rectangle or a shape
+       is drawn, the tools are one row (the mode drawn with, and close) over
+       less of the map. */
+    #map-area-chip {
+        flex: 1 1 120px;
+        min-width: 120px;
+    }
+
+    body.map-has-area #map-area-button {
+        font-size: 0;
+    }
+
+    body.map-has-area #map-area-button::after {
+        content: "Change";
+        font-size: 13px;
+    }
+
+    #map-area-tools.is-drawing .map-area-modes .button:not([aria-pressed="true"]) {
+        display: none;
+    }
 }
 
 .route-map {
@@ -5601,6 +6629,11 @@ body.detail-page {
         min-width: 40px;
         min-height: 40px;
         margin: -10px -10px -10px 0;
+    }
+
+    .toast-action {
+        min-height: 40px;
+        margin: -8px 0;
     }
 
     .drive-track {

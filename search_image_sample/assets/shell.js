@@ -331,7 +331,13 @@ var SHELL = (function () {
         export: "Export",
         places: "Add place names",
         proxies: "Make playable copies",
-        drive_previews: "Make sped-up drives"
+        drive_previews: "Make sped-up drives",
+        faces: "Find faces",
+        group_faces: "Group faces into people",
+        delete_faces: "Delete face data",
+        maps: "Street maps",
+        named_places: "Find named places",
+        trip_stories: "Write trip stories"
     };
     var STATE_LABELS = {
         queued: "Waiting",
@@ -359,7 +365,15 @@ var SHELL = (function () {
         looks: "Making the looks of pictures",
         "opening views": "Finding where 360 photos open",
         drives: "Describing drives",
-        drive_previews: "Making sped-up previews of drives"
+        drive_previews: "Making sped-up previews of drives",
+        faces: "Finding faces",
+        people: "Grouping faces into people",
+        "delete faces": "Deleting face data",
+        "street maps size": "Checking the size of the street maps",
+        "street maps download": "Downloading the street maps",
+        "street maps file": "Writing the street maps file",
+        "named places": "Finding named places on the street maps",
+        stories: "Writing trip stories"
     };
     var STAGE_VERBS = {
         scan: "Scanning",
@@ -370,7 +384,8 @@ var SHELL = (function () {
         delete: "Deleting the data of",
         export: "Exporting",
         zip: "Zipping the export of",
-        looks: "Making the looks of"
+        looks: "Making the looks of",
+        faces: "Finding the faces in"
     };
     var WAITING_STAGE = "waiting for another scan to finish";
 
@@ -378,6 +393,12 @@ var SHELL = (function () {
         var params = job.params || {};
         if (job.kind === "places" && params.download) {
             return "Download place names";
+        }
+        if (job.kind === "maps") {
+            return params.download ? "Download street maps" : "Check the size of street maps";
+        }
+        if (job.kind === "named_places") {
+            return params.redo ? "Look up all named places again" : "Find named places";
         }
         if (job.kind === "describe" && params.retry_failed) {
             return "Retry failed";
@@ -388,6 +409,9 @@ var SHELL = (function () {
         if (job.kind === "image_embed" && params.rebuild) {
             return "Rebuild looks";
         }
+        if (job.kind === "faces" && params.retry_failed) {
+            return "Retry finding faces";
+        }
         if (job.kind === "process" && !job.library_id) {
             return "Process all libraries";
         }
@@ -395,6 +419,11 @@ var SHELL = (function () {
     }
 
     function jobLibrary(job) {
+        var params = job.params || {};
+        if (params.trip) {
+            // (A trip's export, trip_export.py: of no one library.)
+            return "the trip " + (params.trip_title || params.trip);
+        }
         if (!job.library_id) {
             return "all libraries";
         }
@@ -404,7 +433,10 @@ var SHELL = (function () {
     // "Scan + describe: Family", "Process all libraries".
     function jobTitle(job) {
         var kind = jobKind(job);
-        if ((job.kind === "process" || job.kind === "places") && !job.library_id) {
+        if ((job.kind === "process" || job.kind === "places" || job.kind === "delete_faces" ||
+                job.kind === "group_faces" || job.kind === "maps" ||
+                job.kind === "named_places" ||
+                (job.kind === "trip_stories" && !(job.params || {}).trip)) && !job.library_id) {
             return kind;
         }
         return kind + ": " + jobLibrary(job);
@@ -448,6 +480,59 @@ var SHELL = (function () {
             return "Another server that uses the same data folder is running a job";
         }
         return "A run started from the command line (scan.py) is running";
+    }
+
+    /* What the Manage page says of a library's faces after "Faces: <count>"
+       (info: people.counts() of the library; enabled: People is on):
+       " in 4 pictures (4 of 7 pictures looked at; 1 in full size). 3 to look
+       at, a job for the processor: 1 wide or very large picture in full size
+       and 2 videos in several frames each. ..." The parts of what is to be
+       looked at are told apart, never counted twice. */
+    function facesNote(info, enabled) {
+        var count = function (key) {
+            return typeof info[key] === "number" && isFinite(info[key]) ? info[key] : 0;
+        };
+        var how = [];
+        if (count("full")) {
+            how.push(number(count("full")) + " in full size");
+        }
+        if (count("videos")) {
+            how.push(plural(count("videos"), "video") + " in several frames");
+        }
+        var text = " in " + plural(count("with_faces"), "picture") + " (" +
+            number(count("done")) + " of " + plural(count("pictures"), "picture") +
+            " looked at" + (how.length ? "; " + how.join(", ") : "") + ").";
+        if (enabled && count("pending")) {
+            var kinds = [];
+            if (count("full_pending")) {
+                kinds.push(plural(count("full_pending"), "wide or very large picture") +
+                           " in full size");
+            }
+            if (count("video_pending")) {
+                kinds.push(plural(count("video_pending"), "video") + " in several frames" +
+                           (count("video_pending") > 1 ? " each" : ""));
+            }
+            var others = count("pending") - count("full_pending") - count("video_pending");
+            if (kinds.length && others > 0) {
+                kinds.push(plural(others, "other picture"));
+            }
+            text += " " + number(count("pending")) + " to look at, a job for the processor" +
+                (kinds.length ? ": " + (kinds.length > 1 ? kinds.slice(0, -1).join(", ") +
+                                        " and " + kinds[kinds.length - 1] : kinds[0]) : "") +
+                ".";
+            if (count("changed")) {
+                text += " " + number(count("changed")) + " looked at before with other " +
+                    "settings " + (count("changed") === 1 ? "keeps its" : "keep their") +
+                    " faces until then.";
+            }
+        }
+        if (count("failed")) {
+            text += " " + number(count("failed")) + " could not be looked at.";
+        }
+        if (count("skipped")) {
+            text += " " + plural(count("skipped"), "clip") + " of dashcam drives skipped.";
+        }
+        return text;
     }
 
     function add(totals, key, value) {
@@ -547,6 +632,42 @@ var SHELL = (function () {
                 parts.push(plural(summary.views_dropped, "360 photo") + " back at the front");
             }
         }
+        // (people.update: looked, faces, with_faces, failed, offline; a scan's own
+        // faces step as its "faces".)
+        var faced = job.kind === "faces" ? summary : summary.faces;
+        if (faced && typeof faced.looked === "number" &&
+                (faced.looked || faced.failed || job.kind === "faces")) {
+            parts.push(plural(faced.faces || 0, "face") + " found in " +
+                       plural(faced.looked, "picture") + " looked at");
+            if (faced.videos) {
+                // (Videos, looked at in several frames each.)
+                parts.push(plural(faced.videos, "video") + " in " +
+                           plural(faced.frames || 0, "frame"));
+            }
+            if (faced.failed) {
+                parts.push(number(faced.failed) + " could not be looked at");
+            }
+            if (faced.offline) {
+                parts.push(number(faced.offline) + " wait for their folder");
+            }
+            if (faced.no_tools) {
+                parts.push(plural(faced.no_tools, "video") + " wait for ffmpeg");
+            }
+        }
+        // (people_groups.group: faces, grouped, people, new; the faces job's own as its
+        // "people".)
+        var grouped = job.kind === "group_faces" ? summary
+            : job.kind === "faces" ? summary.people : null;
+        if (grouped && typeof grouped.people === "number") {
+            parts.push(plural(grouped.people, "person", "people") + " (" +
+                       number(grouped.grouped || 0) + " of " + plural(grouped.faces || 0, "face") +
+                       (grouped["new"] ? "; " + number(grouped["new"]) + " new" : "") + ")");
+        }
+        if (job.kind === "delete_faces" && typeof summary.faces === "number") {
+            parts.push("face data deleted (" + plural(summary.faces, "face") +
+                       (summary.people ? ", " + plural(summary.people, "person", "people")
+                           : "") + ")");
+        }
         if ((job.kind === "scan" || job.kind === "process") && summary.looks_pending) {
             // (Looks are made by the Update looks job only: it needs the image model.)
             parts.push(plural(summary.looks_pending, "picture") + " without looks yet");
@@ -599,12 +720,53 @@ var SHELL = (function () {
                        (summary.drives.failed ? " (" + number(summary.drives.failed) +
                         " failed)" : ""));
         }
+        if (job.kind === "maps") {
+            // (street_maps.py: a size check's plan, or a download's tiles.)
+            if (summary.plan && typeof summary.plan.download_bytes === "number") {
+                parts.push(bytes(summary.plan.download_bytes) + " to download, " +
+                           bytes(summary.plan.keep_bytes) + " to keep");
+            }
+            if (typeof summary.tiles === "number" && summary.tiles) {
+                parts.push(plural(summary.tiles, "map tile") + " (" + bytes(summary.bytes) +
+                           ")");
+            }
+            if (summary.stopped) {
+                parts.push("stopped: start it again to go on");
+            }
+        }
         if (job.kind === "places") {
             if (summary.index && typeof summary.index.cities === "number") {
                 parts.push(plural(summary.index.cities, "town") + " known");
             }
             if (summary.places && typeof summary.places.checked === "number") {
                 parts.push(plural(summary.places.checked, "picture") + " given a place");
+            }
+        }
+        if (job.kind === "named_places" && typeof summary.named === "number") {
+            // (named_places.update: how many have one, and how many were looked up.)
+            parts.push(number(summary.named) + " of " + plural(summary.pictures || 0, "picture") +
+                       " with a position have a named place");
+            if (summary.looked_up) {
+                parts.push(number(summary.looked_up) + " looked up");
+            }
+            if (summary.stopped) {
+                parts.push("stopped: start it again to go on");
+            }
+        }
+        if (job.kind === "trip_stories" && typeof summary.written === "number") {
+            // (trip_stories.write_stories: written, current, edited, failed, cost.)
+            parts.push(plural(summary.written, "story", "stories") + " written");
+            if (summary.current) {
+                parts.push(number(summary.current) + " up to date");
+            }
+            if (summary.edited) {
+                parts.push(number(summary.edited) + " kept (edited)");
+            }
+            if (summary.failed) {
+                parts.push(number(summary.failed) + " failed");
+            }
+            if (typeof summary.cost === "number" && summary.cost > 0) {
+                parts.push("about " + money(summary.cost));
             }
         }
         if (summary.offline && summary.offline.length) {
@@ -624,8 +786,11 @@ var SHELL = (function () {
         return region;
     }
 
-    // kind: "error" (default), "warn", "ok" or "info".
-    function toast(message, kind, seconds) {
+    // kind: "error" (default), "warn", "ok" or "info". action: {text, title,
+    // run, keys}: a button (such as Undo) that runs it, and the message goes;
+    // keys {label, aria} (optional): its keyboard shortcut, shown by the button
+    // where there is a keyboard (style.css) and told to screen readers.
+    function toast(message, kind, seconds, action) {
         kind = kind || "error";
         var region = toastRegion();
         var box = el("div", {className: "toast toast-" + kind,
@@ -633,12 +798,24 @@ var SHELL = (function () {
         var close = el("button", {type: "button", className: "toast-close", text: "\u00d7",
                                   attrs: {"aria-label": "Dismiss"}});
         box.appendChild(el("span", {className: "toast-text", text: message}));
-        box.appendChild(close);
         function remove() {
             if (box.parentNode) {
                 box.parentNode.removeChild(box);
             }
         }
+        if (action && action.text && typeof action.run === "function") {
+            var keys = action.keys && action.keys.label ? action.keys : null;
+            box.appendChild(el("button", {type: "button", className: "toast-action",
+                                          text: action.text, title: action.title || "",
+                                          attrs: keys ? {"data-keys": keys.label,
+                                                         "aria-keyshortcuts": keys.aria || null}
+                                              : {},
+                                          on: {click: function () {
+                                              remove();
+                                              action.run();
+                                          }}}));
+        }
+        box.appendChild(close);
         close.addEventListener("click", remove);
         region.appendChild(box);
         while (region.children.length > 4) {
@@ -1071,12 +1248,14 @@ var SHELL = (function () {
         header.appendChild(el("a", {className: "shell-title", href: home,
                                     text: site.title || "Image Search"}));
         var nav = el("nav", {attrs: {"aria-label": "Pages"}});
-        nav.appendChild(link("Search", home, "search"));
+        nav.appendChild(link("Search", site.searchUrl ? site.searchUrl({}) : home, "search"));
+        // (Journeys found in the pictures, see trips.py; a trip export's own trip page.)
+        var tripsHref = site.tripsUrl ? site.tripsUrl() : null;
         // Pictures taken on this day in earlier years (on:today).
         if (site.searchUrl) {
             var today = link("", site.searchUrl({q: "on:today"}), "today");
-            // (A calendar on a phone, where Manage and Settings leave no room.)
-            today.className = "nav-today" + (adminOn ? " is-short" : "");
+            // (A calendar on a phone, where Trips, Manage and Settings leave no room.)
+            today.className = "nav-today" + (adminOn || tripsHref ? " is-short" : "");
             today.title = "Pictures taken on this day in earlier years";
             today.appendChild(el("span", {className: "nav-text", text: "On this day"}));
             nav.appendChild(today);
@@ -1089,6 +1268,13 @@ var SHELL = (function () {
             // (The owner's albums; others may look at them, only the admin
             // changes them.)
             nav.appendChild(link("Albums", "/albums", "albums"));
+        }
+        if (tripsHref) {
+            nav.appendChild(link(site.isStatic ? "Trip" : "Trips", tripsHref, "trips"));
+        }
+        if (!site.isStatic && capabilities.people) {
+            // (The people the faces show: the admin's, others' only when allowed.)
+            nav.appendChild(link("People", "/people", "people"));
         }
         if (adminOn) {
             nav.appendChild(link("Duplicates", "/duplicates", "duplicates"));
@@ -1175,6 +1361,7 @@ var SHELL = (function () {
         field: field,
         notice: notice,
         warningList: warningList,
+        facesNote: facesNote,
         TEST_COST_KEY: TEST_COST_KEY,
         format: {
             number: number,
