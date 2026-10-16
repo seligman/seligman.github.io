@@ -19,11 +19,11 @@ Podcast Search Pages:
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-10-15 15:51:21 with 100 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-10-06 07:41:27 with 145 items
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-10-14 18:41:31 with 117 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-10-14 19:18:41 with 2,764 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-10-15 18:30:11 with 2,765 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-10-07 10:18:23 with 140 items
 * [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-10-15 15:50:04 with 2,672 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-10-12 13:02:37 with 448 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-09-26 10:47:32 with 1,012 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-10-16 11:36:47 with 1,013 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-10-15 15:51:37 with 2,131 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-05-17 01:01:06 with 425 items
