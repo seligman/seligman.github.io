@@ -15,7 +15,7 @@ Podcast Search Pages:
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-10-11 00:07:10 with 388 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-09-23 23:07:04 with 183 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-10-14 14:08:22 with 467 items
-* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-10-09 15:32:07 with 444 items
+* [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-10-16 17:13:34 with 445 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-10-15 15:51:21 with 100 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-10-06 07:41:27 with 145 items
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-10-14 18:41:31 with 117 items
@@ -38,7 +38,7 @@ Podcast Search Pages:
 * [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-10-07 03:11:35 with 102 items
 * [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-10-10 11:42:54 with 366 items
 * [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-09-30 06:40:55 with 74 items
-* [TWiP](https://seligman.github.io/podcasts/twip/twip.html), last updated 2026-10-02 17:09:06 with 289 items
+* [TWiP](https://seligman.github.io/podcasts/twip/twip.html), last updated 2026-10-16 15:28:17 with 290 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-10-11 09:28:35 with 1,410 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-10-13 12:03:32 with 214 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-10-15 15:53:38 with 128 items
