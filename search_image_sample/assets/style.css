@@ -6237,12 +6237,15 @@ body.map-panel-open #map-area-tools {
     overflow-wrap: anywhere;
 }
 
-/* The map page has no foot: the GeoNames credit sits in a corner of the map */
+/* The map page has no foot: the GeoNames credit sits in a corner of the map
+   (and the world image's and street maps' credit above it). On a narrow phone
+   a credit wraps, as far from the left edge as from the right. */
 
 .map-credit {
     position: absolute;
     right: 8px;
     bottom: 8px;
+    max-width: calc(100% - 16px);
     margin: 0;
     padding: 2px 8px;
     border-radius: 4px;

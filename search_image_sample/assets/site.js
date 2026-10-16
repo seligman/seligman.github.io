@@ -1115,11 +1115,14 @@ var SITE = (function () {
         });
     }
 
-    function loadScript(src) {
+    // src as a script element of the page: run in the order added (the
+    // meaning engine's parts need that), unless free -- then it runs once it
+    // has loaded, and holds back none of the others (SITE.loadWords).
+    function loadScript(src, free) {
         return new Promise(function (resolve, reject) {
             var script = document.createElement("script");
             script.src = src;
-            script.async = false;
+            script.async = Boolean(free);
             script.onload = function () {
                 resolve();
             };
@@ -1845,6 +1848,46 @@ var SITE = (function () {
         return at > 0 ? src.slice(0, at) : "assets/";
     })();
 
+    /* The rest of the word list (SearchCore.wantWords): the script the
+       first part names (english-words-more.js, next to site.js, with its
+       version), added as a script element once, so it loads from disk too
+       under the pages' script policy -- one that waits for no other script,
+       nor holds one back (the meaning engine's own are added after it when a
+       search first needs both). Resolves with its filter, or with null
+       when it did not load, or not within WORDS_WAIT: the page then searches
+       as with the first part alone rather than wait on. When it comes in
+       after all, late (given with the first call) gets its filter. */
+    var WORDS_WAIT = 20000;
+    var moreWords = null;
+    function loadWords(more, late) {
+        if (!moreWords) {
+            var file = more && typeof more.file === "string" &&
+                /^[a-z][a-z0-9-]*\.js$/.test(more.file) ? more.file : "";
+            moreWords = !file || !hasDocument ? Promise.resolve(null)
+                : new Promise(function (resolve) {
+                    var waited = false;
+                    var timer = setTimeout(function () {
+                        waited = true;
+                        resolve(null);
+                    }, WORDS_WAIT);
+                    loadScript(versioned(assetPrefix + file, more.v), true).then(function () {
+                        var found = root.ENGLISH_WORDS_MORE;
+                        found = found && typeof found === "object" ? found : null;
+                        clearTimeout(timer);
+                        if (!waited) {
+                            resolve(found);
+                        } else if (found && typeof late === "function") {
+                            late(found);
+                        }
+                    }, function () {
+                        clearTimeout(timer);
+                        resolve(null);
+                    });
+                });
+        }
+        return moreWords;
+    }
+
     function exportMeaning() {
         var meaning = staticManifest && staticManifest.meaning;
         return isStatic && meaning && typeof meaning === "object" &&
@@ -2178,6 +2221,7 @@ var SITE = (function () {
             return isStatic ? null : "/face/" + encodeURIComponent(id);
         },
         queryVector: queryVector,
+        loadWords: loadWords,
         meaningInBrowser: meaningInBrowser,
         allowMeaningDownload: allowMeaningDownload,
         compactRecord: compactRecord,

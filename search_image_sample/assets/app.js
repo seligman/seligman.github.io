@@ -1660,11 +1660,24 @@
         return positions[id] !== undefined;
     }
 
+    // What the grid shows: its pictures, stacks, drives and marks (see
+    // run's same).
+    function displayKey() {
+        return display.map(function (entry) {
+            return entry.id + (entry.stack ? "+" + entry.stack.length : "") +
+                (entry.drive ? "d" + entry.drive.key : "") + (entry.member ? "m" : "") +
+                (meaningOnly[entry.id] ? "~" : "");
+        }).join(",");
+    }
+
+    // options: keepScroll, top, same (when the pictures come out the same,
+    // the grid is not drawn again: only what is around it).
     function run(options) {
         options = options || {};
         if (!data) {
             return;
         }
+        var shown = options.same && layout ? displayKey() : null;
         checkPicked();
         dropStaleView();
         if (!SITE.isStatic || /(^|\s)-?(similar|like):/i.test(state.q + " " + albumQueries())) {
@@ -1719,7 +1732,9 @@
         renderTimeline();
         renderSelectionBar();
         syncBar();
-        if (options.keepScroll) {
+        if (shown !== null && shown === displayKey()) {
+            renderEmpty();
+        } else if (options.keepScroll) {
             relayout(true);
         } else {
             relayout(false);
@@ -1765,6 +1780,19 @@
             input.value = text;
         }
         changed();
+    }
+
+    /* "Did you mean" followed: the spelling offered is searched, and the
+       search box has the focus again, as after a search tip. (The click gave
+       it to the link, which the results drawn anew then take away; Edge and
+       Chrome show the box's clear button only while it has the focus or the
+       pointer.) Not with a touch screen, where the focus would bring up the
+       keyboard over the pictures. */
+    function followSuggestion(text) {
+        setQuery(text);
+        if (!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) {
+            input.focus();
+        }
     }
 
     // a is a place inside place b (SearchCore's place values).
@@ -2577,12 +2605,15 @@
 
     /* ---------- Results header, chips, banner ------------------------------------ */
 
+    // The pictures shown that the map shows for this search: those with a
+    // position, but not those found by meaning alone (the map searches by
+    // the words).
     function located() {
         var count = 0;
         display.forEach(function (entry) {
             membersOf(entry).forEach(function (id) {
                 var rec = record(id);
-                if (rec && rec.gp) {
+                if (rec && rec.gp && !meaningOnly[id]) {
                     count += 1;
                 }
             });
@@ -3040,7 +3071,7 @@
                                        text: suggestion.text});
                 tryLink.addEventListener("click", function (event) {
                     event.preventDefault();
-                    setQuery(suggestion.text);
+                    followSuggestion(suggestion.text);
                 });
                 box.appendChild(el("span", {className: "did-you-mean"},
                                    [" Did you mean ", tryLink, "?"]));
@@ -3147,6 +3178,41 @@
         return terms.filter(function (term) {
             return term.name;
         });
+    }
+
+    // The free words taken for names when they are all a search has (no
+    // picture has them, nor the language: SearchCore's unknownNames), as
+    // they were typed.
+    function unknownNames() {
+        return result && result.meaning && result.meaning.names ? result.meaning.names : [];
+    }
+
+    /* The empty page's note on a search of such names alone: each is taken
+       for a name -- no picture has it, nor the app's list of English words,
+       and "did you mean" has nothing for it -- so it gets none of the
+       pictures closest in meaning (MEANING_FEW_Z in search-core.js). A real
+       word the list lacks, or a misspelling of a word no picture has, is
+       taken for one too: hence "try another word". What no picture is said
+       to mention is what is searched: an export without folders or file
+       names searches neither. */
+    function namesNote(names) {
+        var one = names.length === 1;
+        var caps = SITE.capabilities || {};
+        var what = ["words", "places"];
+        if (!SITE.isStatic || caps.folders === true) {
+            what.push("folders");
+        }
+        if (!SITE.isStatic || caps.file_names === true) {
+            what.push("file names");
+        }
+        return names.map(function (word) {
+            return "\u201c" + word + "\u201d";
+        }).join(", ") + (one ? " looks like a name" : " look like names") + ": no picture's " +
+            what.slice(0, -1).join(", ") + " or " + what[what.length - 1] + " mention " +
+            (one ? "it, and it is" : "them, and they are") + " not in this app's list of " +
+            "English words, so pictures that only come close in meaning are left out. If " +
+            (one ? "it is not a name, check the spelling or try another word."
+                : "they are not names, check the spelling or try other words.");
     }
 
     function plainNote(text, title) {
@@ -3991,19 +4057,31 @@
             // (While the query's meaning is on its way, pictures may come in
             // a moment: no spelling advice yet. The model may be busy, with
             // an embed job say.)
-            looking = !(result.meaning && result.meaning.mode === "meaning") &&
-                waiting !== "starting" && waiting !== "loading" && meaningPending();
+            // (So, while the rest of the word list is on its way, is what
+            // meaning finds for a word only the rest can tell: SearchCore
+            // holds it back until then, and the search runs again.)
+            var held = Boolean(state.q) && meaningState === "" && meaningOn() &&
+                state.by !== "words" && SearchCore.wordsHeld();
+            looking = held || (!(result.meaning && result.meaning.mode === "meaning") &&
+                waiting !== "starting" && waiting !== "loading" && meaningPending());
             var suggestion = state.q && !looking
                 ? SearchCore.suggest(data.index, state.q, searchOptions()) : null;
             if (suggestion && suggestion.text && suggestion.text !== state.q) {
                 var tryLink = el("a", {href: chipUrl("q", suggestion.text), text: suggestion.text});
                 tryLink.addEventListener("click", function (event) {
                     event.preventDefault();
-                    setQuery(suggestion.text);
+                    followSuggestion(suggestion.text);
                 });
                 lines.push(el("p", {className: "did-you-mean"}, ["Did you mean ", tryLink, "?"]));
             }
-            if (result.meaning && result.meaning.mode === "meaning") {
+            if (held) {
+                lines.push("No picture has the words of \u201c" + state.q + "\u201d; the " +
+                           "pictures that mean much the same appear here in a moment.");
+            } else if (result.meaning && result.meaning.mode === "meaning" && state.q &&
+                    unknownNames().length) {
+                // (By words they are not found either: no picture has them.)
+                lines.push(namesNote(unknownNames()));
+            } else if (result.meaning && result.meaning.mode === "meaning") {
                 lines.push("Nothing is close enough in meaning.");
                 actions.push(actionButton("Search by words", function () {
                     setSearchBy("words", false);
@@ -4037,6 +4115,8 @@
                 }).join(", ") + (nameTerms().length > 1 ? " look" : " looks") + " like a name " +
                            "(of a person, a place, a folder or a file), so pictures need the " +
                            "word itself, and none has all the words.");
+            } else if (state.q && unknownNames().length) {
+                lines.push(namesNote(unknownNames()));
             } else if (state.q && result.meaning && result.meaning.mode === "hybrid") {
                 // (Search by meaning ran too: no picture is close enough.)
                 lines.push("No picture has these words, and none is close enough in " +
@@ -5854,6 +5934,20 @@
     function start() {
         if ("scrollRestoration" in window.history) {
             window.history.scrollRestoration = "manual";
+        }
+        // The rest of the word list, when a search first needs it ("did you
+        // mean", and whether a word no picture has is a name); the search
+        // runs again once it is in, when something waited for it. (Later
+        // than SITE.loadWords waits, it is still taken for the next searches.)
+        if (SearchCore.wantWords && SITE.loadWords) {
+            SearchCore.wantWords(function (more) {
+                function take(words) {
+                    if (SearchCore.addWords(words) && data) {
+                        run({keepScroll: true, same: true});
+                    }
+                }
+                SITE.loadWords(more, take).then(take);
+            });
         }
         keepView();
         setupControls();

@@ -181,8 +181,11 @@
                "similar" or "look"), best (the highest cosine), terms (with
                two or more free words, by words and meaning: [{text, name
                (looked for by its words only), relation (a word such as
-               "over"), meaning (it had a vector)}], else [])} when meaning
-               (or looks) ranked the results, else null
+               "over"), meaning (it had a vector)}], else []), names (the
+               free words, when every one of them was taken for a name in a
+               small set and so got none of the closest few: see
+               unknownNames; else [])} when meaning (or looks) ranked the
+               results, else null
 
    SearchCore.parse(query, options) -> {text, clauses, terms, sequence, ...}
      Never throws. Words must all match (AND), "quoted phrases" must match
@@ -290,7 +293,10 @@
      the number of pictures with a vector until it is the usual cut, faster
      for a query of one free clause: SearchCore.meaningCuts(n)); "meaning"
      takes them too, and the closest few of all pictures when none reaches
-     MEANING_MIN_Z. similar: shows the
+     MEANING_MIN_Z. A word that no picture has and that is no word of the
+     language is a name: there it gets none of the closest few, and a
+     search of names alone nothing of "meaning"'s wider net below
+     MEANING_MIN_Z either (unknownNames). similar: shows the
      pictures at least SIMILAR_MIN_Z close to that picture, or when fewer
      than SIMILAR_FEW are, the closest SIMILAR_FEW if they are close in
      the model's own terms (Index.similarCut; the picture's own duplicate
@@ -425,9 +431,20 @@
      change it, there is no suggestion). Skipped words are never
      corrected, nor words of the language (SearchCore.isWord(word):
      static/english-words.js, the global ENGLISH_WORDS, when the page
-     loads it; SearchCore.setWords(list or filter) sets another, null
-     none), and a correction that would find nothing either (with
-     options, as for search) is not offered.
+     loads it; SearchCore.setWords(list, filter or [filter, rest]) sets
+     another, null none), nor well-known names (SearchCore.isName(word):
+     the names filter of the rest of the list), and a correction that
+     would find nothing either (with options, as for search) is not
+     offered.
+     The words the page loads first name the rest of the list (their
+     "more"), which it loads when a search first has a word that no
+     picture has and that the first part lacks:
+     SearchCore.wantWords(loader) gives the page's loader, which is called
+     once with that "more" and hands the rest (or null: it could not load)
+     to SearchCore.addWords(words) -- true when a search or a suggestion
+     waited for it (the page then searches again; SearchCore.wordsHeld()
+     until then). SearchCore.wordsState() says where it is: "", "wanted",
+     "loading", "ready" or "failed".
 
    Areas on the map
      index.setPlaces(points, routes) gives the index where its pictures
@@ -3294,6 +3311,8 @@ var SearchCore = (function () {
         this.vecCount = 0;
         this.cosCache = [];
         this.tagWords = null;
+        this.closest = null;                // word -> closestWord's answer (CLOSEST_KEPT)
+        this.closestCount = 0;
         this.marks = null;
         this.located = null;                // where the pictures were taken (setPlaces)
         this.things = Object.create(null);  // word -> the THING_FIELDS it is a thing of
@@ -6370,6 +6389,9 @@ var SearchCore = (function () {
         soleSet = soleSet ? context.albumSets[soleSet.value] : null;
         var drivePlan = this.drivePlan(alive, opts, soleSet ? soleSet.rank : null);
         var driveScores = this.driveClauses(parsed, context, drivePlan);
+        if (moreState === "") {
+            this.askWords(parsed);
+        }
         var plan = this.meaningPlan(parsed, opts, context);
         // Pictures without the free words (when meaning may find them).
         var missed = plan && plan.free ? new Uint8Array(n) : null;
@@ -6513,7 +6535,9 @@ var SearchCore = (function () {
             areaPending: areaPending || Boolean(context.areaPending),
             byMeaning: meaning ? meaning.only : [],
             meaning: meaning ? {mode: meaning.mode, best: meaning.best,
-                                terms: meaning.terms || []} : null
+                                terms: meaning.terms || [],
+                                names: plan.names === 2 && plan.nameWords ? plan.nameWords
+                                    : []} : null
         };
     };
 
@@ -6760,23 +6784,70 @@ var SearchCore = (function () {
        more of the right pictures than 0.5 (256 of 529, against 233), for
        one more wrong one in about fifty searches (in the bundled sample of
        19 the cups now come with a bowl of fruit salad 0.7 below them).
-       A word no picture has gets the closest few too, even a name
-       ("Maplebrook" in a set without it, which then shows near misses):
-       offline such a name cannot be told from a word that descriptions
-       seldom use, many of which the words of the language "did you mean"
-       knows lack ("feline", "cutlery", "footwear"). Leaving the words
-       outside that list out of the closest few lost 6 to 27 of the right
-       pictures of those 24 one-word searches in sets of 19 to 150 (up to
-       18% of them), though in the same sets without planted answers it
-       also left out 40% to 56% of the pictures not asked for in sets of 19
-       to 49 (30% in 63, 22% in 100), for 2 to 9 of the right ones. A fuller
-       offline word list, with such words in it, would make it worth doing. */
+       A word that no picture has and that is no word of the language
+       (languageWord), nor a misspelling of a word the pictures have ("did you
+       mean" has one for it: the meaning model often finds what it means,
+       "elephnt" the elephants -- while NAME_TYPO_KEEPS), is taken for a name
+       ("Maplebrook", a town abroad, a family name, and a well-known place such
+       as "Rome", which "did you mean" leaves alone: languageName): the
+       pictures closest to it are mostly unrelated ones, so it gets none of the
+       closest few, and a search of such names alone gets nothing from
+       "meaning"'s wider net below MEANING_MIN_Z either where the closest few
+       apply (unknownNames; what reaches that stays, so "meaning" still never
+       shows less than words and meaning). With a list of the words of the
+       language that lacked many of those descriptions seldom use ("feline",
+       "cutlery", "footwear"), leaving its outsiders out of the closest few
+       lost 6 to 27 of the right pictures of those 24 one-word searches in sets
+       of 19 to 150 (up to 18% of them). With the fuller list the planted
+       searches never meet the rule: each of their words is a word of the
+       language or of the pictures, or a misspelling "did you mean" corrects
+       where its pictures are, and none of their right pictures changed (those
+       24 in sets of 19 to 500, by "meaning" 19 to 150; 25 searches of several
+       words, 6 sets of each size from 25 to 2,000; 17 others, 4 sets of each
+       size from 19 to 2,000). The rule's price is on what is taken for a name
+       and is not one: a real word the list lacks (mostly recent words,
+       dishes and drinks: "kombucha", "boba", "chai"; it knows 694 of
+       707 rare words chosen before it was, 229 of 245 everyday words chosen
+       apart from it).
+       For five such words, each with up to three right pictures that lack the
+       word put in 4 random sets of each size, the right pictures found went
+       from 15 to 1 in sets of 19, 30 to 20 (30), 29 to 20 (49), 28 to 21 (63)
+       and 25 to 23 (100), with none lost in sets of 150 (by "meaning" 158 to
+       113 in all). A cut for names 0.4 above the few-cut instead of none would
+       have kept 132 of those 148 (0.7: 114), but shown names two to four times
+       as often. And a well-known place none of the pictures names loses what
+       the model finds close to it there: for 8 of them with pictures about
+       them that lack the name (a replica, a dish, a museum piece), 210 to 149
+       in the same sets (by "meaning" 263 to 166). In the same sets without
+       planted answers, the pictures not asked for went from 20 to 17, 41 to
+       34, 45 to 42, 69 to 67 and 66 to 62 in 96 searches in sets of 19, 30,
+       40, 49 and 63, the same from 100 on (the misspelled animals in sets
+       without them, where "did you mean" has nothing to correct them to); for
+       the searches of several words, which hold names, from 46 to 38, 69 to
+       63, 49 to 45, 64 to 55, 41 to 38, 24 to 21, 19 to 15 and 16 to 12 in 100
+       searches in sets of 35, 40, 49, 63, 100, 150, 200 and 300, the same in
+       500. Each of 351 names searched alone, in 2 random sets of each size,
+       showed pictures in 1%, 3%, 7%, 8%, 13% and 14% of the searches in sets
+       of 19, 30, 49, 63, 100 and 150 (18%, 33%, 47%, 39%, 30% and 17% before:
+       what is left reaches the usual cut, or has a suggestion), by "meaning"
+       in 1% to 17% (18% to 47% before), and in a published set of 63 in 14%
+       (55%); of 707 rare words of the language searched the same way, at most
+       1.3% of the searches showed fewer pictures. And a name next to a thing
+       ("Maplebrook boats") loses the boats only the closest few would show. A
+       large set is searched as before: the rule ends where the closest few do.
+       */
     var MEANING_FEW_Z = 2.2;
     var MEANING_FEW_SET = 50;
     var MEANING_FEW_GROWTH = 0.25;
     var MEANING_FEW_GROWTH_ONE = 0.65;
     var MEANING_FEW_MARGIN_Z = 0.7;
     var MEANING_FEW = 4;
+    // (A misspelling taken for a name too lost 2, 2, 2, 0, 4, 1 and 0 of the
+    // right pictures of those 24 searches in sets of 19 to 150: the
+    // misspelled animals. Keeping the closest few only for corrections of
+    // one edit lost none and showed names up to a third less often, but a
+    // misspelling two edits off loses them then, which nothing measured.)
+    var NAME_TYPO_KEEPS = true;
     /* Nor does per-term coverage (see MEANING_TERM_Z) fit a small set: a
        word's own z is held down as the query's is, and a word on its own
        often means something else than next to the others ("warm" of
@@ -7519,6 +7590,79 @@ var SearchCore = (function () {
         return plan;
     };
 
+    /* Whether the free words of a plan's query are taken for names (see
+       MEANING_FEW_Z): 0 none of them, 1 some, 2 all. A word is when no
+       picture has it, it is no word of the language, and (while
+       NAME_TYPO_KEEPS) "did you mean" has no word for it: it is a
+       well-known name ("rome"), or a misspelling of none of the pictures'
+       words. While the rest of the word list is on its way, a word that is
+       not in its first part counts as one, a misspelling too: what meaning
+       finds for it comes once the rest says what it is, so it never shows
+       and then vanishes. Never without a list of the words of the language
+       (nor when the rest could not load). plan.nameWords: the words as
+       typed (typedName) when they are all names (2) and none was held back
+       for the rest, else [] (the page's note on an empty search:
+       result.meaning.names). */
+    Index.prototype.unknownNames = function (plan) {
+        if (!languageList() || !plan.clauses) {
+            return 0;
+        }
+        var names = 0;
+        var others = 0;
+        var held = false;
+        var words = [];
+        for (var c = 0; c < plan.clauses.length; c++) {
+            if (!plan.free[c]) {
+                continue;
+            }
+            var terms = plan.clauses[c].terms;
+            for (var k = 0; k < terms.length; k++) {
+                var term = terms[k];
+                if (!freeTerm(term) || !term.active || term.stop) {
+                    continue;
+                }
+                var word = term.kind === "word" && term.words.length === 1 ? term.words[0] : "";
+                if (word.length < 3 || /\d/.test(word) || this.knowsWord(word, term.prefix)) {
+                    others += 1;
+                    continue;
+                }
+                var known = languageWord(word);
+                if (known === true || (known === null && !moreComing()) ||
+                        (known === false && NAME_TYPO_KEEPS && !languageName(word) &&
+                         this.closestWord(word))) {
+                    others += 1;
+                    continue;
+                }
+                names += 1;
+                words.push(typedName(term, word));
+                held = held || known === null;
+            }
+        }
+        if (held) {
+            moreHeld = true;
+        }
+        plan.nameWords = names && !others && !held ? words : [];
+        return !names ? 0 : others ? 1 : 2;
+    };
+
+    // A word taken for a name as it was typed, for the page to quote (its
+    // capitals and accents), without the marks around it ("Ribeira," gives
+    // "Ribeira"); the word itself when what was typed is more than it.
+    function typedName(term, word) {
+        var typed = String(term.value || "");
+        var start = 0;
+        var end = typed.length;
+        while (start < end && !tokens(typed.charAt(start)).length) {
+            start += 1;
+        }
+        while (end > start && !tokens(typed.charAt(end - 1)).length) {
+            end -= 1;
+        }
+        typed = typed.slice(start, end);
+        var again = tokens(typed);
+        return again.length === 1 && again[0] === word ? typed : word;
+    }
+
     /* What a free term of a search by words and meaning is (Per-term
        coverage): {text (what is embedded for it, see meaningTexts),
        relation (a word of RELATION_WORDS), name (name-like), unknown (no
@@ -7918,8 +8062,17 @@ var SearchCore = (function () {
         var cuts = meaningCuts(stats.count);
         var clauses = plan.free.filter(Boolean).length;
         var least = clauses >= 2 ? cuts.few : cuts.one;
+        var self = this;
+        // (Unknown names, see MEANING_FEW_Z: asked once, and only in a small
+        // set, where they matter.)
+        function names() {
+            if (plan.names === undefined) {
+                plan.names = self.unknownNames(plan);
+            }
+            return plan.names;
+        }
         function fewCut(wanted) {
-            if (least >= MEANING_MIN_Z) {
+            if (least >= MEANING_MIN_Z || names()) {
                 return Infinity;
             }
             var closest = [];
@@ -7940,6 +8093,12 @@ var SearchCore = (function () {
         if (plan.mode === "meaning") {
             var lowest = Math.max(best - MEANING_ONLY_MARGIN_Z * stats.std,
                                   atZ(MEANING_ONLY_Z));
+            // A search of names alone gets nothing from the wider net below
+            // MEANING_MIN_Z in a small set: what reaches it stays, as by words
+            // and meaning (see MEANING_FEW_Z).
+            if (least < MEANING_MIN_Z && names() === 2) {
+                lowest = Math.max(lowest, atZ(MEANING_MIN_Z));
+            }
             // The closest few when nothing reaches MEANING_MIN_Z; and, as by
             // words and meaning, of the pictures without the words when none
             // of them does: this wider net never shows less.
@@ -8363,39 +8522,143 @@ var SearchCore = (function () {
 
     /* Did you mean: a word that is itself a word of the language is meant
        as typed, and never corrected to another one ("cold" is not "old",
-       "words" not "woods"). The words of the language are a Bloom filter
-       ({size, hashes, data}: static/english-words.js, ENGLISH_WORDS, made
-       by english_words.py from about 21,000 words of everyday English and
-       common names; any page that loads it has it), or a list given to
-       SearchCore.setWords. A correction is one edit (two for a word of
-       SUGGEST_TWO letters or more), and never changes, adds or drops the
-       first letter of a word of SUGGEST_SHORT letters or fewer, nor of any
-       word in two edits ("Maplebrook" is not "Tablebrook"), except to swap
-       it with the second ("ogld" is "gold"). When the closest word would
-       change it, there is no suggestion: the next closest that keeps it was
-       right for under a third of the typos that came to it ("ome" is "home"
-       misspelled, not "one"). Measured on a library of thousands of
-       pictures and on a published one of 63: of 30 misspellings each, as
-       many were put right as before (29); of 30 real words each that no
-       picture has, 4 and none got a suggestion, against 20 and 19 before;
-       of 10 names of places, 4 and none, against 5 and 5; of every one-edit
-       typo of their most used tag words, 3.5% and 1.4% got a wrong word,
-       against 4.5% and 2.2% before. The price: 2.5 and 5 points fewer of
-       those typos got the right word (93.0% and 92.7%, against 95.5% and
-       97.7%) -- they got none instead.
-       The list has names and abbreviations too, so "blu" or "san" gets no
-       suggestion either; checking only words of four letters or more would
-       correct them, but also 23 more of 100 real short words the set of 63
-       lacks ("bat" to "boat", "pie" to "pine"). */
+       "words" not "woods", "waterfowl" not "waterfall"). The words of the
+       language are Bloom filters ({size, hashes, data}:
+       static/english-words.js, ENGLISH_WORDS, made by english_words.py from
+       two public domain word lists, about 65,000 words with their inflected
+       forms; the everyday ones come with the page, and the first part's "more"
+       names the file of the others, which the page loads when it first needs
+       them: see moreWords), or a list given to SearchCore.setWords. A
+       well-known name (the rest's "names", about 7,600 places and people of a
+       third list) is never corrected either. A correction is one edit (two for
+       a word of SUGGEST_TWO letters or more), and never changes, adds or drops
+       the first letter of a word of SUGGEST_SHORT letters or fewer, nor of any
+       word in two edits ("Maplebrook" is not "Tablebrook"), except to swap it
+       with the second ("ogld" is "gold"). When the closest word would change
+       it, there is no suggestion: the next closest that keeps it was right for
+       under a third of the typos that came to it ("ome" is "home" misspelled,
+       not "one"). Measured on a library of thousands of pictures and on a
+       published one of 63: of 30 misspellings each, as many were put right as
+       before (29); of 30 real words each that no picture has, 4 and none got a
+       suggestion, against 20 and 19 before; of 10 names of places, 4 and none,
+       against 5 and 5; of every one-edit typo of their most used tag words,
+       3.5% and 1.4% got a wrong word, against 4.5% and 2.2% before. The price:
+       2.5 and 5 points fewer of those typos got the right word (93.0% and
+       92.7%, against 95.5% and 97.7%) -- they got none instead. That was with
+       a list of about 21,000 whole words of the meaning model's vocabulary,
+       many of them names and few of the words descriptions seldom use; with
+       the fuller list, of 707 such words (animals, things, food, clothing,
+       places, activities and qualities that no picture or very few have:
+       "feline", "cutlery", "waterfowl"), 694 are words (210 before) and 4 and
+       1 got a wrong suggestion (107 and 47); of 351 names (made-up towns,
+       towns abroad, family names), 1 passes for a word (42 before: a plural of
+       a word), and 80 and 17 get a suggestion (87 and 20 before); of 186
+       well-known names (cities, countries, family names), those none of the
+       pictures has (most of them in the published set, fewer in the library)
+       get one once in each (none before, when they were words; 30 and 22
+       times with the fuller list before it knew them as names: "rome" to
+       "rose"); the 30 real words get none (4 before); 29 and 28 of the
+       misspellings are put right ("lightening" is a word too); and of the
+       typos 92.6% and 92.4% get the right word (93.0% and 92.7% before), 3.5%
+       and 1.3% a wrong one: the names take a few (made by the same random
+       edits, "bach" of "beach", "monet" of "money", "gary" of "gray" are names
+       too; leaving the names of three letters out would put 4 and 10 more
+       right, but give about half of those names, which no picture has, a
+       word: "amy" "may", "rio" "rib"), and a few pass for words by chance,
+       either way. Checking only words of four letters or more
+       would correct 23 more of 100 real short words the set of 63 lacks ("bat"
+       to "boat", "pie" to "pine"). */
     var SUGGEST_SHORT = 4;
     var SUGGEST_TWO = 6;
+    // closestWord's answers an index keeps (it goes through all of its
+    // words, a few ms in a large library, and is asked again by each look
+    // at the same search: the page's two notes, the closest few).
+    var CLOSEST_KEPT = 200;
     var WORDS_ALPHABET = "0123456789bcdfghjklmnpqrstvwxz-_";
     var languageWords;              // undefined: ENGLISH_WORDS, if a page loaded it
     var languageSet = null;         // a list's words as a set, made when first needed
+    /* The list comes in two parts (english_words.py --first): the words
+       most searches meet go with the page (english-words.js), the rest
+       (named by the first part's "more": {file, v, count}) only when a
+       word is first not in the first part. Until the rest is in, such a
+       word is neither a word nor not one (languageWord says null), and the
+       page's loader (wantWords) is called, once: it loads the rest and
+       hands it to addWords (null when it could not), then searches again
+       if anything waited for it. The rest also holds the well-known names
+       (its "names" filter: languageName). */
+    var moreWords = null;           // the rest of the list, once it is in
+    // "": not needed yet; "wanted": needed before the page gave a loader
+    // (told as "failed" until it does); "loading"; "ready"; "failed" (a
+    // word not in the first part is then told as with no list: no
+    // unknown names, and "did you mean" as with the first part alone).
+    var moreState = "";
+    var moreLoader = null;
+    var moreHeld = false;           // something waited for the rest (addWords says)
 
+    function isWordFilter(words) {
+        return Boolean(words) && typeof words === "object" && !Array.isArray(words) &&
+            words.size > 0 && words.hashes > 0 && typeof words.data === "string";
+    }
+
+    // words: a filter, a list of words (an array or a string), [first
+    // part, rest] (both filters, as a page has them once the rest is in),
+    // or null.
     function setWords(words) {
-        languageWords = words === undefined ? null : words;
+        moreWords = null;
+        moreState = "";
+        moreHeld = false;
+        if (Array.isArray(words) && words.length === 2 && isWordFilter(words[0]) &&
+                isWordFilter(words[1])) {
+            languageWords = words[0];
+            moreWords = words[1];
+            moreState = "ready";
+        } else {
+            languageWords = words === undefined ? null : words;
+        }
         languageSet = null;
+    }
+
+    /* The rest of the list (english-words-more.js's filter), or null: it
+       could not load. True when a search or "did you mean" waited for it:
+       the page then searches again (otherwise nothing it shows changes). */
+    function addWords(words) {
+        if (isWordFilter(words)) {
+            moreWords = words;
+            moreState = "ready";
+        } else {
+            moreState = "failed";
+        }
+        var held = moreHeld;
+        moreHeld = false;
+        return held;
+    }
+
+    // loader(more): loads the rest of the list (the first part's "more")
+    // and hands it to addWords; called once, when the rest is first needed.
+    function wantWords(loader) {
+        moreLoader = typeof loader === "function" ? loader : null;
+        if (moreLoader && moreState === "wanted") {
+            askMore();
+        }
+    }
+
+    function askMore() {
+        var words = languageList();
+        if (!moreLoader || !isWordFilter(words) || !words.more) {
+            moreState = "wanted";
+            return;
+        }
+        moreState = "loading";
+        try {
+            moreLoader(words.more);
+        } catch (error) {
+            moreState = "failed";
+        }
+    }
+
+    // True while the rest of the list is on its way.
+    function moreComing() {
+        return moreState === "loading";
     }
 
     // FNV-1a of a word of letters a to z, from seed (english_words.py's _fnv).
@@ -8432,14 +8695,16 @@ var SearchCore = (function () {
         return languageWords || null;
     }
 
-    // True when a normalized word (or its singular) is a word of the language.
+    /* True when a normalized word (or its singular) is a word of the
+       language, false when it is not; null when only the rest of the list
+       could tell: it is asked for now (or is on its way, moreComing), or
+       could not load. */
     function languageWord(word) {
         var words = languageList();
         if (!words) {
             return false;
         }
-        var filter = typeof words === "object" && !Array.isArray(words) &&
-            words.size > 0 && words.hashes > 0 && typeof words.data === "string";
+        var filter = isWordFilter(words);
         if (!filter && languageSet === null) {
             languageSet = Object.create(null);
             (Array.isArray(words) ? words : String(words).split(/\s+/)).forEach(function (entry) {
@@ -8454,11 +8719,64 @@ var SearchCore = (function () {
                 return true;
             }
         }
-        return false;
+        if (moreWords) {
+            for (k = 0; k < forms.length; k++) {
+                if (inWordFilter(moreWords, forms[k])) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (!filter || !words.more || typeof words.more !== "object") {
+            return false;
+        }
+        if (moreState === "") {
+            askMore();
+        }
+        return null;
     }
 
-    // The most likely word meant by a word that matches nothing, or null.
+    /* True when a normalized word is a well-known name (english_words.py
+       --names: the names filter of the rest of the list, or of a list in
+       one part), as typed: "did you mean" leaves it alone, though a search
+       still takes it for a name when it is no word of the language. False
+       while the rest is not in. */
+    function languageName(word) {
+        var names = moreWords ? moreWords.names : (languageList() || {}).names;
+        return isWordFilter(names) && inWordFilter(names, word);
+    }
+
+    /* Asks for the rest of the list as soon as a search has a word that no
+       picture has and the first part lacks (while its meaning is on its
+       way too, as it is typed), not only once the closest few or "did you
+       mean" need it. */
+    Index.prototype.askWords = function (parsed) {
+        for (var k = 0; k < parsed.terms.length && moreState === ""; k++) {
+            var term = parsed.terms[k];
+            if (freeTerm(term) && term.active && !term.stop && term.kind === "word" &&
+                    term.words.length === 1 && term.words[0].length >= 3 &&
+                    !/\d/.test(term.words[0]) && !this.knowsWord(term.words[0], term.prefix)) {
+                languageWord(term.words[0]);
+            }
+        }
+    };
+
+    // The most likely word meant by a word that matches nothing, or null
+    // (kept: the index's words do not change).
     Index.prototype.closestWord = function (word) {
+        var known = this.closest;
+        if (!known || this.closestCount >= CLOSEST_KEPT) {
+            known = this.closest = Object.create(null);
+            this.closestCount = 0;
+        } else if (known[word] !== undefined) {
+            return known[word];
+        }
+        this.closestCount += 1;
+        known[word] = this.findClosestWord(word);
+        return known[word];
+    };
+
+    Index.prototype.findClosestWord = function (word) {
         var limit = word.length >= SUGGEST_TWO ? 2 : 1;
         var keepFirst = word.length <= SUGGEST_SHORT;
         var marks = this.tagWordMarks();
@@ -8502,6 +8820,7 @@ var SearchCore = (function () {
         var opts = options && typeof options === "object" ? options : {};
         var parsed = asQuery(query, opts);
         var changes = [];
+        var waiting = false;
         var self = this;
         parsed.terms.forEach(function (term) {
             // (Skipped words are never corrected: "our" is not "out".)
@@ -8509,8 +8828,19 @@ var SearchCore = (function () {
                 return;
             }
             var word = term.words[0];
-            if (word.length < 3 || /\d/.test(word) || self.knowsWord(word, term.prefix) ||
-                    languageWord(word)) {
+            if (word.length < 3 || /\d/.test(word) || self.knowsWord(word, term.prefix)) {
+                return;
+            }
+            var known = languageWord(word);
+            if (known === null && moreComing()) {
+                // (No suggestion until the rest of the list is in: the
+                // page asks again then.)
+                waiting = true;
+                moreHeld = true;
+                return;
+            }
+            // (Nor is a well-known name corrected: "rome" is not "rose".)
+            if (known || languageName(word)) {
                 return;
             }
             var better = self.closestWord(word);
@@ -8518,7 +8848,7 @@ var SearchCore = (function () {
                 changes.push({term: term, from: word, to: better});
             }
         });
-        if (!changes.length) {
+        if (waiting || !changes.length) {
             return null;
         }
         var text = parsed.text;
@@ -8745,8 +9075,26 @@ var SearchCore = (function () {
             return indexOf(records).suggest(query, options);
         },
         setWords: setWords,
+        addWords: addWords,
+        wantWords: wantWords,
+        // "", "wanted", "loading", "ready" or "failed": the rest of the word list.
+        wordsState: function () {
+            return moreState;
+        },
+        // True while a search (or "did you mean") waits for the rest of the
+        // word list: what it shows may change once that is in (addWords).
+        wordsHeld: function () {
+            return moreHeld && moreState === "loading";
+        },
+        // (Not a word while only the rest of the list could tell.)
         isWord: function (word) {
-            return languageWord(normalize(word));
+            return languageWord(normalize(word)) === true;
+        },
+        // A well-known name that is no word of the language (once the rest
+        // of the list is in).
+        isName: function (word) {
+            var folded = normalize(word);
+            return languageWord(folded) === false && languageName(folded);
         },
         interpret: function (records, query, options) {
             return indexOf(records).interpret(query, options);
