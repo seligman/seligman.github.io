@@ -11,7 +11,7 @@ Webpages for different projects that I'm playing with:
 Podcast Search Pages:
 <!-- Podcasts Start -->
 * [Amityvilleville](https://seligman.github.io/podcasts/avv/avv.html), last updated 2026-10-17 11:38:39 with 34 items
-* [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-10-12 15:17:23 with 954 items
+* [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-10-19 11:26:54 with 955 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-10-17 17:12:23 with 389 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-09-23 23:07:04 with 183 items
 * [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-10-14 14:08:22 with 467 items
@@ -22,10 +22,10 @@ Podcast Search Pages:
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-10-16 18:16:34 with 2,766 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-10-07 10:18:23 with 140 items
 * [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-10-18 11:33:09 with 2,675 items
-* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-10-12 13:02:37 with 448 items
+* [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-10-19 11:23:07 with 449 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-10-17 11:39:10 with 1,014 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-04-07 16:27:56 with 57 items
-* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-10-15 15:51:37 with 2,131 items
+* [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-10-19 11:37:42 with 2,132 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-05-17 01:01:06 with 425 items
 * [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-10-14 12:08:17 with 1,080 items
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-10-15 15:52:39 with 47 items
