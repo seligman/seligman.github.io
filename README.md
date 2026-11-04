@@ -19,11 +19,11 @@ Podcast Search Pages:
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-10-30 11:40:28 with 102 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-10-27 09:09:42 with 147 items
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-11-02 16:56:41 with 118 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-10-31 19:04:11 with 2,774 items
-* [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-10-21 15:13:19 with 141 items
-* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-11-02 16:56:49 with 2,686 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-11-03 19:30:11 with 2,775 items
+* [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-11-03 23:14:00 with 142 items
+* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-11-04 12:41:41 with 2,687 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-11-02 12:14:33 with 451 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-11-02 12:36:43 with 1,048 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-11-04 12:43:03 with 1,048 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-11-02 12:37:00 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-11-03 16:16:15 with 2,137 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-05-17 01:01:06 with 425 items
@@ -34,7 +34,7 @@ Podcast Search Pages:
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-10-30 11:38:43 with 499 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-10-31 11:43:58 with 1,599 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-09-09 13:51:59 with 958 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-10-31 11:40:58 with 2,918 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-11-04 12:40:23 with 2,920 items
 * [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-10-30 19:41:03 with 103 items
 * [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-10-27 17:35:44 with 367 items
 * [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-10-29 17:19:35 with 75 items
