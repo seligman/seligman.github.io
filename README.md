@@ -21,7 +21,7 @@ Podcast Search Pages:
 * [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-11-02 16:56:41 with 118 items
 * [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-11-06 20:45:05 with 2,778 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-11-03 23:14:00 with 142 items
-* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-11-07 12:42:54 with 2,689 items
+* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-11-08 12:31:30 with 2,690 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-11-05 16:14:14 with 451 items
 * [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-11-08 04:59:09 with 1,050 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-11-02 12:37:00 with 57 items
@@ -39,7 +39,7 @@ Podcast Search Pages:
 * [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-11-07 04:08:10 with 368 items
 * [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-10-29 17:19:35 with 75 items
 * [TWiP](https://seligman.github.io/podcasts/twip/twip.html), last updated 2026-10-27 17:35:49 with 290 items
-* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-11-07 08:20:01 with 1,417 items
+* [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-11-08 07:54:43 with 1,418 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-11-03 16:17:18 with 217 items
 * [Treksploration](https://seligman.github.io/podcasts/treksploration/treksploration.html), last updated 2026-10-28 11:47:25 with 130 items
 * [Urban Agriculture](https://seligman.github.io/podcasts/urban_agriculture/urban_agriculture.html), last updated 2026-10-23 16:15:47 with 29 items
