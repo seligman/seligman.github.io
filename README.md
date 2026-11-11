@@ -14,7 +14,7 @@ Podcast Search Pages:
 * [Cognitive Dissonance](https://seligman.github.io/podcasts/cogdis/cogdis.html), last updated 2026-11-09 11:49:54 with 958 items
 * [The Common Descent](https://seligman.github.io/podcasts/common_descent/common_descent.html), last updated 2026-11-08 02:47:20 with 393 items
 * [Cortex](https://seligman.github.io/podcasts/cortex_pod/cortex_pod.html), last updated 2026-11-09 03:41:38 with 184 items
-* [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-11-07 17:54:41 with 468 items
+* [Dear Hank and John](https://seligman.github.io/podcasts/hank_and_john/hank_and_john.html), last updated 2026-11-11 15:42:53 with 469 items
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-11-06 18:22:46 with 448 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-11-05 12:55:07 with 103 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-11-10 10:08:34 with 148 items
@@ -27,14 +27,14 @@ Podcast Search Pages:
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-11-02 12:37:00 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-11-11 12:38:22 with 2,140 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-11-08 18:28:57 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-11-08 18:50:50 with 1,083 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-11-11 15:47:28 with 1,084 items
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-11-05 12:57:12 with 53 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-11-07 18:29:22 with 215 items
 * [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-11-07 18:46:11 with 716 items
 * [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-11-08 19:06:21 with 500 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-11-07 12:45:54 with 1,601 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-09-09 13:51:59 with 958 items
-* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-11-10 12:43:27 with 2,923 items
+* [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-11-11 15:50:51 with 2,924 items
 * [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-10-30 19:41:03 with 103 items
 * [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-11-07 04:08:10 with 368 items
 * [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-10-29 17:19:35 with 75 items
