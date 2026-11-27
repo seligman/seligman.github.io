@@ -18,26 +18,26 @@ Podcast Search Pages:
 * [Houston We Have a Podcast](https://seligman.github.io/podcasts/houston_we_have_a_podcast/houston_we_have_a_podcast.html), last updated 2026-11-26 13:13:50 with 450 items
 * [Hyperfixed](https://seligman.github.io/podcasts/hyperfixed/hyperfixed.html), last updated 2026-11-26 13:19:27 with 105 items
 * [IMMUNE](https://seligman.github.io/podcasts/immune/immune.html), last updated 2026-11-26 13:13:53 with 150 items
-* [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-11-26 13:13:58 with 119 items
-* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-11-26 13:14:04 with 2,788 items
+* [Infectious Disease](https://seligman.github.io/podcasts/infectious_disease/infectious_disease.html), last updated 2026-11-27 12:42:13 with 120 items
+* [The Joe Rogan Experience](https://seligman.github.io/podcasts/jre/jre.html), last updated 2026-11-27 12:42:16 with 2,789 items
 * [Matters Microbial](https://seligman.github.io/podcasts/matters_microbial/matters_microbial.html), last updated 2026-11-24 13:31:49 with 143 items
-* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-11-26 13:18:00 with 2,704 items
+* [MicrobeTV](https://seligman.github.io/podcasts/microbetv/microbetv.html), last updated 2026-11-27 12:45:36 with 2,705 items
 * [Mindscape](https://seligman.github.io/podcasts/mindscape/mindscape.html), last updated 2026-11-25 12:55:27 with 454 items
-* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-11-26 13:19:44 with 1,051 items
+* [Mission Log](https://seligman.github.io/podcasts/mission_log/mission_log.html), last updated 2026-11-27 12:47:05 with 1,052 items
 * [Mission Log Prodigy](https://seligman.github.io/podcasts/ml_prodigy/ml_prodigy.html), last updated 2026-11-02 12:37:00 with 57 items
 * [Never Not Funny](https://seligman.github.io/podcasts/nevernotfunny/nevernotfunny.html), last updated 2026-11-26 13:20:08 with 2,145 items
 * [Oh No, Ross and Carrie](https://seligman.github.io/podcasts/oh_no/oh_no.html), last updated 2026-11-08 18:28:57 with 425 items
-* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-11-24 13:32:53 with 1,085 items
+* [Penn's Sunday School](https://seligman.github.io/podcasts/penn_sunday_school/penn_sunday_school.html), last updated 2026-11-27 12:43:32 with 1,086 items
 * [Political Reality](https://seligman.github.io/podcasts/pr/pr.html), last updated 2026-11-26 13:21:28 with 57 items
 * [Reply All](https://seligman.github.io/podcasts/reply_all/reply_all.html), last updated 2026-11-07 18:29:22 with 215 items
-* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-11-26 13:15:54 with 718 items
-* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-11-26 13:16:48 with 502 items
+* [The Scathing Atheist](https://seligman.github.io/podcasts/scathing/scathing.html), last updated 2026-11-27 12:43:55 with 718 items
+* [Skeptics with a K](https://seligman.github.io/podcasts/swak/swak.html), last updated 2026-11-27 12:44:48 with 503 items
 * [The Skeptics' Guide to the Universe](https://seligman.github.io/podcasts/sgu/sgu.html), last updated 2026-11-24 13:40:01 with 1,605 items
 * [Star Trek Subtitles](https://seligman.github.io/star_trek_subtitles/star_trek_subtitles.html), last updated 2026-09-09 13:51:59 with 958 items
 * [Stuff You Should Know](https://seligman.github.io/podcasts/stuff_know/stuff_know.html), last updated 2026-11-26 13:17:05 with 2,933 items
-* [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-11-26 13:17:41 with 103 items
-* [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-11-26 13:17:42 with 369 items
-* [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-11-26 13:17:45 with 76 items
+* [TWiEVO](https://seligman.github.io/podcasts/twievo/twievo.html), last updated 2026-11-27 12:45:16 with 103 items
+* [TWiM](https://seligman.github.io/podcasts/twim/twim.html), last updated 2026-11-27 12:45:18 with 369 items
+* [TWiN](https://seligman.github.io/podcasts/twin/twin.html), last updated 2026-11-27 12:45:20 with 76 items
 * [TWiP](https://seligman.github.io/podcasts/twip/twip.html), last updated 2026-11-26 13:17:46 with 292 items
 * [TWiV](https://seligman.github.io/podcasts/twiv/twiv.html), last updated 2026-11-25 12:57:58 with 1,423 items
 * [Time Enough](https://seligman.github.io/podcasts/time_enough/time_enough.html), last updated 2026-11-26 13:22:23 with 219 items
